@@ -1,7 +1,7 @@
 import CoreGraphics
 
 /// The Ultralytics task a model was exported for, read from its metadata.
-public enum YOLOTask: String, Sendable, CaseIterable {
+public enum YOLOTask: String, Sendable, CaseIterable, Codable {
     case detect, segment, pose, obb, classify, semantic, depth
 
     public var title: String {

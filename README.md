@@ -31,6 +31,15 @@ pass at 60 fps). Models run at their own rate; effects animate toward the latest
 Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py` and attached to the `models-v1` release. They are downloaded from the panel,
 and live in `~/Library/Application Support/YoloMeet/Models`.
 
+## Custom models
+
+Models › Custom › Import Model… takes PyTorch weights (`.pt`/`.pth`) from Ultralytics or RF-DETR, or an `.aimodel` (`.aimodel.zip`) already exported to Core AI.
+
+- **PyTorch weights** are converted by the bundled `export_models.py --convert` in a private Python environment (`~/Library/Application Support/YoloMeet/Converter`), created with [uv](https://github.com/astral-sh/uv) on the first conversion (about 1.3 GB; uv is downloaded if it is not installed). Everything it installs stays in that folder — uv's own Python, the venv, Ultralytics' settings — and uv's download cache is disabled; Models › Custom › Remove… deletes it. The exported model is copied into `Custom` and its temporary files are removed, on failure too. Python is only used to convert, never to run models. RF-DETR needs a training checkpoint that records its settings (`checkpoint_best_ema.pth`).
+- **Core AI models**: the family is detected from the model's input/output names and the task from its metadata (Ultralytics) or outputs (RF-DETR); RF-DETR class names are read from the `.rfdetr.json` sidecar next to the asset when present. YOLO end-to-end (NMS) exports and Core ML files are refused with instructions.
+
+Imported models live in `~/Library/Application Support/YoloMeet/Custom` and can be renamed or deleted.
+
 ## Stats for nerds
 
 Toggle it in the panel's Status section. It draws on the stage (so it is visible in Meet): camera and stage resolution and FPS, and per model its rate, latency, size on disk, parameters, GFLOPs, architecture (CNN or Transformer), input size and precision. Parameters, GFLOPs and architecture come from each asset's metadata, written by the export script.

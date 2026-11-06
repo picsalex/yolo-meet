@@ -37,11 +37,9 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     private var floatPlane: [Float]
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
+    /// Loads any Ultralytics or RF-DETR Core AI export; the family and task are inferred when metadata lacks them.
     public static func load(from url: URL) async throws -> YOLOModel {
         let metadata = try readMetadata(at: url)
-        guard let task = metadata["task"].flatMap(YOLOTask.init(rawValue:)) else {
-            throw YOLOModelError.invalid("unknown task '\(metadata["task"] ?? "")'")
-        }
         let model: AIModel
         do {
             model = try await AIModel(contentsOf: url)
@@ -51,21 +49,34 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             model = try await AIModel(contentsOf: url)
         }
         guard let function = try model.loadFunction(named: "main") else { throw YOLOModelError.invalid("no 'main'") }
-        return try YOLOModel(url: url, task: task, metadata: metadata, function: function)
+        return try YOLOModel(url: url, metadata: metadata, function: function)
     }
 
-    private init(url: URL, task: YOLOTask, metadata: [String: String], function: InferenceFunction) throws {
+    private init(url: URL, metadata: [String: String], function: InferenceFunction) throws {
         let descriptor = function.descriptor
         guard let inputName = descriptor.inputNames.first,
             case .ndArray(let shape)? = descriptor.inputDescriptor(of: inputName), shape.shape.count == 4
         else { throw YOLOModelError.invalid("expected one BCHW input") }
+        // RF-DETR's exporter names its outputs; Ultralytics' are output0/output1 and its metadata carries the task.
+        let outputs = Set(descriptor.outputNames)
+        isDETR = metadata["family"] == "rfdetr" || outputs.isSuperset(of: ["dets", "labels"])
+        guard
+            let task = metadata["task"].flatMap(YOLOTask.init(rawValue:))
+                ?? (isDETR ? (outputs.contains("masks") ? .segment : outputs.contains("keypoints") ? .pose : .detect) : nil)
+        else { throw YOLOModelError.invalid("not an Ultralytics or RF-DETR export (no task in its metadata)") }
+        if !isDETR, [.detect, .segment, .pose, .obb].contains(task),
+            case .ndArray(let head)? = descriptor.outputDescriptor(of: descriptor.outputNames[0]), head.shape.count == 3,
+            head.shape[2] < head.shape[1]
+        {
+            throw YOLOModelError.invalid("end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
+        }
         self.id = url.deletingPathExtension().lastPathComponent
         self.task = task
         self.names = Self.parseNames(metadata["names"] ?? "")
-        self.isDETR = metadata["family"] == "rfdetr"
         self.confidence = isDETR ? 0.5 : 0.25
-        let mean = Self.parseNumbers(metadata["mean"] ?? "")
-        let std = Self.parseNumbers(metadata["std"] ?? "")
+        // RF-DETR expects ImageNet normalization; its raw export does not record it.
+        let mean = Self.parseNumbers(metadata["mean"] ?? (isDETR ? "0.485, 0.456, 0.406" : ""))
+        let std = Self.parseNumbers(metadata["std"] ?? (isDETR ? "0.229, 0.224, 0.225" : ""))
         range = mean.count == 3 && std.count == 3
             ? ((0..<3).map { -mean[$0] / std[$0] }, (0..<3).map { (1 - mean[$0]) / std[$0] })
             : ([0, 0, 0], [1, 1, 1])
@@ -244,7 +255,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     }
 
     /// Total size of an asset directory in bytes.
-    static func size(of url: URL) -> Int {
+    public static func size(of url: URL) -> Int {
         let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey])
         return (files?.allObjects as? [URL] ?? []).reduce(0) { total, file in
             total + ((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)

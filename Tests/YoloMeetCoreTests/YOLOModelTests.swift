@@ -76,6 +76,53 @@ import Testing
         #expect(info.bytes > 1_000_000)
     }
 
+    /// A raw RF-DETR export (no app metadata) is recognized from its output names; class ids are COCO's (bus = 6).
+    @Test(.enabled(if: enabled)) func rawRFDETR() async throws {
+        let output = try await predict("rfdetr-raw")
+        #expect(output.task == .detect)
+        #expect(output.info.family == "RF-DETR")
+        #expect(output.detections.contains { $0.classIndex == 6 })
+    }
+
+    @Test(.enabled(if: enabled)) @MainActor func importCustom() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let custom = CustomModels(directory: directory)
+        try await custom.importModel(from: Self.models!.appending(path: "rfdetr-raw.aimodel"))
+        try await custom.importModel(from: Self.models!.appending(path: "yolo26n-seg.aimodel"))
+        #expect(custom.models.map(\.family) == ["RF-DETR", "YOLO"])
+        #expect(custom.models.map(\.task) == [.detect, .segment])
+        // RF-DETR class names come from the sidecar next to the imported asset.
+        let id = custom.models[0].id
+        let output = try await YOLOModel.load(from: custom.url(for: id)).predict(Self.image!)
+        #expect(output.detections.contains { output.name(of: $0.classIndex) == "bus" })
+        custom.rename(id, to: "My detector")
+        #expect(CustomModels(directory: directory).models[0].name == "My detector")
+        custom.delete(id)
+        #expect(custom.models.count == 1)
+        await #expect(throws: CustomModelError.self) { try await custom.importModel(from: URL(filePath: "/tmp/best.pt")) }
+    }
+
+    /// Converts a `.pt` with an existing Python environment (`YOLO_MEET_PYTHON`, `YOLO_MEET_WEIGHTS`), then imports it.
+    @Test(.enabled(if: enabled && ProcessInfo.processInfo.environment["YOLO_MEET_PYTHON"] != nil))
+    @MainActor func convertPyTorch() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let script = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../scripts/export_models.py")
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let converter = PTConverter(
+            script: script.standardized, directory: directory, python: URL(filePath: environment["YOLO_MEET_PYTHON"]!))
+        let zip = try await converter.convert(URL(filePath: environment["YOLO_MEET_WEIGHTS"]!))
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        let custom = CustomModels(directory: directory.appending(path: "custom"))
+        try await custom.importModel(from: zip)
+        #expect(custom.models.first?.family == "YOLO")
+        let output = try await YOLOModel.load(from: custom.url(for: custom.models[0].id)).predict(Self.image!)
+        #expect(output.info.parameters ?? 0 > 1_000_000)
+        #expect(output.detections.count >= 3)
+        #expect(custom.size(of: custom.models[0].id) > 1_000_000)
+    }
+
     @Test func parseNames() {
         #expect(YOLOModel.parseNames("{0: 'person', 1: \"people's\", 2: 'bus'}") == ["person", "people's", "bus"])
     }

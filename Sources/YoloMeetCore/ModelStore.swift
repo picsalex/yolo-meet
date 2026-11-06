@@ -26,6 +26,9 @@ public enum ModelFamily: String, CaseIterable, Sendable {
         }
     }
 
+    /// Ultralytics' own models, as opposed to other vendors' (RF-DETR by Roboflow).
+    public var isUltralytics: Bool { self != .rfdetr }
+
     /// Grid columns.
     public var sizes: [String] { self == .rfdetr ? ["n", "s", "m", "l", "xl", "2xl"] : ["n", "s", "m", "l", "x"] }
 }

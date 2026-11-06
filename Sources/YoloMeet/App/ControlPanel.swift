@@ -6,7 +6,6 @@ import YoloMeetCore
 struct ControlPanel: View {
     @Environment(AppModel.self) private var model
     @State private var importing = false
-    @State private var confirmingDeleteAll = false
 
     var body: some View {
         @Bindable var model = model
@@ -57,16 +56,7 @@ struct ControlPanel: View {
                 }
             }
 
-            Section("Models") {
-                ModelGrid()
-                Button("Delete All Models…", role: .destructive) { confirmingDeleteAll = true }
-                    .disabled(model.store.downloaded.isEmpty)
-                    .confirmationDialog("Delete all downloaded models?", isPresented: $confirmingDeleteAll) {
-                        Button("Delete All", role: .destructive) { model.deleteAllModels() }
-                    } message: {
-                        Text("Removes \(model.store.downloaded.count) models and their compiled copies. You can download them again.")
-                    }
-            }
+            Section("Models") { ModelBrowser() }
 
             Section("Status") {
                 Toggle("Stats for nerds (on stage)", isOn: $model.showStats)
@@ -136,89 +126,6 @@ struct ControlPanel: View {
         .buttonStyle(.plain)
         .contextMenu {
             if let url { Button("Remove", role: .destructive) { model.backgrounds.remove(url) } }
-        }
-    }
-}
-
-/// One family at a time as a compact grid: tasks are rows, sizes are columns.
-private struct ModelGrid: View {
-    @Environment(AppModel.self) private var model
-    @AppStorage("gridFamily") private var family = ModelFamily.yolo26
-
-    var body: some View {
-        Picker("Family", selection: $family) {
-            ForEach(ModelFamily.allCases, id: \.self) { family in
-                // A dot marks families with a model on stage.
-                let onStage = model.displayModels.contains { ModelCatalog.entry($0)?.family == family }
-                Text(onStage ? "\(family.title) •" : family.title)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
-            GridRow {
-                Text("")
-                ForEach(family.sizes, id: \.self) {
-                    Text($0).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 40)
-                }
-            }
-            ForEach(family.tasks, id: \.self) { ModelGridRow(family: family, task: $0) }
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-/// One task's sizes; an empty slot where the family has no checkpoint for that size.
-private struct ModelGridRow: View {
-    let family: ModelFamily
-    let task: YOLOTask
-
-    var body: some View {
-        let entries = ModelCatalog.entries.filter { $0.family == family && $0.task == task }
-        GridRow {
-            Text(task.title)
-            ForEach(family.sizes, id: \.self) { size in
-                if let entry = entries.first(where: { $0.size == size }) {
-                    ModelCell(entry: entry)
-                } else {
-                    Color.clear.frame(width: 40, height: 26)
-                }
-            }
-        }
-    }
-}
-
-/// Click to download; once downloaded, click to show/hide in Display mode, right-click to delete.
-private struct ModelCell: View {
-    @Environment(AppModel.self) private var model
-    let entry: CatalogEntry
-
-    var body: some View {
-        let progress = model.store.progress[entry.id]
-        let downloaded = model.store.downloaded.contains(entry.id)
-        let shown = model.mode == .display && model.displayModels.contains(entry.id)
-        Button {
-            if !downloaded { model.store.download(entry) } else if model.mode == .display { model.toggleDisplay(entry.id) }
-        } label: {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(shown ? Color.accentColor : downloaded ? Color.secondary.opacity(0.2) : .clear)
-                RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(downloaded ? 0 : 0.4))
-                if let progress {
-                    ProgressView(value: progress).progressViewStyle(.circular).controlSize(.mini)
-                } else {
-                    Image(systemName: shown ? "eye.fill" : downloaded ? "checkmark" : "arrow.down")
-                        .foregroundStyle(shown ? Color.white : .secondary)
-                }
-            }
-            .frame(width: 40, height: 26)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(progress != nil)
-        .help(downloaded ? "\(entry.title) — right-click to delete" : "Download \(entry.title)")
-        .contextMenu {
-            if downloaded { Button("Delete \(entry.title)", role: .destructive) { model.deleteModel(entry.id) } }
         }
     }
 }

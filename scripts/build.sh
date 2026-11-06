@@ -12,6 +12,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/YOLO-meet"
+mkdir -p "$APP/Contents/Resources"
+cp scripts/export_models.py "$APP/Contents/Resources/"  # run by the in-app .pt converter
 codesign --force --sign - "$APP"
 echo "Built $APP"
 

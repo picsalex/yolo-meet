@@ -1,5 +1,7 @@
 """Export the model catalog to Core AI `.aimodel` assets, zipped as `<name>.aimodel.zip` for release.
 
+`--convert best.pt` exports a single user checkpoint (Ultralytics or RF-DETR); the app runs this for `.pt` imports.
+
 Every asset carries the app's metadata keys (task, names, family, architecture, params, gflops). Re-running is
 idempotent: existing archives are skipped, or only re-stamped when they predate a metadata key.
 
@@ -59,11 +61,11 @@ def archive(asset: Path, destination: Path) -> None:
     print(f"wrote {destination}", flush=True)
 
 
-def yolo_stats(name: str, imgsz: int) -> dict[str, str]:
+def yolo_stats(weights: str, imgsz: int) -> dict[str, str]:
     from ultralytics import YOLO
     from ultralytics.utils.torch_utils import get_flops, get_num_params
 
-    model = YOLO(f"{name}.pt").model
+    model = YOLO(weights).model
     return {"architecture": "CNN", "params": str(get_num_params(model)), "gflops": f"{get_flops(model, imgsz):.1f}"}
 
 
@@ -75,22 +77,26 @@ def rfdetr_stats(network: torch.nn.Module, resolution: int) -> dict[str, str]:
     return {"architecture": "Transformer", "params": str(params), "gflops": f"{counter.get_total_flops() / 1e9:.1f}"}
 
 
-def export_yolo(name: str, imgsz: int, out: Path) -> None:
+def export_yolo(weights: str, name: str, imgsz: int | None, out: Path) -> None:
     from ultralytics import YOLO
 
+    model = YOLO(weights)
+    imgsz = imgsz or model.overrides.get("imgsz", 640)  # a custom checkpoint keeps its training size
+    imgsz = imgsz if isinstance(imgsz, int) else max(imgsz)
     # Raw head (no embedded NMS): the app decodes and runs NMS in Swift. FP16 runs on the Neural Engine.
-    asset = Path(YOLO(f"{name}.pt").export(format="coreai", quantize=16, imgsz=imgsz))
-    stamp(asset, {"family": "yolo", **yolo_stats(name, imgsz)})
+    asset = Path(model.export(format="coreai", quantize=16, imgsz=imgsz))
+    stamp(asset, {"family": "yolo", **yolo_stats(weights, imgsz)})
     archive(asset, out / f"{name}.aimodel.zip")
 
 
-def export_rfdetr(name: str, cls: str, precision: str, out: Path) -> None:
-    import rfdetr
-
-    detector = getattr(rfdetr, cls)()
+def export_rfdetr(detector: object, name: str, precision: str | None, out: Path) -> None:
+    """Export an RF-DETR model. With precision None: FP16, except keypoint models which crash on the Neural Engine."""
     with tempfile.TemporaryDirectory() as tmp:
-        asset = Path(detector.export(output_dir=tmp, format="coreai", coreai_precision=precision, output_name=name))
+        asset = Path(detector.export(output_dir=tmp, format="coreai", coreai_precision=precision or "float16", output_name=name))
         meta = json.loads(asset.with_name(asset.name + ".rfdetr.json").read_text())["metadata"]
+        if precision is None and meta["task"] == "keypoints":
+            shutil.rmtree(asset)
+            asset = Path(detector.export(output_dir=tmp, format="coreai", coreai_precision="float32", output_name=name))
         names = ", ".join(f"{k}: {v!r}" for k, v in meta["class_id_to_name"].items())
         size = meta["input_shape"][2]
         stamp(asset, {
@@ -125,7 +131,10 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("exports"))
     parser.add_argument("--families", nargs="+", choices=[*YOLO_VERSIONS, "rfdetr"], default=[*YOLO_VERSIONS, "rfdetr"])
     parser.add_argument("--sizes", default="nsmlx", help="YOLO sizes")
+    parser.add_argument("--convert", type=Path, help="export one user checkpoint (used by the app's .pt import)")
     args = parser.parse_args()
+    if args.convert:
+        return convert(args.convert, args.output)
     args.output.mkdir(parents=True, exist_ok=True)
 
     for version in (v for v in YOLO_VERSIONS if v in args.families):
@@ -134,14 +143,34 @@ def main() -> None:
                 name = yolo_name(version, size, suffix)
                 path = args.output / f"{name}.aimodel.zip"
                 if not path.exists():
-                    export_yolo(name, YOLO_TASKS[suffix], args.output)
+                    export_yolo(f"{name}.pt", name, YOLO_TASKS[suffix], args.output)
                 elif not has_stats(path):
-                    restamp(path, {"family": "yolo", **yolo_stats(name, YOLO_TASKS[suffix])})
+                    restamp(path, {"family": "yolo", **yolo_stats(f"{name}.pt", YOLO_TASKS[suffix])})
 
     if "rfdetr" in args.families:
+        import rfdetr
+
         for name, cls, precision in RFDETR:
             if not (args.output / f"{name}.aimodel.zip").exists():
-                export_rfdetr(name, cls, precision, args.output)
+                export_rfdetr(getattr(rfdetr, cls)(), name, precision, args.output)
+
+
+def convert(weights: Path, out: Path) -> None:
+    """Export a user checkpoint (.pt/.pth): Ultralytics when it loads as one, otherwise RF-DETR."""
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        from ultralytics import YOLO
+
+        # Ultralytics opens unknown files lazily as an exported format, so require an actual PyTorch network.
+        if not isinstance(YOLO(str(weights)).model, torch.nn.Module):
+            raise TypeError("not an Ultralytics checkpoint")
+    except Exception:
+        import rfdetr
+
+        detector = rfdetr.from_checkpoint(str(weights), trust_checkpoint=True)  # the user chose this file
+        export_rfdetr(detector, weights.stem, None, out)
+    else:
+        export_yolo(str(weights), weights.stem, None, out)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@ final class AppModel {
 
     let pipeline = Pipeline()
     let store = ModelStore()
+    let custom = CustomModels()
+    let converter = PTConverter(script: Bundle.main.url(forResource: "export_models", withExtension: "py"))
     let backgrounds = BackgroundLibrary()
     @ObservationIgnored lazy var camera = Camera { [pipeline] in pipeline.handle($0) }
     @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
@@ -53,8 +55,8 @@ final class AppModel {
     /// Recomputes the active models and asks the stage to rebuild its effects.
     func applyScene() {
         let models = mode == .display ? displayModels : story.steps[stepIndex].models
-        missingModels = models.filter { !store.downloaded.contains($0) }
-        pipeline.setModels(models.filter(store.downloaded.contains).map { ($0, store.url(for: $0)) })
+        missingModels = models.filter { !isAvailable($0) }
+        pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
         sceneVersion += 1
     }
 
@@ -62,7 +64,7 @@ final class AppModel {
     func makeEffects() -> [Effect] {
         switch mode {
         case .display:
-            displayModels.flatMap { id in ModelCatalog.entry(id).map { displayEffects(for: $0.task, model: id) } ?? [] }
+            displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id) } ?? [] }
         case .story:
             story.steps[stepIndex].effects()
         }
@@ -73,8 +75,8 @@ final class AppModel {
             displayModels.removeAll { $0 == id }
         } else {
             // One size per task: showing a model replaces any other size of the same task.
-            let task = ModelCatalog.entry(id)?.task
-            displayModels.removeAll { ModelCatalog.entry($0)?.task == task }
+            let task = task(of: id)
+            displayModels.removeAll { self.task(of: $0) == task }
             displayModels.append(id)
         }
     }
@@ -84,10 +86,29 @@ final class AppModel {
         store.delete(id)
     }
 
+    /// Deletes every downloaded catalog model; imported custom models are kept.
     func deleteAllModels() {
-        displayModels = []
+        displayModels.removeAll { ModelCatalog.entry($0) != nil }
         store.deleteAll()
     }
+
+    /// Imports a Core AI model, converting PyTorch checkpoints (`.pt`/`.pth`) first.
+    func importModel(from url: URL) async throws {
+        guard ["pt", "pth"].contains(url.pathExtension.lowercased()) else { return try await custom.importModel(from: url) }
+        let zip = try await converter.convert(url)
+        defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
+        try await custom.importModel(from: zip)
+    }
+
+    func deleteCustom(_ id: String) {
+        displayModels.removeAll { $0 == id }
+        custom.delete(id)
+    }
+
+    /// Catalog and custom models share ids' namespace: custom ids start with `custom-`.
+    func task(of id: String) -> YOLOTask? { ModelCatalog.entry(id)?.task ?? custom.model(id)?.task }
+    func isAvailable(_ id: String) -> Bool { store.downloaded.contains(id) || custom.model(id) != nil }
+    func url(for id: String) -> URL { custom.model(id) != nil ? custom.url(for: id) : store.url(for: id) }
 
     func downloadMissing() {
         for id in missingModels { ModelCatalog.entry(id).map(store.download) }

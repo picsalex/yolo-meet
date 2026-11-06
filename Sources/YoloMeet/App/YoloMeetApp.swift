@@ -9,13 +9,17 @@ struct YoloMeetApp: App {
             ControlPanel()
                 .environment(model)
                 .frame(minWidth: 380, minHeight: 640)
+                .onDisappear { NSApp.terminate(nil) }
         }
         .defaultSize(width: 400, height: 820)
         .defaultPosition(.leading)
         .defaultLaunchBehavior(.presented)
 
         Window("YOLO-meet Stage", id: "stage") {
-            StageView(model: model).ignoresSafeArea()
+            StageView(model: model)
+                .ignoresSafeArea()
+                // The two windows are one app: closing either quits, so neither lingers on its own.
+                .onDisappear { NSApp.terminate(nil) }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1280, height: 720)

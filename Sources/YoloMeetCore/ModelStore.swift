@@ -2,9 +2,9 @@ import CoreAI
 import Foundation
 import Observation
 
-/// Ultralytics model generations offered in the catalog, newest first.
+/// Ultralytics model generations offered in the catalog, oldest first.
 public enum YOLOVersion: String, CaseIterable, Sendable {
-    case yolo26, yolo11, yolov8, yolov5
+    case yolov5, yolov8, yolo11, yolo26
 
     public var title: String {
         switch self {

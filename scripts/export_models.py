@@ -17,10 +17,10 @@ from ultralytics import YOLO
 # Task suffix -> input size. Names and tasks must match ModelCatalog in Sources/YoloMeetCore/ModelStore.swift.
 TASKS = {"": 640, "-seg": 640, "-pose": 640, "-obb": 640, "-cls": 224, "-sem": 640, "-depth": 640}
 VERSIONS = {
-    "yolo26": ["", "-seg", "-pose", "-obb", "-cls", "-sem", "-depth"],
-    "yolo11": ["", "-seg", "-pose", "-obb", "-cls"],
-    "yolov8": ["", "-seg", "-pose", "-obb", "-cls"],
     "yolov5": [""],  # anchor-free "u" detection models, e.g. yolov5nu
+    "yolov8": ["", "-seg", "-pose", "-obb", "-cls"],
+    "yolo11": ["", "-seg", "-pose", "-obb", "-cls"],
+    "yolo26": ["", "-seg", "-pose", "-obb", "-cls", "-sem", "-depth"],
 }
 
 

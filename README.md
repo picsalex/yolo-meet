@@ -28,8 +28,17 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
 pass at 60 fps). Models run at their own rate; effects animate toward the latest results, so motion stays smooth.
 
-Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py` and attached to the `models-v1` release. They are downloaded from the panel,
+Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py` and attached to the `models-v2` release. They are downloaded from the panel,
 and live in `~/Library/Application Support/YoloMeet/Models`.
+
+## Visual style
+
+Overlays follow each vendor's brand so the families stay distinct (`Sources/YoloMeet/Render/Theme.swift`):
+
+- **YOLO** — [Ultralytics brand](https://www.ultralytics.com/brand): the 20-color annotation palette, Arial labels, 3 px boxes, skeletons in Aqua Blue (left), Neon Pink (right) and Light Blue with Neon Yellow joints, depth in the Ultralytics gradient, captions in Archivo on Dark Blue.
+- **RF-DETR** — [Roboflow brand](https://roboflow.com/brand) and supervision's annotator defaults: supervision's palette, Geist Mono labels, 2 px boxes, Purple/Lavender skeletons with Cream joints.
+
+Archivo and Geist Mono are bundled from Google Fonts under the SIL Open Font License (`Support/Fonts`).
 
 ## Custom models
 
@@ -39,6 +48,14 @@ Models › Custom › Import Model… takes PyTorch weights (`.pt`/`.pth`) from 
 - **Core AI models**: the family is detected from the model's input/output names and the task from its metadata (Ultralytics) or outputs (RF-DETR); RF-DETR class names are read from the `.rfdetr.json` sidecar next to the asset when present. YOLO end-to-end (NMS) exports and Core ML files are refused with instructions.
 
 Imported models live in `~/Library/Application Support/YoloMeet/Custom` and can be renamed or deleted.
+
+## Inference settings
+
+The panel's Inference section applies to every model on stage:
+
+- **Image size** (160–1280): the frame's long side. YOLO models are exported with a variable input height and width, so each frame is letterboxed to its own aspect in multiples of 32, like Ultralytics' rectangular inference (a 16:9 camera at 640 runs at 640×384). Classify keeps its training size; RF-DETR and YOLO26 depth keep their fixed export size (variable-size depth falls back to the CPU). Each new size is compiled once by Core AI, so the slider applies on release.
+- **Confidence**: minimum score for boxes, masks and keypoints.
+- **IoU**: NMS overlap threshold for YOLO (RF-DETR has no NMS).
 
 ## Stats for nerds
 

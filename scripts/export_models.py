@@ -18,6 +18,7 @@ import json
 import shutil
 import subprocess
 import tempfile
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
 import torch
@@ -77,6 +78,26 @@ def rfdetr_stats(network: torch.nn.Module, resolution: int) -> dict[str, str]:
     return {"architecture": "Transformer", "params": str(params), "gflops": f"{counter.get_total_flops() / 1e9:.1f}"}
 
 
+@contextmanager
+def dynamic_input():
+    """Export YOLO with a variable input height and width (multiples of 32, 128-2048 px), so the app picks the image
+    size at run time and feeds frames letterboxed to their own aspect. Ultralytics' Core AI export has no `dynamic`."""
+    export = torch.export.export
+
+    def dynamic(model: torch.nn.Module, args: tuple, **kwargs):
+        for module in model.modules():
+            if hasattr(module, "dynamic"):
+                module.dynamic = True  # the head rebuilds its anchors for each input size
+        side = {2: 32 * torch.export.Dim("h", min=4, max=64), 3: 32 * torch.export.Dim("w", min=4, max=64)}
+        return export(model, args, dynamic_shapes=(side,), **kwargs)
+
+    torch.export.export = dynamic
+    try:
+        yield
+    finally:
+        torch.export.export = export
+
+
 def export_yolo(weights: str, name: str, imgsz: int | None, out: Path) -> None:
     from ultralytics import YOLO
 
@@ -84,7 +105,9 @@ def export_yolo(weights: str, name: str, imgsz: int | None, out: Path) -> None:
     imgsz = imgsz or model.overrides.get("imgsz", 640)  # a custom checkpoint keeps its training size
     imgsz = imgsz if isinstance(imgsz, int) else max(imgsz)
     # Raw head (no embedded NMS): the app decodes and runs NMS in Swift. FP16 runs on the Neural Engine.
-    asset = Path(model.export(format="coreai", quantize=16, imgsz=imgsz))
+    # Depth stays fixed: its variable-size graph falls back to the CPU (~60x slower).
+    with dynamic_input() if model.task != "depth" else nullcontext():
+        asset = Path(model.export(format="coreai", quantize=16, imgsz=imgsz))
     stamp(asset, {"family": "yolo", **yolo_stats(weights, imgsz)})
     archive(asset, out / f"{name}.aimodel.zip")
 

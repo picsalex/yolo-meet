@@ -56,7 +56,8 @@ final class StatsEffect: Effect {
                 info.parameters.map { String(format: "%.1fM params", Double($0) / 1_000_000) },
                 info.gflops.map { String(format: "%.1f GFLOPs", $0) },
             ].compactMap { $0 }.joined(separator: " · ")))
-            lines.append(row("  Input", "\(info.inputWidth)×\(info.inputHeight) \(info.precision) · Core AI"))
+            let input = "\(Int(output.inputSize.width))×\(Int(output.inputSize.height))\(info.isDynamic ? "" : " fixed")"
+            lines.append(row("  Input", "\(input) \(info.precision) · Core AI"))
             switch output.task {
             case .detect, .segment, .pose, .obb: lines.append(row("  Objects", "\(output.detections.count)"))
             case .classify: lines.append(row("  Top-1", output.topClasses.first.map { output.name(of: $0.index) } ?? "—"))

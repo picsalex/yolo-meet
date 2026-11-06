@@ -47,9 +47,9 @@ public struct CatalogEntry: Identifiable, Hashable, Sendable {
     }
 }
 
-/// Models listed in the app: Core AI exports from scripts/export_models.py, attached to the `models-v1` release.
+/// Models listed in the app: Core AI exports from scripts/export_models.py, attached to the `models-v2` release.
 public enum ModelCatalog {
-    static let release = "https://github.com/picsalex/yolo-meet/releases/download/models-v1"
+    static let release = "https://github.com/picsalex/yolo-meet/releases/download/models-v2"
     static let suffixes: [YOLOTask: String] = [
         .detect: "", .segment: "-seg", .pose: "-pose", .obb: "-obb", .classify: "-cls", .semantic: "-sem", .depth: "-depth",
     ]

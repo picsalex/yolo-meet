@@ -17,6 +17,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
         var busy = false
         var background: CIImage?
         var mirror = true
+        var settings = InferenceSettings()
         var errors: [String: String] = [:]
         var cameraRate = RateCounter()
         var cameraSize = CGSize.zero
@@ -35,21 +36,22 @@ nonisolated final class Pipeline: @unchecked Sendable {
 
     func setBackground(_ image: CIImage?) { lock.withLock { state.background = image } }
     func setMirror(_ mirror: Bool) { lock.withLock { state.mirror = mirror } }
+    func setSettings(_ settings: InferenceSettings) { lock.withLock { state.settings = settings } }
 
     /// Called on the camera queue for every captured frame.
     func handle(_ buffer: CVPixelBuffer) {
         let (background, mirror) = lock.withLock { (state.background, state.mirror) }
         let frame = segmentation.composite(buffer, over: background, mirror: mirror)
-        let models: [YOLOModel]? = lock.withLock {
+        let run: (models: [YOLOModel], settings: InferenceSettings)? = lock.withLock {
             state.frame = frame
             state.cameraRate.tick()
             state.cameraSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
             guard !state.busy, !state.models.isEmpty else { return nil }
             state.busy = true
-            return state.models
+            return (state.models, state.settings)
         }
-        guard let models else { return }
-        Task.detached(priority: .userInitiated) { await self.infer(frame, models) }
+        guard let run else { return }
+        Task.detached(priority: .userInitiated) { await self.infer(frame, run.models, run.settings) }
     }
 
     /// Makes `entries` the active models, in order, loading any that are not loaded yet.
@@ -88,9 +90,10 @@ nonisolated final class Pipeline: @unchecked Sendable {
         }
     }
 
-    private func infer(_ frame: CIImage, _ models: [YOLOModel]) async {
+    private func infer(_ frame: CIImage, _ models: [YOLOModel], _ settings: InferenceSettings) async {
         var outputs: [String: ModelOutput] = [:]
         for model in models {
+            (model.imgsz, model.confidence, model.iou) = (settings.imgsz, settings.confidence, settings.iou)
             do {
                 var output = try await model.predict(frame)
                 let tracker = lock.withLock {
@@ -110,6 +113,19 @@ nonisolated final class Pipeline: @unchecked Sendable {
             state.busy = false
         }
     }
+}
+
+/// Applied to every model on stage. Fixed-size exports ignore `imgsz`; RF-DETR has no NMS, so no `iou`.
+nonisolated struct InferenceSettings: Codable, Equatable {
+    var imgsz = 640
+    var confidence: Float = 0.25
+    var iou: Float = 0.45
+
+    static var saved: InferenceSettings {
+        UserDefaults.standard.data(forKey: "inference").flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? .init()
+    }
+
+    func save() { UserDefaults.standard.set(try? JSONEncoder().encode(self), forKey: "inference") }
 }
 
 /// Events per second over the last second.

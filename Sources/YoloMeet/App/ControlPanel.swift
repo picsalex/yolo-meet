@@ -58,6 +58,8 @@ struct ControlPanel: View {
 
             Section("Models") { ModelBrowser() }
 
+            Section("Inference") { InferenceSettingsView() }
+
             Section("Status") {
                 Toggle("Stats for nerds (on stage)", isOn: $model.showStats)
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
@@ -126,6 +128,47 @@ struct ControlPanel: View {
         .buttonStyle(.plain)
         .contextMenu {
             if let url { Button("Remove", role: .destructive) { model.backgrounds.remove(url) } }
+        }
+    }
+}
+
+/// Settings for every model on stage.
+private struct InferenceSettingsView: View {
+    @Environment(AppModel.self) private var model
+    /// The image size while its slider is dragged: each new size is compiled once, so it is applied on release.
+    @State private var imgsz: Double?
+
+    var body: some View {
+        @Bindable var model = model
+        let size = Binding { imgsz ?? Double(model.inference.imgsz) } set: { imgsz = $0 }
+        LabeledContent {
+            Slider(value: size, in: 160...1280, step: 32) {
+                EmptyView()
+            } onEditingChanged: { editing in
+                guard !editing, let imgsz else { return }
+                model.inference.imgsz = Int(imgsz)
+                self.imgsz = nil
+            }
+        } label: {
+            Text("Image size")
+            Text("\(Int(size.wrappedValue)) px")
+        }
+        LabeledContent {
+            Slider(value: $model.inference.confidence, in: 0.05...0.95, step: 0.05)
+        } label: {
+            Text("Confidence")
+            Text(model.inference.confidence.formatted(.number.precision(.fractionLength(2))))
+        }
+        LabeledContent {
+            Slider(value: $model.inference.iou, in: 0.1...0.95, step: 0.05)
+        } label: {
+            Text("IoU (NMS)")
+            Text(model.inference.iou.formatted(.number.precision(.fractionLength(2))))
+        }
+        Text("Image size sets the frame's long side; RF-DETR and YOLO26 depth keep their fixed export size. RF-DETR has no NMS, so IoU applies to YOLO only.")
+            .font(.caption).foregroundStyle(.secondary)
+        if model.inference != InferenceSettings() {
+            Button("Reset to Defaults") { model.inference = InferenceSettings() }
         }
     }
 }

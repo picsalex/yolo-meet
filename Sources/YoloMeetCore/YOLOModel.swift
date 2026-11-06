@@ -21,20 +21,27 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     let isDETR: Bool
     public var confidence: Float
     public var iou: Float = 0.45
+    /// Longest input side for variable-size exports. Fixed exports keep their own size; classify keeps its training size.
+    public var imgsz: Int
 
     private let function: InferenceFunction
     private let inputName: String
     let outputNames: [String]
-    private var input: NDArray
-    private let isHalf: Bool
-    let width: Int
-    let height: Int
-    private let staging: CVPixelBuffer
-    private var planes: [UInt8]
+    private let scalarType: NDArray.ScalarType
+    /// The export's input size, nil when its height and width are variable.
+    private let fixedSize: (width: Int, height: Int)?
+    /// The size the model was exported (or trained) at.
+    private let exportSize: Int
+    // Input buffers, reallocated when the input size changes.
+    private var input: NDArray?
+    private var staging: CVPixelBuffer?
+    private var planes: [UInt8] = []
+    private var floatPlane: [Float] = []
+    private(set) var width = 0
+    private(set) var height = 0
     private var scratch: [[Float]]
     /// Per-channel value of pixel 0 and pixel 255 after normalization (RGB).
     private let range: (low: [Float], high: [Float])
-    private var floatPlane: [Float]
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     /// Loads any Ultralytics or RF-DETR Core AI export; the family and task are inferred when metadata lacks them.
@@ -66,7 +73,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         else { throw YOLOModelError.invalid("not an Ultralytics or RF-DETR export (no task in its metadata)") }
         if !isDETR, [.detect, .segment, .pose, .obb].contains(task),
             case .ndArray(let head)? = descriptor.outputDescriptor(of: descriptor.outputNames[0]), head.shape.count == 3,
-            head.shape[2] < head.shape[1]
+            (0..<head.shape[1]).contains(head.shape[2])  // [1, 300, 6]; raw heads have more (or variable, -1) anchors
         {
             throw YOLOModelError.invalid("end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
         }
@@ -80,39 +87,34 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         range = mean.count == 3 && std.count == 3
             ? ((0..<3).map { -mean[$0] / std[$0] }, (0..<3).map { (1 - mean[$0]) / std[$0] })
             : ([0, 0, 0], [1, 1, 1])
+        fixedSize = shape.shape[2] > 0 && shape.shape[3] > 0 ? (shape.shape[3], shape.shape[2]) : nil
+        exportSize = fixedSize.map { max($0.width, $0.height) }
+            ?? Int(Self.parseNumbers(metadata["imgsz"] ?? "").max() ?? 640)
+        imgsz = exportSize
         info = ModelInfo(
             family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
             parameters: metadata["params"].flatMap(Int.init), gflops: metadata["gflops"].flatMap(Double.init),
-            inputWidth: shape.shape[3], inputHeight: shape.shape[2],
-            precision: shape.scalarType == .float16 ? "FP16" : "FP32", bytes: Self.size(of: url))
+            isDynamic: fixedSize == nil, precision: shape.scalarType == .float16 ? "FP16" : "FP32",
+            bytes: Self.size(of: url))
         self.function = function
         self.inputName = inputName
         self.outputNames = descriptor.outputNames
-        self.isHalf = shape.scalarType == .float16
-        self.input = NDArray(shape: shape.shape, scalarType: shape.scalarType)
-        (height, width) = (shape.shape[2], shape.shape[3])
-        var buffer: CVPixelBuffer?
-        CVPixelBufferCreate(
-            nil, width, height, kCVPixelFormatType_32BGRA,
-            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
-        guard let buffer else { throw YOLOModelError.invalid("cannot allocate input buffer") }
-        staging = buffer
-        planes = [UInt8](repeating: 0, count: width * height * 4)
+        self.scalarType = shape.scalarType
         scratch = Array(repeating: [], count: descriptor.outputNames.count)
-        floatPlane = [Float](repeating: 0, count: width * height)
     }
 
     /// Runs the model on a frame. Output geometry is in the frame's pixel space (top-left origin).
     public func predict(_ frame: CIImage) async throws -> ModelOutput {
         let start = CFAbsoluteTimeGetCurrent()
         let geometry = try prepareInput(frame)
-        var outputs = try await function.run(inputs: [inputName: input])
+        var outputs = try await function.run(inputs: [inputName: input!])
         var tensors: [Tensor] = []
         for (i, name) in outputNames.enumerated() {
             guard let array = outputs.remove(name)?.ndArray else { throw YOLOModelError.invalid("missing \(name)") }
             tensors.append(try floats(of: array, into: i))
         }
         var output = ModelOutput(modelID: id, task: task, names: names, info: info, frameSize: frame.extent.size)
+        output.inputSize = CGSize(width: width, height: height)
         decode(tensors, geometry: geometry, into: &output)
         output.latency = CFAbsoluteTimeGetCurrent() - start
         return output
@@ -125,6 +127,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     private func prepareInput(_ frame: CIImage) throws -> Geometry {
         let extent = frame.extent
         guard extent.width > 0, extent.height > 0 else { throw YOLOModelError.invalid("empty frame") }
+        try allocate(inputSize(for: extent))
+        guard input != nil, let staging else { throw YOLOModelError.invalid("cannot allocate input buffer") }
         let (w, h) = (CGFloat(width), CGFloat(height))
         let geometry: Geometry
         switch task {
@@ -153,7 +157,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         var source = vImage_Buffer(
             data: CVPixelBufferGetBaseAddress(staging), height: vImagePixelCount(height),
             width: vImagePixelCount(width), rowBytes: CVPixelBufferGetBytesPerRow(staging))
-        let (count, width, height, isHalf, range) = (width * height, width, height, isHalf, range)
+        let (count, width, height, isHalf, range) = (width * height, width, height, scalarType == .float16, range)
         let normalized = range.low != [0, 0, 0] || range.high != [1, 1, 1]
         try planes.withUnsafeMutableBytes { planes in
             func plane(_ i: Int) -> vImage_Buffer {
@@ -168,7 +172,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             func write<T: BitwiseCopyable>(
                 _ type: T.Type, _ convert: (inout vImage_Buffer, inout vImage_Buffer, Int) -> Void
             ) throws {
-                try Self.withPointer(type, to: &input) { pointer, channelStride, rowStride in
+                try Self.withPointer(type, to: &self.input!) { pointer, channelStride, rowStride in
                     for (c, var src) in rgb.enumerated() {
                         var dst = vImage_Buffer(
                             data: pointer + c * channelStride, height: vImagePixelCount(height),
@@ -199,6 +203,31 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             }
         }
         return geometry
+    }
+
+    /// Fixed exports keep their size. Variable ones take `imgsz` on the frame's long side and the frame's aspect, in
+    /// multiples of 32 (Ultralytics' rectangular inference: little padding, fewer pixels); classify stays square.
+    private func inputSize(for extent: CGRect) -> (width: Int, height: Int) {
+        if let fixedSize { return fixedSize }
+        guard task != .classify else { return (exportSize, exportSize) }
+        let side = CGFloat(min(max(imgsz, 128), 2048))
+        let gain = side / max(extent.width, extent.height)
+        func fit(_ length: CGFloat) -> Int { Int((length * gain / 32).rounded(.up)) * 32 }
+        return (fit(extent.width), fit(extent.height))
+    }
+
+    private func allocate(_ size: (width: Int, height: Int)) throws {
+        guard size != (width, height) else { return }
+        var buffer: CVPixelBuffer?
+        CVPixelBufferCreate(
+            nil, size.width, size.height, kCVPixelFormatType_32BGRA,
+            [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer)
+        guard let buffer else { throw YOLOModelError.invalid("cannot allocate input buffer") }
+        staging = buffer
+        input = NDArray(shape: [1, 3, size.height, size.width], scalarType: scalarType)
+        planes = [UInt8](repeating: 0, count: size.width * size.height * 4)
+        floatPlane = [Float](repeating: 0, count: size.width * size.height)
+        (width, height) = size
     }
 
     /// The input's mutable view is lifetime-bound, so it is reached through an `inout` array.

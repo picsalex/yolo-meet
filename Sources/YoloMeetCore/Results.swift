@@ -43,8 +43,8 @@ public nonisolated struct ModelInfo: Sendable {
     public let architecture: String?
     public let parameters: Int?
     public let gflops: Double?
-    public let inputWidth: Int
-    public let inputHeight: Int
+    /// Variable input height and width (set per frame from `imgsz`).
+    public let isDynamic: Bool
     public let precision: String
     /// Size of the `.aimodel` on disk.
     public let bytes: Int
@@ -58,6 +58,8 @@ public nonisolated struct ModelOutput: Sendable {
     public let info: ModelInfo
     /// Size of the frame the geometry refers to.
     public let frameSize: CGSize
+    /// Model input this result was computed at.
+    public var inputSize = CGSize.zero
     public var detections: [Detection] = []
     /// Full-frame overlay: instance masks (segment), class map (semantic) or colormap (depth).
     public var overlay: CGImage?

@@ -66,6 +66,19 @@ import Testing
         #expect(ModelCatalog.entry("rfdetr-xlarge") == nil)  // XL detection is not Apache-2.0
     }
 
+    /// Variable-size exports take `imgsz` on the frame's long side, at the frame's aspect; results stay in frame pixels.
+    @Test(.enabled(if: enabled), arguments: [320, 640, 960])
+    func imageSize(_ imgsz: Int) async throws {
+        let model = try await YOLOModel.load(from: Self.models!.appending(path: "yolo26n.aimodel"))
+        #expect(model.info.isDynamic)
+        model.imgsz = imgsz
+        let output = try await model.predict(Self.image!)
+        let width = Int((810 * Double(imgsz) / 1080 / 32).rounded(.up)) * 32  // bus.jpg is 810x1080
+        #expect(output.inputSize == CGSize(width: width, height: imgsz))
+        let bus = try #require(output.detections.first { output.name(of: $0.classIndex) == "bus" })
+        #expect(bus.box.minX < 60 && bus.box.maxX > 750 && abs(bus.box.minY - 230) < 40)
+    }
+
     /// Export metadata feeds the stats overlay.
     @Test(.enabled(if: enabled), arguments: ["yolo26n", "rfdetr-nano"])
     func info(_ id: String) async throws {

@@ -22,6 +22,12 @@ final class AppModel {
     var storyID = Story.all[0].id { didSet { stepIndex = 0 } }
     var stepIndex = 0 { didSet { applyScene() } }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
+    var inference = InferenceSettings.saved {
+        didSet {
+            inference.save()
+            pipeline.setSettings(inference)
+        }
+    }
     var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
     /// "Stats for nerds" overlay on the stage.
     var showStats = UserDefaults.standard.bool(forKey: "showStats") {
@@ -42,6 +48,7 @@ final class AppModel {
     }
 
     private func start() async {
+        pipeline.setSettings(inference)
         backgrounds.onChange = { [pipeline] url in
             pipeline.setBackground(url.flatMap { CIImage(contentsOf: $0, options: [.applyOrientationProperty: true]) })
         }

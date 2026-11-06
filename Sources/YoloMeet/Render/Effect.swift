@@ -98,10 +98,3 @@ extension CGRect {
     }
 }
 
-extension NSColor {
-    static func palette(_ index: Int) -> NSColor { NSColor(cgColor: Palette.color(for: index))! }
-}
-
-/// System font for SpriteKit labels.
-let labelFont = NSFont.systemFont(ofSize: 12, weight: .semibold).fontName
-let titleFont = NSFont.systemFont(ofSize: 12, weight: .bold).fontName

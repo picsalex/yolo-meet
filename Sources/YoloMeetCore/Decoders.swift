@@ -127,6 +127,7 @@ nonisolated extension YOLOModel {
     ) -> CGImage? {
         let (w, h) = (pw - 2 * crop.x, ph - 2 * crop.y)
         let regions = kept.map { $0.inputBox.applying(CGAffineTransform(scaleX: scale, y: scale)) }
+        let palette = isDETR ? Palette.roboflow : Palette.ultralytics  // each vendor's annotation colors
         var rgba = [UInt8](repeating: 0, count: max(w * h, 0) * 4)
         for y in 0..<max(h, 0) {
             for x in 0..<w {
@@ -136,7 +137,7 @@ nonisolated extension YOLOModel {
                 else { continue }
                 let probability = 1 / (1 + exp(-masks[i * ph * pw + py * pw + px]))
                 let alpha = min(max((probability - 0.35) / 0.3, 0), 1) * 0.55
-                let (r, g, b) = Palette.classes[kept[i].detection.classIndex % Palette.classes.count]
+                let (r, g, b) = palette[kept[i].detection.classIndex % palette.count]
                 let o = (y * w + x) * 4
                 rgba[o] = UInt8(Float(r) * alpha)
                 rgba[o + 1] = UInt8(Float(g) * alpha)
@@ -231,14 +232,14 @@ nonisolated extension YOLOModel {
         return makeImage(rgba: rgba, width: w, height: h)
     }
 
-    /// Turbo-colored depth, near is warm. The depth input is stretched, so the map covers the whole frame.
+    /// Depth in the Ultralytics gradient, near is Neon Pink. The depth input is stretched, so the map covers the frame.
     private func depthMap(_ depth: Tensor) -> CGImage? {
         let (mh, mw) = (depth.shape[depth.shape.count - 2], depth.shape[depth.shape.count - 1])
         let (low, high) = (vDSP.minimum(depth.values), vDSP.maximum(depth.values))
         guard high > low, low.isFinite, high.isFinite else { return nil }
         var rgba = [UInt8](repeating: 255, count: mw * mh * 4)
         for (i, value) in depth.values.enumerated() {
-            let (r, g, b) = Palette.turbo(1 - (value - low) / (high - low))
+            let (r, g, b) = Palette.ultralyticsGradient(1 - (value - low) / (high - low))
             rgba[i * 4] = r
             rgba[i * 4 + 1] = g
             rgba[i * 4 + 2] = b

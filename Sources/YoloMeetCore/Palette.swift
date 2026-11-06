@@ -1,12 +1,18 @@
 import CoreGraphics
 import Foundation
 
-/// Colors shared by decoders (overlay images) and effects (strokes, labels), as RGB bytes.
+/// Brand colors shared by decoders (overlay images) and effects (strokes, labels), as RGB bytes.
 public nonisolated enum Palette {
-    /// Ultralytics default class palette.
-    public static let classes: [(UInt8, UInt8, UInt8)] = [
+    /// Ultralytics annotation palette (https://www.ultralytics.com/brand).
+    public static let ultralytics: [(UInt8, UInt8, UInt8)] = [
         "042AFF", "0BDBEB", "F3F3F3", "00DFB7", "111F68", "FF6FDD", "FF444F", "CCED00", "00F344", "BD00FF",
         "00B4FF", "DD00BA", "00FFFF", "26C000", "01FFB3", "7D24FF", "7B0068", "FF1B6C", "FC6D2F", "A2FF0B",
+    ].map(rgb)
+
+    /// Roboflow's annotation palette: supervision's `ColorPalette.DEFAULT` (supervision 0.31).
+    public static let roboflow: [(UInt8, UInt8, UInt8)] = [
+        "A351FB", "FF4040", "FFA1A0", "FF7633", "FFB633", "D1D435", "4CFB12", "94CF1A", "40DE8A", "1B9640", "00D6C1",
+        "2E9CAA", "00C4FF", "364797", "6675FF", "0019EF", "863AFF", "530087", "CD3AFF", "FF97CA", "FF39C9",
     ].map(rgb)
 
     /// Cityscapes palette for the 19 semantic classes.
@@ -16,22 +22,17 @@ public nonisolated enum Palette {
         (255, 0, 0), (0, 0, 142), (0, 0, 70), (0, 60, 100), (0, 80, 100), (0, 0, 230), (119, 11, 32),
     ]
 
-    public static func color(for index: Int) -> CGColor {
-        let (r, g, b) = classes[abs(index) % classes.count]
-        return CGColor(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255, alpha: 1)
+    /// The Ultralytics gradient (Aqua Blue → Bright Blue → Neon Pink), `t` in 0...1.
+    static func ultralyticsGradient(_ t: Float) -> (UInt8, UInt8, UInt8) {
+        let stops: [(Float, Float, Float)] = [(0, 255, 255), (4, 42, 255), (255, 100, 218)]
+        let x = min(max(t, 0), 1) * Float(stops.count - 1)
+        let i = min(Int(x), stops.count - 2)
+        let f = x - Float(i)
+        let (a, b) = (stops[i], stops[i + 1])
+        return (UInt8(a.0 + (b.0 - a.0) * f), UInt8(a.1 + (b.1 - a.1) * f), UInt8(a.2 + (b.2 - a.2) * f))
     }
 
-    /// Turbo colormap (Google's polynomial approximation), `t` in 0...1.
-    static func turbo(_ t: Float) -> (UInt8, UInt8, UInt8) {
-        let x = min(max(t, 0), 1)
-        let r = 0.13572138 + x * (4.61539260 + x * (-42.66032258 + x * (132.13108234 + x * (-152.94239396 + x * 59.28637943))))
-        let g = 0.09140261 + x * (2.19418839 + x * (4.84296658 + x * (-14.18503333 + x * (4.27729857 + x * 2.82956604))))
-        let b = 0.10667330 + x * (12.64194608 + x * (-60.58204836 + x * (110.36276771 + x * (-89.90310912 + x * 27.34824973))))
-        func byte(_ v: Float) -> UInt8 { UInt8(min(max(v, 0), 1) * 255) }
-        return (byte(r), byte(g), byte(b))
-    }
-
-    private static func rgb(_ hex: String) -> (UInt8, UInt8, UInt8) {
+    public static func rgb(_ hex: String) -> (UInt8, UInt8, UInt8) {
         let v = UInt32(hex, radix: 16)!
         return (UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF))
     }

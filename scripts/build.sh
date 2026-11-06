@@ -14,6 +14,7 @@ cp Support/Info.plist "$APP/Contents/Info.plist"
 cp "$BIN" "$APP/Contents/MacOS/YOLO-meet"
 mkdir -p "$APP/Contents/Resources"
 cp scripts/export_models.py "$APP/Contents/Resources/"  # run by the in-app .pt converter
+cp -R Support/Fonts "$APP/Contents/Resources/"  # Archivo and Geist Mono, SIL OFL (licenses alongside)
 codesign --force --sign - "$APP"
 echo "Built $APP"
 

@@ -4,6 +4,8 @@ import SwiftUI
 struct YoloMeetApp: App {
     @State private var model = AppModel()
 
+    init() { Theme.registerFonts() }
+
     var body: some Scene {
         Window("YOLO-meet", id: "panel") {
             ControlPanel()

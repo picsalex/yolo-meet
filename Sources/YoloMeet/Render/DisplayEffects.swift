@@ -14,7 +14,7 @@ func displayEffects(for task: YOLOTask, model: String) -> [Effect] {
     }
 }
 
-/// Rounded boxes with a label chip, smoothed per track.
+/// Boxes with a label chip in the model vendor's style, smoothed per track.
 final class BoxesEffect: Effect {
     let model: String
     let filter: (Detection, ModelOutput) -> Bool
@@ -36,10 +36,11 @@ final class BoxesEffect: Effect {
         let output = frame.outputs[model]
         let detections = output?.detections.filter { d in d.trackID != nil && filter(d, output!) } ?? []
         let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(
                 to: frame.stage.rect(detection.box), text: label(detection, output!),
-                color: .palette(detection.classIndex), unit: frame.stage.unit, k: frame.smoothing)
+                color: theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
@@ -47,40 +48,43 @@ final class BoxesEffect: Effect {
 final class BoxNode: SKNode {
     private let shape = SKShapeNode()
     private let chip = SKShapeNode()
-    private let label = SKLabelNode(fontNamed: labelFont)
+    private let label = SKLabelNode()
     private var rect: CGRect?
 
     override init() {
         super.init()
         label.horizontalAlignmentMode = .left
         label.verticalAlignmentMode = .bottom
-        label.fontColor = .white
         chip.lineWidth = 0
         [shape, chip, label].forEach(addChild)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(to target: CGRect, text: String, color: NSColor, unit: CGFloat, k: CGFloat) {
+    /// Square, unfilled box with the label chip flush on its top-left edge, as both vendors' annotators draw them.
+    func update(to target: CGRect, text: String, color: NSColor, theme: Theme, unit: CGFloat, k: CGFloat) {
         let rect = rect?.approaching(target, k) ?? target
         self.rect = rect
-        let radius = min(8 * unit, rect.width / 2, rect.height / 2)
-        shape.path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let line = theme.lineWidth * unit
+        shape.path = CGPath(rect: rect, transform: nil)
         shape.strokeColor = color
-        shape.lineWidth = 3 * unit
-        shape.fillColor = color.withAlphaComponent(0.08)
+        shape.lineWidth = line
 
         let pad = 5 * unit
+        if label.fontName != theme.labelFont { label.fontName = theme.labelFont }
         label.text = text
         label.fontSize = 15 * unit
-        label.position = CGPoint(x: rect.minX + pad, y: rect.maxY + pad + 2 * unit)
-        let chipRect = label.frame.insetBy(dx: -pad, dy: -pad / 2)
-        chip.path = CGPath(roundedRect: chipRect, cornerWidth: pad, cornerHeight: pad, transform: nil)
+        label.fontColor = theme.textColor(on: color)
+        label.position = CGPoint(x: rect.minX - line / 2 + pad, y: rect.maxY + line / 2 + pad / 2)
+        let size = label.frame.size
+        chip.path = CGPath(
+            rect: CGRect(x: rect.minX - line / 2, y: rect.maxY + line / 2, width: size.width + 2 * pad, height: size.height + pad),
+            transform: nil)
         chip.fillColor = color
     }
 }
 
-/// Skeletons with keypoints, smoothed per track.
+/// Skeletons in the vendor's colors (left, right and center limbs; outlined joints), smoothed per track.
 final class PoseEffect: Effect {
     let model: String
     let minConfidence: Float = 0.5
@@ -89,51 +93,60 @@ final class PoseEffect: Effect {
     init(model: String) { self.model = model }
 
     override func update(_ frame: StageFrame) {
-        let detections = frame.outputs[model]?.detections.filter { $0.trackID != nil } ?? []
+        let output = frame.outputs[model]
+        let theme = Theme.of(output)
+        let detections = output?.detections.filter { $0.trackID != nil } ?? []
         let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
         for (node, detection) in zip(nodes, detections) {
             let points = detection.keypoints.map { $0.confidence >= minConfidence ? frame.stage.point($0.point) : nil }
-            node.update(to: points, color: .palette(detection.trackID!), unit: frame.stage.unit, k: frame.smoothing)
+            node.update(to: points, theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
 
 final class PoseNode: SKNode {
-    private let bones = SKShapeNode()
+    /// Limbs grouped by body side: COCO keypoints with odd indices are on the left, even (non-zero) on the right.
+    private let left = SKShapeNode()
+    private let right = SKShapeNode()
+    private let center = SKShapeNode()
     private let joints = SKShapeNode()
     /// Smoothed keypoints in stage space; nil while not visible.
     private(set) var points: [CGPoint?] = []
 
     override init() {
         super.init()
-        bones.lineCap = .round
-        joints.strokeColor = .white
-        [bones, joints].forEach(addChild)
+        for limb in [left, right, center] { limb.lineCap = .round }
+        [center, left, right, joints].forEach(addChild)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(to targets: [CGPoint?], color: NSColor, unit: CGFloat, k: CGFloat) {
+    func update(to targets: [CGPoint?], theme: Theme, unit: CGFloat, k: CGFloat) {
         if points.count != targets.count { points = targets }
         points = zip(points, targets).map { current, target in
             guard let target else { return nil }
             return current?.approaching(target, k) ?? target
         }
-        let bonePath = CGMutablePath()
+        let paths = (left: CGMutablePath(), right: CGMutablePath(), center: CGMutablePath())
         for (a, b) in poseSkeleton {
             guard let p = points[safe: a] ?? nil, let q = points[safe: b] ?? nil else { continue }
-            bonePath.move(to: p)
-            bonePath.addLine(to: q)
+            let side = a % 2 == b % 2 && a != 0 && b != 0 ? (a % 2 == 1 ? paths.left : paths.right) : paths.center
+            side.move(to: p)
+            side.addLine(to: q)
         }
-        bones.path = bonePath
-        bones.strokeColor = color
-        bones.lineWidth = 4 * unit
+        for (limb, path, color) in [(left, paths.left, theme.leftLimb), (right, paths.right, theme.rightLimb),
+                                    (center, paths.center, theme.centerLimb)] {
+            limb.path = path
+            limb.strokeColor = color
+            limb.lineWidth = 4 * unit
+        }
 
         let jointPath = CGMutablePath()
-        let r = 4 * unit
+        let r = 4.5 * unit
         for case let p? in points { jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
         joints.path = jointPath
-        joints.fillColor = color
+        joints.fillColor = theme.joint
+        joints.strokeColor = theme.jointOutline
         joints.lineWidth = 1.5 * unit
     }
 }
@@ -149,17 +162,18 @@ final class OrientedBoxesEffect: Effect {
         guard let output = frame.outputs[model] else { _ = tracks.sync([], at: frame.time); return }
         let detections = output.detections.filter { $0.trackID != nil }
         let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(
                 to: corners(of: detection).map(frame.stage.point), text: output.name(of: detection.classIndex),
-                color: .palette(detection.classIndex), unit: frame.stage.unit, k: frame.smoothing)
+                color: theme.color(detection.classIndex), font: theme.labelFont, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
 
 final class OrientedBoxNode: SKNode {
     private let shape = SKShapeNode()
-    private let label = SKLabelNode(fontNamed: labelFont)
+    private let label = SKLabelNode()
     private var points: [CGPoint] = []
 
     override init() {
@@ -170,15 +184,15 @@ final class OrientedBoxNode: SKNode {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(to targets: [CGPoint], text: String, color: NSColor, unit: CGFloat, k: CGFloat) {
+    func update(to targets: [CGPoint], text: String, color: NSColor, font: String, unit: CGFloat, k: CGFloat) {
         points = points.count == targets.count ? zip(points, targets).map { $0.approaching($1, k) } : targets
         let path = CGMutablePath()
         path.addLines(between: points)
         path.closeSubpath()
         shape.path = path
         shape.strokeColor = color
-        shape.fillColor = color.withAlphaComponent(0.12)
         shape.lineWidth = 2.5 * unit
+        if label.fontName != font { label.fontName = font }
         label.text = text
         label.fontSize = 13 * unit
         label.fontColor = color
@@ -223,7 +237,7 @@ final class ClassifyEffect: Effect {
         self.model = model
         super.init()
         for _ in 0..<5 {
-            let label = SKLabelNode(fontNamed: labelFont)
+            let label = SKLabelNode(fontNamed: Theme.ultralytics.labelFont)
             label.horizontalAlignmentMode = .left
             label.verticalAlignmentMode = .center
             label.fontColor = .white
@@ -237,6 +251,7 @@ final class ClassifyEffect: Effect {
 
     override func update(_ frame: StageFrame) {
         guard let output = frame.outputs[model] else { return }
+        let theme = Theme.of(output)
         let u = frame.stage.unit
         for (i, row) in rows.enumerated() {
             let top = output.topClasses[safe: i]
@@ -246,7 +261,8 @@ final class ClassifyEffect: Effect {
             row.bar.path = CGPath(
                 roundedRect: CGRect(x: 24 * u, y: y - 13 * u, width: max(width, 1), height: 26 * u),
                 cornerWidth: 6 * u, cornerHeight: 6 * u, transform: nil)
-            row.bar.fillColor = NSColor.palette(i).withAlphaComponent(0.85)
+            row.bar.fillColor = theme.color(i).withAlphaComponent(0.85)
+            row.label.fontColor = theme.textColor(on: theme.color(i))
             row.label.text = top.map { "\(output.name(of: $0.index).replacingOccurrences(of: "_", with: " ")) \(Int($0.confidence * 100))%" }
             row.label.fontSize = 16 * u
             row.label.position = CGPoint(x: 32 * u, y: y)

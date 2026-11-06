@@ -23,7 +23,7 @@ struct Story: Identifiable {
 /// Text anchored to the stage, re-evaluated every frame (counters, captions).
 final class TextEffect: Effect {
     enum Placement { case topLeft, lowerThird }
-    private let label = SKLabelNode(fontNamed: titleFont)
+    private let label = SKLabelNode(fontNamed: Theme.titleFont)
     private let background = SKShapeNode()
     private let placement: Placement
     private let text: (StageFrame) -> String
@@ -34,7 +34,7 @@ final class TextEffect: Effect {
         super.init()
         label.fontColor = .white
         label.verticalAlignmentMode = .center
-        background.fillColor = NSColor.black.withAlphaComponent(0.55)
+        background.fillColor = Theme.darkBlue.withAlphaComponent(0.85)
         background.lineWidth = 0
         node.addChild(background)
         node.addChild(label)
@@ -65,23 +65,26 @@ func titleCard(_ title: String) -> Effect {
     return effect
 }
 
-/// Glowing particle trails from both wrists of every tracked person.
+/// Glowing particle trails from both wrists of every tracked person, in the vendor's left/right limb colors.
 final class SparkleHandsEffect: Effect {
     let model: String
     private static let wrists = [9, 10]
     private lazy var tracks = TrackedNodes(in: node) { () -> SKNode in
         let hands = SKNode()
-        for (i, _) in Self.wrists.enumerated() { hands.addChild(Self.emitter(hue: i == 0 ? 0.55 : 0.85, target: self.node)) }
+        for _ in Self.wrists { hands.addChild(Self.emitter(target: self.node)) }
         return hands
     }
 
     init(model: String) { self.model = model }
 
     override func update(_ frame: StageFrame) {
-        let detections = frame.outputs[model]?.detections.filter { $0.trackID != nil } ?? []
+        let output = frame.outputs[model]
+        let theme = Theme.of(output)
+        let detections = output?.detections.filter { $0.trackID != nil } ?? []
         let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
         for (hands, detection) in zip(nodes, detections) {
             for (emitter, index) in zip(hands.children.compactMap { $0 as? SKEmitterNode }, Self.wrists) {
+                emitter.particleColor = index % 2 == 1 ? theme.leftLimb : theme.rightLimb  // COCO: odd = left
                 guard let wrist = detection.keypoints[safe: index], wrist.confidence > 0.5 else {
                     emitter.particleBirthRate = 0
                     continue
@@ -95,7 +98,7 @@ final class SparkleHandsEffect: Effect {
         }
     }
 
-    private static func emitter(hue: CGFloat, target: SKNode) -> SKEmitterNode {
+    private static func emitter(target: SKNode) -> SKEmitterNode {
         let emitter = SKEmitterNode()
         emitter.particleTexture = dotTexture
         emitter.particleBirthRate = 0
@@ -106,7 +109,6 @@ final class SparkleHandsEffect: Effect {
         emitter.particleAlphaSpeed = -1.2
         emitter.particleScaleSpeed = -0.4
         emitter.particleBlendMode = .add
-        emitter.particleColor = NSColor(hue: hue, saturation: 0.8, brightness: 1, alpha: 1)
         emitter.particleColorBlendFactor = 1
         emitter.targetNode = target  // particles stay where they were born: trails
         return emitter

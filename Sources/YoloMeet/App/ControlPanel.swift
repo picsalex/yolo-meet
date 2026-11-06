@@ -124,6 +124,7 @@ struct ControlPanel: View {
             .frame(width: 80, height: 45)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.accentColor : .secondary.opacity(0.3), lineWidth: selected ? 3 : 1))
+            .contentShape(RoundedRectangle(cornerRadius: 6))  // a plain button only hits its drawn pixels, e.g. "None"'s text
         }
         .buttonStyle(.plain)
         .contextMenu {

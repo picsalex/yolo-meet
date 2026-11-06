@@ -38,6 +38,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let renderer: SKRenderer
     private let scene = SKScene()
     private var effects: [Effect] = []
+    private lazy var stats = StatsEffect(model: model)
     private var sceneVersion = -1
     private var lastTime = CACurrentMediaTime()
     private var frameTimes: [TimeInterval] = []
@@ -51,6 +52,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         scene.scaleMode = .fill  // scene size tracks the drawable, so this is 1:1
         renderer.scene = scene
         super.init()
+        scene.addChild(stats.node)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -93,6 +95,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             outputs: model.pipeline.latestOutputs, stage: Stage(frameSize: frame.extent.size, viewSize: size),
             time: now, dt: dt)
         for effect in effects { effect.update(stageFrame) }
+        stats.node.isHidden = !model.showStats
+        if model.showStats { stats.update(stageFrame) }
 
         renderer.update(atTime: now)
         let overlay = MTLRenderPassDescriptor()

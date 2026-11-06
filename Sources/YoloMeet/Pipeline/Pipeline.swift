@@ -18,6 +18,9 @@ nonisolated final class Pipeline: @unchecked Sendable {
         var background: CIImage?
         var mirror = true
         var errors: [String: String] = [:]
+        var cameraRate = RateCounter()
+        var cameraSize = CGSize.zero
+        var modelRates: [String: RateCounter] = [:]
     }
 
     private let lock = NSLock()
@@ -27,6 +30,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
     var latestFrame: CIImage? { lock.withLock { state.frame } }
     var latestOutputs: [String: ModelOutput] { lock.withLock { state.outputs } }
     var errors: [String: String] { lock.withLock { state.errors } }
+    /// Captured frames per second and their size.
+    var camera: (fps: Double, size: CGSize) { lock.withLock { (state.cameraRate.rate, state.cameraSize) } }
 
     func setBackground(_ image: CIImage?) { lock.withLock { state.background = image } }
     func setMirror(_ mirror: Bool) { lock.withLock { state.mirror = mirror } }
@@ -37,6 +42,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
         let frame = segmentation.composite(buffer, over: background, mirror: mirror)
         let models: [YOLOModel]? = lock.withLock {
             state.frame = frame
+            state.cameraRate.tick()
+            state.cameraSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
             guard !state.busy, !state.models.isEmpty else { return nil }
             state.busy = true
             return state.models
@@ -53,6 +60,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
             state.models.removeAll { !ids.contains($0.id) }
             state.outputs = state.outputs.filter { ids.contains($0.key) }
             state.trackers = state.trackers.filter { ids.contains($0.key) }
+            state.modelRates = state.modelRates.filter { ids.contains($0.key) }
             let pending = entries.filter { entry in
                 !state.loading.contains(entry.id) && !state.models.contains { $0.id == entry.id }
             }
@@ -85,11 +93,13 @@ nonisolated final class Pipeline: @unchecked Sendable {
         for model in models {
             do {
                 var output = try await model.predict(frame)
-                lock.withLock {
+                let tracker = lock.withLock {
+                    output.fps = state.modelRates[model.id, default: RateCounter()].tick()
                     let tracker = state.trackers[model.id] ?? Tracker()
                     state.trackers[model.id] = tracker
                     return tracker
-                }.update(&output.detections)
+                }
+                tracker.update(&output.detections)
                 outputs[model.id] = output
             } catch {
                 lock.withLock { state.errors[model.id] = error.localizedDescription }
@@ -99,6 +109,24 @@ nonisolated final class Pipeline: @unchecked Sendable {
             state.outputs = outputs.filter { state.wanted.contains($0.key) }
             state.busy = false
         }
+    }
+}
+
+/// Events per second over the last second.
+nonisolated struct RateCounter {
+    private var times: [CFAbsoluteTime] = []
+
+    var rate: Double {
+        guard let first = times.first, let last = times.last, last > first else { return 0 }
+        return Double(times.count - 1) / (last - first)
+    }
+
+    @discardableResult
+    mutating func tick() -> Double {
+        let now = CFAbsoluteTimeGetCurrent()
+        times.append(now)
+        times.removeAll { now - $0 > 1 }
+        return rate
     }
 }
 

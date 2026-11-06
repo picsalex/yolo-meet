@@ -5,10 +5,12 @@ import CoreGraphics
 /// - detect `[1, 4+nc, A]`, segment `[1, 4+nc+32, A]` + protos `[1, 32, 160, 160]`, pose `[1, 4+1+K*3, A]`,
 ///   obb `[1, 4+nc+1, A]` — boxes are center xywh in model-input pixels, scores are already sigmoid-activated.
 /// - classify `[1, nc]` probabilities, semantic `[1, nc, H, W]` logits, depth `[1, 1, H, W]`.
+/// RF-DETR outputs are decoded by `decodeDETR`.
 nonisolated extension YOLOModel {
     static let maxDetections = 100
 
     func decode(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) {
+        guard !isDETR else { return decodeDETR(tensors, geometry: geometry, into: &output) }
         let head = tensors[0]
         switch task {
         case .detect:
@@ -100,7 +102,7 @@ nonisolated extension YOLOModel {
 
     // MARK: Overlays
 
-    /// Colors each pixel by the highest-scoring instance covering it, at prototype resolution, cropped to the frame.
+    /// YOLO instance masks: prototype masks weighted by each detection's coefficients, cropped to the frame.
     private func instanceMasks(_ kept: [Candidate], head: Tensor, protos: Tensor, geometry: Geometry) -> CGImage? {
         let (dims, ph, pw) = (protos.shape[1], protos.shape[2], protos.shape[3])
         let (anchors, coefficientRow) = (head.shape[2], head.shape[1] - dims)
@@ -113,17 +115,24 @@ nonisolated extension YOLOModel {
         }
         var masks = [Float](repeating: 0, count: n * ph * pw)
         vDSP_mmul(coefficients, 1, protos.values, 1, &masks, 1, vDSP_Length(n), vDSP_Length(ph * pw), vDSP_Length(dims))
-
         let scale = CGFloat(pw) / CGFloat(width)
         let (x0, y0) = (Int((geometry.padX * scale).rounded()), Int((geometry.padY * scale).rounded()))
-        let (w, h) = (pw - 2 * x0, ph - 2 * y0)
+        return paintInstances(kept, masks: masks, width: pw, height: ph, scale: scale, crop: (x0, y0))
+    }
+
+    /// Colors each pixel by the highest-scoring instance whose box covers it. `masks` holds one `width x height` logit
+    /// map per candidate in model-input space scaled by `scale`; `crop` trims the letterbox padding.
+    private func paintInstances(
+        _ kept: [Candidate], masks: [Float], width pw: Int, height ph: Int, scale: CGFloat, crop: (x: Int, y: Int)
+    ) -> CGImage? {
+        let (w, h) = (pw - 2 * crop.x, ph - 2 * crop.y)
         let regions = kept.map { $0.inputBox.applying(CGAffineTransform(scaleX: scale, y: scale)) }
         var rgba = [UInt8](repeating: 0, count: max(w * h, 0) * 4)
         for y in 0..<max(h, 0) {
             for x in 0..<w {
-                let (px, py) = (x + x0, y + y0)
+                let (px, py) = (x + crop.x, y + crop.y)
                 let point = CGPoint(x: CGFloat(px) + 0.5, y: CGFloat(py) + 0.5)
-                guard let i = (0..<n).first(where: { regions[$0].contains(point) && masks[$0 * ph * pw + py * pw + px] > -1 })
+                guard let i = kept.indices.first(where: { regions[$0].contains(point) && masks[$0 * ph * pw + py * pw + px] > -1 })
                 else { continue }
                 let probability = 1 / (1 + exp(-masks[i * ph * pw + py * pw + px]))
                 let alpha = min(max((probability - 0.35) / 0.3, 0), 1) * 0.55
@@ -136,6 +145,58 @@ nonisolated extension YOLOModel {
             }
         }
         return makeImage(rgba: rgba, width: w, height: h)
+    }
+
+    // MARK: RF-DETR
+
+    /// RF-DETR outputs, by name: `dets [1, Q, 4]` normalized center xywh, `labels [1, Q, C]` logits indexed by class id,
+    /// plus `masks [1, Q, h, w]` logits or `keypoints [1, Q, C*K, D]` (normalized x, y, visibility logit, ...).
+    /// Queries are already one per object, so there is no NMS.
+    private func decodeDETR(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) {
+        let named = Dictionary(uniqueKeysWithValues: zip(outputNames, tensors))
+        guard let boxes = named["dets"], let logits = named["labels"] else { return }
+        let (queries, classes) = (logits.shape[1], logits.shape[2])
+        let (w, h) = (Float(width), Float(height))
+        var kept: [Candidate] = []
+        for q in 0..<queries {
+            let row = logits.values[(q * classes)..<((q + 1) * classes)]
+            guard let best = row.indices.max(by: { row[$0] < row[$1] }) else { continue }
+            let score = 1 / (1 + exp(-row[best]))
+            guard score >= confidence else { continue }
+            let b = boxes.values[(q * 4)..<(q * 4 + 4)].map { $0 }
+            let (cx, cy, bw, bh) = (b[0] * w, b[1] * h, b[2] * w, b[3] * h)
+            kept.append(Candidate(
+                detection: Detection(
+                    box: geometry.rect(cx: cx, cy: cy, w: bw, h: bh), confidence: score, classIndex: best - q * classes),
+                anchor: q,
+                inputBox: CGRect(x: CGFloat(cx - bw / 2), y: CGFloat(cy - bh / 2), width: CGFloat(bw), height: CGFloat(bh))))
+        }
+        kept = Array(kept.sorted { $0.detection.confidence > $1.detection.confidence }.prefix(Self.maxDetections))
+
+        if let keypoints = named["keypoints"] {
+            let (slots, dims) = (keypoints.shape[2], keypoints.shape[3])
+            let perClass = slots / classes
+            for i in kept.indices {
+                let base = (kept[i].anchor * slots + kept[i].detection.classIndex * perClass) * dims
+                kept[i].detection.keypoints = (0..<perClass).map { k in
+                    let v = { keypoints.values[base + k * dims + $0] }
+                    return Keypoint(point: geometry.point(v(0) * w, v(1) * h), confidence: 1 / (1 + exp(-v(2))))
+                }
+            }
+        }
+        output.detections = kept.map(\.detection)
+
+        if let masks = named["masks"], !kept.isEmpty {
+            let (mh, mw) = (masks.shape[2], masks.shape[3])
+            let plane = mh * mw
+            var gathered = [Float](repeating: 0, count: kept.count * plane)
+            for (i, candidate) in kept.enumerated() {
+                gathered.replaceSubrange(
+                    (i * plane)..<((i + 1) * plane), with: masks.values[(candidate.anchor * plane)..<((candidate.anchor + 1) * plane)])
+            }
+            output.overlay = paintInstances(
+                kept, masks: gathered, width: mw, height: mh, scale: CGFloat(mw) / CGFloat(width), crop: (0, 0))
+        }
     }
 
     /// Per-pixel argmax colored with the Cityscapes palette, cropped to the frame.

@@ -16,7 +16,7 @@ import Testing
         return try await model.predict(Self.image!)
     }
 
-    @Test(.enabled(if: enabled), arguments: ["yolo26n", "yolo11n", "yolov8n", "yolov5nu"])
+    @Test(.enabled(if: enabled), arguments: ["yolo26n", "yolo11n", "yolov8n", "yolov5nu", "rfdetr-nano"])
     func detect(_ id: String) async throws {
         let output = try await predict(id)
         let names = output.detections.map { output.name(of: $0.classIndex) }
@@ -26,14 +26,14 @@ import Testing
         #expect(bus.box.minX < 60 && bus.box.maxX > 750 && abs(bus.box.minY - 230) < 40 && abs(bus.box.maxY - 750) < 60)
     }
 
-    @Test(.enabled(if: enabled), arguments: ["yolo26n-seg", "yolo11n-seg", "yolov8n-seg"])
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-seg", "yolo11n-seg", "yolov8n-seg", "rfdetr-seg-nano"])
     func segment(_ id: String) async throws {
         let output = try await predict(id)
         #expect(output.detections.count >= 4)
         #expect(output.overlay != nil)
     }
 
-    @Test(.enabled(if: enabled), arguments: ["yolo26n-pose", "yolo11n-pose", "yolov8n-pose"])
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-pose", "yolo11n-pose", "yolov8n-pose", "rfdetr-pose"])
     func pose(_ id: String) async throws {
         let output = try await predict(id)
         #expect(output.detections.count >= 3)
@@ -56,10 +56,24 @@ import Testing
 
     /// Asset names must match scripts/export_models.py.
     @Test @MainActor func catalog() {
-        #expect(ModelCatalog.entries.count == 35 + 25 + 25 + 5)
+        #expect(ModelCatalog.entries.count == 35 + 25 + 25 + 5 + 11)
         #expect(Set(ModelCatalog.entries.map(\.id)).count == ModelCatalog.entries.count)
-        for id in ["yolo26x-depth", "yolo11m-obb", "yolov8s-cls", "yolov5lu"] { #expect(ModelCatalog.entry(id) != nil) }
+        for id in ["yolo26x-depth", "yolo11m-obb", "yolov8s-cls", "yolov5lu", "rfdetr-large", "rfdetr-seg-2xlarge"] {
+            #expect(ModelCatalog.entry(id) != nil)
+        }
         #expect(ModelCatalog.entry("yolov5nu")?.title == "YOLOv5n Detect")
+        #expect(ModelCatalog.entry("rfdetr-pose")?.title == "RF-DETR-XL Pose")
+        #expect(ModelCatalog.entry("rfdetr-xlarge") == nil)  // XL detection is not Apache-2.0
+    }
+
+    /// Export metadata feeds the stats overlay.
+    @Test(.enabled(if: enabled), arguments: ["yolo26n", "rfdetr-nano"])
+    func info(_ id: String) async throws {
+        let info = try await predict(id).info
+        #expect(info.parameters ?? 0 > 1_000_000)
+        #expect(info.gflops ?? 0 > 1)
+        #expect(info.architecture == (id.hasPrefix("rfdetr") ? "Transformer" : "CNN"))
+        #expect(info.bytes > 1_000_000)
     }
 
     @Test func parseNames() {

@@ -36,11 +36,26 @@ public nonisolated struct Keypoint: Sendable {
     public var confidence: Float
 }
 
+/// Static facts about a loaded model, for display.
+public nonisolated struct ModelInfo: Sendable {
+    public let family: String
+    /// "CNN" or "Transformer", from the export metadata.
+    public let architecture: String?
+    public let parameters: Int?
+    public let gflops: Double?
+    public let inputWidth: Int
+    public let inputHeight: Int
+    public let precision: String
+    /// Size of the `.aimodel` on disk.
+    public let bytes: Int
+}
+
 /// Everything one model produced for one frame.
 public nonisolated struct ModelOutput: Sendable {
     public let modelID: String
     public let task: YOLOTask
     public let names: [String]
+    public let info: ModelInfo
     /// Size of the frame the geometry refers to.
     public let frameSize: CGSize
     public var detections: [Detection] = []
@@ -50,6 +65,8 @@ public nonisolated struct ModelOutput: Sendable {
     public var topClasses: [(index: Int, confidence: Float)] = []
     /// Model run time in seconds, preprocessing and decoding included.
     public var latency: Double = 0
+    /// Results per second, measured by the pipeline.
+    public var fps: Double = 0
 
     public func name(of classIndex: Int) -> String {
         names.indices.contains(classIndex) ? names[classIndex] : "\(classIndex)"

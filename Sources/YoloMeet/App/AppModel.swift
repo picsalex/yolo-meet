@@ -21,6 +21,10 @@ final class AppModel {
     var stepIndex = 0 { didSet { applyScene() } }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
     var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
+    /// "Stats for nerds" overlay on the stage.
+    var showStats = UserDefaults.standard.bool(forKey: "showStats") {
+        didSet { UserDefaults.standard.set(showStats, forKey: "showStats") }
+    }
 
     /// Bumped whenever the effects on stage must be rebuilt.
     private(set) var sceneVersion = 0

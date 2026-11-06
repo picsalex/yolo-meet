@@ -69,6 +69,7 @@ struct ControlPanel: View {
             }
 
             Section("Status") {
+                Toggle("Stats for nerds (on stage)", isOn: $model.showStats)
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                     LabeledContent("Stage", value: "\(model.renderFPS) fps")
                     ForEach(model.pipeline.latestOutputs.values.sorted { $0.modelID < $1.modelID }, id: \.modelID) {
@@ -139,17 +140,17 @@ struct ControlPanel: View {
     }
 }
 
-/// One version at a time as a compact grid: tasks are rows, sizes are columns.
+/// One family at a time as a compact grid: tasks are rows, sizes are columns.
 private struct ModelGrid: View {
     @Environment(AppModel.self) private var model
-    @AppStorage("gridVersion") private var version = YOLOVersion.yolo26
+    @AppStorage("gridFamily") private var family = ModelFamily.yolo26
 
     var body: some View {
-        Picker("Version", selection: $version) {
-            ForEach(YOLOVersion.allCases, id: \.self) { version in
-                // A dot marks versions with a model on stage.
-                let onStage = model.displayModels.contains { ModelCatalog.entry($0)?.version == version }
-                Text(onStage ? "\(version.title) •" : version.title)
+        Picker("Family", selection: $family) {
+            ForEach(ModelFamily.allCases, id: \.self) { family in
+                // A dot marks families with a model on stage.
+                let onStage = model.displayModels.contains { ModelCatalog.entry($0)?.family == family }
+                Text(onStage ? "\(family.title) •" : family.title)
             }
         }
         .pickerStyle(.segmented)
@@ -157,18 +158,33 @@ private struct ModelGrid: View {
         Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
             GridRow {
                 Text("")
-                ForEach(ModelCatalog.sizes, id: \.self) {
+                ForEach(family.sizes, id: \.self) {
                     Text($0).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 40)
                 }
             }
-            ForEach(version.tasks, id: \.self) { task in
-                GridRow {
-                    Text(task.title)
-                    ForEach(ModelCatalog.entries.filter { $0.version == version && $0.task == task }, content: ModelCell.init)
+            ForEach(family.tasks, id: \.self) { ModelGridRow(family: family, task: $0) }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// One task's sizes; an empty slot where the family has no checkpoint for that size.
+private struct ModelGridRow: View {
+    let family: ModelFamily
+    let task: YOLOTask
+
+    var body: some View {
+        let entries = ModelCatalog.entries.filter { $0.family == family && $0.task == task }
+        GridRow {
+            Text(task.title)
+            ForEach(family.sizes, id: \.self) { size in
+                if let entry = entries.first(where: { $0.size == size }) {
+                    ModelCell(entry: entry)
+                } else {
+                    Color.clear.frame(width: 40, height: 26)
                 }
             }
         }
-        .padding(.vertical, 4)
     }
 }
 

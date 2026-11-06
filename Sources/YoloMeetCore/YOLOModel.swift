@@ -10,18 +10,21 @@ public nonisolated enum YOLOModelError: LocalizedError {
     }
 }
 
-/// An Ultralytics Core AI (`.aimodel`) model: GPU letterboxing, Core AI inference and task decoding.
-/// Not reentrant: callers run one `predict` at a time per instance.
+/// A Core AI (`.aimodel`) vision model — Ultralytics YOLO or RF-DETR: GPU resizing, Core AI inference and task
+/// decoding. Not reentrant: callers run one `predict` at a time per instance.
 public nonisolated final class YOLOModel: @unchecked Sendable {
     public let id: String
     public let task: YOLOTask
     public let names: [String]
-    public var confidence: Float = 0.25
+    public let info: ModelInfo
+    /// RF-DETR: stretched, ImageNet-normalized input and query-based (NMS-free) outputs.
+    let isDETR: Bool
+    public var confidence: Float
     public var iou: Float = 0.45
 
     private let function: InferenceFunction
     private let inputName: String
-    private let outputNames: [String]
+    let outputNames: [String]
     private var input: NDArray
     private let isHalf: Bool
     let width: Int
@@ -29,6 +32,9 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     private let staging: CVPixelBuffer
     private var planes: [UInt8]
     private var scratch: [[Float]]
+    /// Per-channel value of pixel 0 and pixel 255 after normalization (RGB).
+    private let range: (low: [Float], high: [Float])
+    private var floatPlane: [Float]
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     public static func load(from url: URL) async throws -> YOLOModel {
@@ -45,19 +51,29 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             model = try await AIModel(contentsOf: url)
         }
         guard let function = try model.loadFunction(named: "main") else { throw YOLOModelError.invalid("no 'main'") }
-        return try YOLOModel(
-            id: url.deletingPathExtension().lastPathComponent, task: task,
-            names: parseNames(metadata["names"] ?? ""), function: function)
+        return try YOLOModel(url: url, task: task, metadata: metadata, function: function)
     }
 
-    private init(id: String, task: YOLOTask, names: [String], function: InferenceFunction) throws {
+    private init(url: URL, task: YOLOTask, metadata: [String: String], function: InferenceFunction) throws {
         let descriptor = function.descriptor
         guard let inputName = descriptor.inputNames.first,
             case .ndArray(let shape)? = descriptor.inputDescriptor(of: inputName), shape.shape.count == 4
         else { throw YOLOModelError.invalid("expected one BCHW input") }
-        self.id = id
+        self.id = url.deletingPathExtension().lastPathComponent
         self.task = task
-        self.names = names
+        self.names = Self.parseNames(metadata["names"] ?? "")
+        self.isDETR = metadata["family"] == "rfdetr"
+        self.confidence = isDETR ? 0.5 : 0.25
+        let mean = Self.parseNumbers(metadata["mean"] ?? "")
+        let std = Self.parseNumbers(metadata["std"] ?? "")
+        range = mean.count == 3 && std.count == 3
+            ? ((0..<3).map { -mean[$0] / std[$0] }, (0..<3).map { (1 - mean[$0]) / std[$0] })
+            : ([0, 0, 0], [1, 1, 1])
+        info = ModelInfo(
+            family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
+            parameters: metadata["params"].flatMap(Int.init), gflops: metadata["gflops"].flatMap(Double.init),
+            inputWidth: shape.shape[3], inputHeight: shape.shape[2],
+            precision: shape.scalarType == .float16 ? "FP16" : "FP32", bytes: Self.size(of: url))
         self.function = function
         self.inputName = inputName
         self.outputNames = descriptor.outputNames
@@ -72,6 +88,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         staging = buffer
         planes = [UInt8](repeating: 0, count: width * height * 4)
         scratch = Array(repeating: [], count: descriptor.outputNames.count)
+        floatPlane = [Float](repeating: 0, count: width * height)
     }
 
     /// Runs the model on a frame. Output geometry is in the frame's pixel space (top-left origin).
@@ -84,7 +101,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             guard let array = outputs.remove(name)?.ndArray else { throw YOLOModelError.invalid("missing \(name)") }
             tensors.append(try floats(of: array, into: i))
         }
-        var output = ModelOutput(modelID: id, task: task, names: names, frameSize: frame.extent.size)
+        var output = ModelOutput(modelID: id, task: task, names: names, info: info, frameSize: frame.extent.size)
         decode(tensors, geometry: geometry, into: &output)
         output.latency = CFAbsoluteTimeGetCurrent() - start
         return output
@@ -92,19 +109,19 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
 
     // MARK: Preprocessing
 
-    /// Renders the frame into the model input on the GPU (letterbox, center-crop or stretch, per task) and converts
-    /// it to planar RGB 0-1.
+    /// Renders the frame into the model input on the GPU (letterbox, center-crop or stretch) and converts it to planar
+    /// RGB, scaled to 0-1 (YOLO) or ImageNet-normalized (RF-DETR).
     private func prepareInput(_ frame: CIImage) throws -> Geometry {
         let extent = frame.extent
         guard extent.width > 0, extent.height > 0 else { throw YOLOModelError.invalid("empty frame") }
         let (w, h) = (CGFloat(width), CGFloat(height))
         let geometry: Geometry
         switch task {
+        case _ where isDETR, .depth:
+            geometry = Geometry(gainX: w / extent.width, gainY: h / extent.height, padX: 0, padY: 0)
         case .classify:
             let g = max(w / extent.width, h / extent.height)
             geometry = Geometry(gainX: g, gainY: g, padX: (w - extent.width * g) / 2, padY: (h - extent.height * g) / 2)
-        case .depth:
-            geometry = Geometry(gainX: w / extent.width, gainY: h / extent.height, padX: 0, padY: 0)
         default:
             let g = min(w / extent.width, h / extent.height)
             geometry = Geometry(gainX: g, gainY: g, padX: (w - extent.width * g) / 2, padY: (h - extent.height * g) / 2)
@@ -125,7 +142,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         var source = vImage_Buffer(
             data: CVPixelBufferGetBaseAddress(staging), height: vImagePixelCount(height),
             width: vImagePixelCount(width), rowBytes: CVPixelBufferGetBytesPerRow(staging))
-        let (count, width, height, isHalf) = (width * height, width, height, isHalf)
+        let (count, width, height, isHalf, range) = (width * height, width, height, isHalf, range)
+        let normalized = range.low != [0, 0, 0] || range.high != [1, 1, 1]
         try planes.withUnsafeMutableBytes { planes in
             func plane(_ i: Int) -> vImage_Buffer {
                 vImage_Buffer(
@@ -136,22 +154,37 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             var (blue, green, red, alpha) = (plane(0), plane(1), plane(2), plane(3))
             vImageConvert_ARGB8888toPlanar8(&source, &blue, &green, &red, &alpha, vImage_Flags(kvImageNoFlags))
             let rgb = [red, green, blue]
-            func write<T: BitwiseCopyable>(_ type: T.Type, _ convert: (inout vImage_Buffer, inout vImage_Buffer) -> Void)
-                throws
-            {
+            func write<T: BitwiseCopyable>(
+                _ type: T.Type, _ convert: (inout vImage_Buffer, inout vImage_Buffer, Int) -> Void
+            ) throws {
                 try Self.withPointer(type, to: &input) { pointer, channelStride, rowStride in
                     for (c, var src) in rgb.enumerated() {
                         var dst = vImage_Buffer(
                             data: pointer + c * channelStride, height: vImagePixelCount(height),
                             width: vImagePixelCount(width), rowBytes: rowStride * MemoryLayout<T>.stride)
-                        convert(&src, &dst)
+                        convert(&src, &dst, c)
                     }
                 }
             }
-            if isHalf {
-                try write(Float16.self) { vImageConvert_Planar8toPlanar16F(&$0, &$1, vImage_Flags(kvImageNoFlags)) }
-            } else {
-                try write(Float.self) { vImageConvert_Planar8toPlanarF(&$0, &$1, 1, 0, vImage_Flags(kvImageNoFlags)) }
+            let flags = vImage_Flags(kvImageNoFlags)
+            switch (isHalf, normalized) {
+            case (true, false):
+                try write(Float16.self) { src, dst, _ in vImageConvert_Planar8toPlanar16F(&src, &dst, flags) }
+            case (true, true):
+                // Normalize in Float32, then narrow to the half-precision input.
+                try floatPlane.withUnsafeMutableBytes { floats in
+                    var float = vImage_Buffer(
+                        data: floats.baseAddress, height: vImagePixelCount(height), width: vImagePixelCount(width),
+                        rowBytes: width * 4)
+                    try write(Float16.self) { src, dst, c in
+                        vImageConvert_Planar8toPlanarF(&src, &float, range.high[c], range.low[c], flags)
+                        vImageConvert_PlanarFtoPlanar16F(&float, &dst, flags)
+                    }
+                }
+            case (false, _):
+                try write(Float.self) { src, dst, c in
+                    vImageConvert_Planar8toPlanarF(&src, &dst, range.high[c], range.low[c], flags)
+                }
             }
         }
         return geometry
@@ -204,6 +237,18 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         let data = try Data(contentsOf: url.appendingPathComponent("metadata.json"))
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         return json?["creatorDefinedMetadata"] as? [String: String] ?? [:]
+    }
+
+    static func parseNumbers(_ string: String) -> [Float] {
+        string.matches(of: /-?\d+(?:\.\d+)?(?:[eE]-?\d+)?/).compactMap { Float($0.output) }
+    }
+
+    /// Total size of an asset directory in bytes.
+    static func size(of url: URL) -> Int {
+        let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey])
+        return (files?.allObjects as? [URL] ?? []).reduce(0) { total, file in
+            total + ((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
     }
 
     /// Parses Ultralytics' Python-dict names string, e.g. `{0: 'person', 1: "people's"}`.

@@ -12,6 +12,8 @@ Requires macOS 27+ on Apple silicon and Xcode 27.
 ./scripts/build.sh --dmg    # + build/YOLO-meet.dmg
 ```
 
+The app and disk icon (`Support/AppIcon.icns`) is drawn by `swift scripts/make_icon.swift`.
+
 Recipients of an ad-hoc signed app allow it once in System Settings › Privacy & Security › Open Anyway.
 
 ## Test

@@ -16,40 +16,50 @@ import Testing
         return try await model.predict(Self.image!)
     }
 
-    @Test(.enabled(if: enabled)) func detect() async throws {
-        let output = try await predict("yolo26n")
+    @Test(.enabled(if: enabled), arguments: ["yolo26n", "yolo11n", "yolov8n", "yolov5nu"])
+    func detect(_ id: String) async throws {
+        let output = try await predict(id)
         let names = output.detections.map { output.name(of: $0.classIndex) }
         #expect(names.filter { $0 == "person" }.count >= 3)
-        #expect(names.contains("bus"))
-        let extent = Self.image!.extent
-        for detection in output.detections {
-            #expect(CGRect(origin: .zero, size: extent.size).insetBy(dx: -20, dy: -20).contains(detection.box))
-        }
+        // bus.jpg is 810x1080 with the bus spanning the width around y 230...750.
+        let bus = try #require(output.detections.first { output.name(of: $0.classIndex) == "bus" })
+        #expect(bus.box.minX < 60 && bus.box.maxX > 750 && abs(bus.box.minY - 230) < 40 && abs(bus.box.maxY - 750) < 60)
     }
 
-    @Test(.enabled(if: enabled)) func segment() async throws {
-        let output = try await predict("yolo26n-seg")
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-seg", "yolo11n-seg", "yolov8n-seg"])
+    func segment(_ id: String) async throws {
+        let output = try await predict(id)
         #expect(output.detections.count >= 4)
         #expect(output.overlay != nil)
     }
 
-    @Test(.enabled(if: enabled)) func pose() async throws {
-        let output = try await predict("yolo26n-pose")
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-pose", "yolo11n-pose", "yolov8n-pose"])
+    func pose(_ id: String) async throws {
+        let output = try await predict(id)
         #expect(output.detections.count >= 3)
         #expect(output.detections.allSatisfy { $0.keypoints.count == 17 })
     }
 
-    @Test(.enabled(if: enabled)) func classify() async throws {
-        let output = try await predict("yolo26n-cls")
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-cls", "yolo11n-cls", "yolov8n-cls"])
+    func classify(_ id: String) async throws {
+        let output = try await predict(id)
         #expect(output.topClasses.count == 5)
         #expect(output.topClasses[0].confidence > 0.1)
     }
 
-    @Test(.enabled(if: enabled), arguments: ["yolo26n-obb", "yolo26n-sem", "yolo26n-depth"])
+    @Test(.enabled(if: enabled), arguments: ["yolo26n-obb", "yolo11n-obb", "yolov8n-obb", "yolo26n-sem", "yolo26n-depth"])
     func runs(_ id: String) async throws {
         let output = try await predict(id)
         #expect(output.latency > 0)
-        if id != "yolo26n-obb" { #expect(output.overlay != nil) }
+        if !id.hasSuffix("-obb") { #expect(output.overlay != nil) }
+    }
+
+    /// Asset names must match scripts/export_models.py.
+    @Test @MainActor func catalog() {
+        #expect(ModelCatalog.entries.count == 35 + 25 + 25 + 5)
+        #expect(Set(ModelCatalog.entries.map(\.id)).count == ModelCatalog.entries.count)
+        for id in ["yolo26x-depth", "yolo11m-obb", "yolov8s-cls", "yolov5lu"] { #expect(ModelCatalog.entry(id) != nil) }
+        #expect(ModelCatalog.entry("yolov5nu")?.title == "YOLOv5n Detect")
     }
 
     @Test func parseNames() {

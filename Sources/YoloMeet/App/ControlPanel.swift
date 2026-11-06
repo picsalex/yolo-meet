@@ -139,20 +139,32 @@ struct ControlPanel: View {
     }
 }
 
-/// Every catalog model as one compact grid: tasks are rows, sizes are columns.
+/// One version at a time as a compact grid: tasks are rows, sizes are columns.
 private struct ModelGrid: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage("gridVersion") private var version = YOLOVersion.yolo26
+
     var body: some View {
+        Picker("Version", selection: $version) {
+            ForEach(YOLOVersion.allCases, id: \.self) { version in
+                // A dot marks versions with a model on stage.
+                let onStage = model.displayModels.contains { ModelCatalog.entry($0)?.version == version }
+                Text(onStage ? "\(version.title) •" : version.title)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
         Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
             GridRow {
                 Text("")
-                ForEach(["n", "s", "m", "l", "x"], id: \.self) {
+                ForEach(ModelCatalog.sizes, id: \.self) {
                     Text($0).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 40)
                 }
             }
-            ForEach(YOLOTask.allCases, id: \.self) { task in
+            ForEach(version.tasks, id: \.self) { task in
                 GridRow {
                     Text(task.title)
-                    ForEach(ModelCatalog.entries.filter { $0.task == task }, content: ModelCell.init)
+                    ForEach(ModelCatalog.entries.filter { $0.version == version && $0.task == task }, content: ModelCell.init)
                 }
             }
         }

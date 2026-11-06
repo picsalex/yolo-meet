@@ -2,27 +2,55 @@ import CoreAI
 import Foundation
 import Observation
 
-/// A downloadable model. `id` is the asset name (`yolo26n-seg`), which is also its folder name on disk.
+/// Ultralytics model generations offered in the catalog, newest first.
+public enum YOLOVersion: String, CaseIterable, Sendable {
+    case yolo26, yolo11, yolov8, yolov5
+
+    public var title: String {
+        switch self {
+        case .yolo26: "YOLO26"
+        case .yolo11: "YOLO11"
+        case .yolov8: "YOLOv8"
+        case .yolov5: "YOLOv5"
+        }
+    }
+
+    /// Tasks with official weights. YOLOv5 ships anchor-free detection only (`yolov5nu`).
+    public var tasks: [YOLOTask] {
+        switch self {
+        case .yolo26: YOLOTask.allCases
+        case .yolo11, .yolov8: [.detect, .segment, .pose, .obb, .classify]
+        case .yolov5: [.detect]
+        }
+    }
+}
+
+/// A downloadable model. `id` is the asset name (`yolo26n-seg`, `yolov5su`), which is also its folder name on disk.
 public struct CatalogEntry: Identifiable, Hashable, Sendable {
     public let id: String
+    public let version: YOLOVersion
     public let task: YOLOTask
     public let size: String
     public let url: URL
 
-    public var title: String { "YOLO26\(size) \(task.title)" }
+    public var title: String { "\(version.title)\(size) \(task.title)" }
 }
 
 /// Models listed in the app: Core AI exports from scripts/export_models.py, attached to the `models-v1` release.
 public enum ModelCatalog {
     static let release = "https://github.com/picsalex/yolo-meet/releases/download/models-v1"
+    public static let sizes = ["n", "s", "m", "l", "x"]
     static let suffixes: [YOLOTask: String] = [
         .detect: "", .segment: "-seg", .pose: "-pose", .obb: "-obb", .classify: "-cls", .semantic: "-sem", .depth: "-depth",
     ]
 
-    public static let entries: [CatalogEntry] = YOLOTask.allCases.flatMap { task in
-        ["n", "s", "m", "l", "x"].map { size in
-            let id = "yolo26\(size)\(suffixes[task]!)"
-            return CatalogEntry(id: id, task: task, size: size, url: URL(string: "\(release)/\(id).aimodel.zip")!)
+    public static let entries: [CatalogEntry] = YOLOVersion.allCases.flatMap { version in
+        version.tasks.flatMap { task in
+            sizes.map { size in
+                let id = "\(version.rawValue)\(size)\(version == .yolov5 ? "u" : "")\(suffixes[task]!)"
+                return CatalogEntry(
+                    id: id, version: version, task: task, size: size, url: URL(string: "\(release)/\(id).aimodel.zip")!)
+            }
         }
     }
 

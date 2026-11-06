@@ -28,7 +28,7 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
 pass at 60 fps). Models run at their own rate; effects animate toward the latest results, so motion stays smooth.
 
-Models come from `ModelCatalog` (Core AI exports made by `scripts/export_models.py`, attached to the `models-v1` release), are downloaded from the panel,
+Models come from `ModelCatalog`: YOLO26 (all 7 tasks), YOLO11 and YOLOv8 (detect, segment, pose, OBB, classify) and YOLOv5u (detect), sizes n–x, exported to Core AI by `scripts/export_models.py` and attached to the `models-v1` release. They are downloaded from the panel,
 and live in `~/Library/Application Support/YoloMeet/Models`.
 
 ## Extending

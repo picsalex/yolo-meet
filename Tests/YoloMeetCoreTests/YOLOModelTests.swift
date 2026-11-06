@@ -56,6 +56,20 @@ import Testing
         #expect(YOLOModel.parseNames("{0: 'person', 1: \"people's\", 2: 'bus'}") == ["person", "people's", "bus"])
     }
 
+    @Test @MainActor func deleteAll() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for id in ["yolo26n", "yolo26s-seg"] {
+            try FileManager.default.createDirectory(
+                at: directory.appending(path: "\(id).aimodel"), withIntermediateDirectories: true)
+        }
+        let store = ModelStore(directory: directory)
+        #expect(store.downloaded == ["yolo26n", "yolo26s-seg"])
+        store.deleteAll()
+        #expect(store.downloaded.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
+    }
+
     @Test func tracker() {
         let tracker = Tracker()
         var first = [Detection(box: CGRect(x: 0, y: 0, width: 100, height: 100), confidence: 0.9, classIndex: 0)]

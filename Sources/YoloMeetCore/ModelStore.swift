@@ -1,3 +1,4 @@
+import CoreAI
 import Foundation
 import Observation
 
@@ -63,9 +64,17 @@ public final class ModelStore {
         task.resume()
     }
 
+    /// Removes a model and Core AI's compiled copy of it.
     public func delete(_ id: String) {
+        try? AIModelCache.default.deleteEntries(for: url(for: id))
         try? FileManager.default.removeItem(at: url(for: id))
         downloaded.remove(id)
+    }
+
+    /// Removes every downloaded model and all of the app's Core AI compiled models.
+    public func deleteAll() {
+        downloaded.forEach(delete)
+        try? AIModelCache.default.deleteAll()
     }
 
     private func finish(_ id: String, _ result: Result<Void, any Error>) {

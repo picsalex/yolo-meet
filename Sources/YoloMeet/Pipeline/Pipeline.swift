@@ -69,7 +69,9 @@ nonisolated final class Pipeline: @unchecked Sendable {
                     case .success(let model) where self.state.wanted.contains(entry.id):
                         self.state.errors[entry.id] = nil
                         self.state.models.append(model)
-                        self.state.models.sort { self.state.wanted.firstIndex(of: $0.id)! < self.state.wanted.firstIndex(of: $1.id)! }
+                        // Copy first: reading `state` inside the sort while `state.models` is mutated aborts.
+                        let order = self.state.wanted
+                        self.state.models.sort { order.firstIndex(of: $0.id)! < order.firstIndex(of: $1.id)! }
                     case .failure(let error): self.state.errors[entry.id] = error.localizedDescription
                     default: break
                     }

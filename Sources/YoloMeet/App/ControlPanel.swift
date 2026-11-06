@@ -6,6 +6,7 @@ import YoloMeetCore
 struct ControlPanel: View {
     @Environment(AppModel.self) private var model
     @State private var importing = false
+    @State private var confirmingDeleteAll = false
 
     var body: some View {
         @Bindable var model = model
@@ -40,7 +41,11 @@ struct ControlPanel: View {
                 }
                 .pickerStyle(.segmented)
                 switch model.mode {
-                case .display: displayControls
+                case .display:
+                    Text(model.store.downloaded.isEmpty
+                        ? "Download a model below to start."
+                        : "Click a downloaded model below to show or hide it on stage.")
+                        .foregroundStyle(.secondary)
                 case .story: storyControls
                 }
                 if !model.missingModels.isEmpty {
@@ -52,7 +57,16 @@ struct ControlPanel: View {
                 }
             }
 
-            Section("Models") { ModelList() }
+            Section("Models") {
+                ModelGrid()
+                Button("Delete All Models…", role: .destructive) { confirmingDeleteAll = true }
+                    .disabled(model.store.downloaded.isEmpty)
+                    .confirmationDialog("Delete all downloaded models?", isPresented: $confirmingDeleteAll) {
+                        Button("Delete All", role: .destructive) { model.deleteAllModels() }
+                    } message: {
+                        Text("Removes \(model.store.downloaded.count) models and their compiled copies. You can download them again.")
+                    }
+            }
 
             Section("Status") {
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
@@ -72,17 +86,6 @@ struct ControlPanel: View {
             if case .success(let urls) = $0 { model.backgrounds.add(urls) }
         }
         .onChange(of: model.store.downloaded) { model.applyScene() }
-    }
-
-    private var displayControls: some View {
-        let downloaded = ModelCatalog.entries.filter { model.store.downloaded.contains($0.id) }
-        return Group {
-            if downloaded.isEmpty { Text("Download a model below to start.").foregroundStyle(.secondary) }
-            ForEach(downloaded) { entry in
-                Toggle(entry.title, isOn: Binding(
-                    get: { model.displayModels.contains(entry.id) }, set: { _ in model.toggleDisplay(entry.id) }))
-            }
-        }
     }
 
     @ViewBuilder private var storyControls: some View {
@@ -136,32 +139,58 @@ struct ControlPanel: View {
     }
 }
 
-/// Catalog grouped by task, with download / delete per model.
-private struct ModelList: View {
-    @Environment(AppModel.self) private var model
-
+/// Every catalog model as one compact grid: tasks are rows, sizes are columns.
+private struct ModelGrid: View {
     var body: some View {
-        ForEach(YOLOTask.allCases, id: \.self) { task in
-            DisclosureGroup(task.title) {
-                ForEach(ModelCatalog.entries.filter { $0.task == task }) { entry in
-                    HStack {
-                        Text(entry.title)
-                        Spacer()
-                        if let progress = model.store.progress[entry.id] {
-                            ProgressView(value: progress).frame(width: 80)
-                        } else if model.store.downloaded.contains(entry.id) {
-                            Button("Delete", systemImage: "trash", role: .destructive) {
-                                model.displayModels.removeAll { $0 == entry.id }
-                                model.store.delete(entry.id)
-                            }
-                            .labelStyle(.iconOnly)
-                        } else {
-                            Button("Download", systemImage: "arrow.down.circle") { model.store.download(entry) }
-                                .labelStyle(.iconOnly)
-                        }
-                    }
+        Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
+            GridRow {
+                Text("")
+                ForEach(["n", "s", "m", "l", "x"], id: \.self) {
+                    Text($0).font(.caption.monospaced()).foregroundStyle(.secondary).frame(width: 40)
                 }
             }
+            ForEach(YOLOTask.allCases, id: \.self) { task in
+                GridRow {
+                    Text(task.title)
+                    ForEach(ModelCatalog.entries.filter { $0.task == task }, content: ModelCell.init)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Click to download; once downloaded, click to show/hide in Display mode, right-click to delete.
+private struct ModelCell: View {
+    @Environment(AppModel.self) private var model
+    let entry: CatalogEntry
+
+    var body: some View {
+        let progress = model.store.progress[entry.id]
+        let downloaded = model.store.downloaded.contains(entry.id)
+        let shown = model.mode == .display && model.displayModels.contains(entry.id)
+        Button {
+            if !downloaded { model.store.download(entry) } else if model.mode == .display { model.toggleDisplay(entry.id) }
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(shown ? Color.accentColor : downloaded ? Color.secondary.opacity(0.2) : .clear)
+                RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(downloaded ? 0 : 0.4))
+                if let progress {
+                    ProgressView(value: progress).progressViewStyle(.circular).controlSize(.mini)
+                } else {
+                    Image(systemName: shown ? "eye.fill" : downloaded ? "checkmark" : "arrow.down")
+                        .foregroundStyle(shown ? Color.white : .secondary)
+                }
+            }
+            .frame(width: 40, height: 26)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(progress != nil)
+        .help(downloaded ? "\(entry.title) — right-click to delete" : "Download \(entry.title)")
+        .contextMenu {
+            if downloaded { Button("Delete \(entry.title)", role: .destructive) { model.deleteModel(entry.id) } }
         }
     }
 }

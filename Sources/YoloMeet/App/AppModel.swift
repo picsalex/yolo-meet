@@ -65,7 +65,24 @@ final class AppModel {
     }
 
     func toggleDisplay(_ id: String) {
-        if displayModels.contains(id) { displayModels.removeAll { $0 == id } } else { displayModels.append(id) }
+        if displayModels.contains(id) {
+            displayModels.removeAll { $0 == id }
+        } else {
+            // One size per task: showing a model replaces any other size of the same task.
+            let task = ModelCatalog.entry(id)?.task
+            displayModels.removeAll { ModelCatalog.entry($0)?.task == task }
+            displayModels.append(id)
+        }
+    }
+
+    func deleteModel(_ id: String) {
+        displayModels.removeAll { $0 == id }
+        store.delete(id)
+    }
+
+    func deleteAllModels() {
+        displayModels = []
+        store.deleteAll()
     }
 
     func downloadMissing() {

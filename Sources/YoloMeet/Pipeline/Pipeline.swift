@@ -1,0 +1,144 @@
+import CoreImage
+import Foundation
+import Vision
+import YoloMeetCore
+
+/// Camera frame → background replacement → models → tracked results.
+/// The renderer reads `latestFrame` and `latestOutputs` at display rate; inference runs at its own rate on the newest
+/// frame and never queues up stale frames.
+nonisolated final class Pipeline: @unchecked Sendable {
+    private struct State {
+        var frame: CIImage?
+        var outputs: [String: ModelOutput] = [:]
+        var wanted: [String] = []
+        var models: [YOLOModel] = []
+        var loading: Set<String> = []
+        var trackers: [String: Tracker] = [:]
+        var busy = false
+        var background: CIImage?
+        var mirror = true
+        var errors: [String: String] = [:]
+    }
+
+    private let lock = NSLock()
+    private var state = State()
+    private let segmentation = PersonSegmentation()
+
+    var latestFrame: CIImage? { lock.withLock { state.frame } }
+    var latestOutputs: [String: ModelOutput] { lock.withLock { state.outputs } }
+    var errors: [String: String] { lock.withLock { state.errors } }
+
+    func setBackground(_ image: CIImage?) { lock.withLock { state.background = image } }
+    func setMirror(_ mirror: Bool) { lock.withLock { state.mirror = mirror } }
+
+    /// Called on the camera queue for every captured frame.
+    func handle(_ buffer: CVPixelBuffer) {
+        let (background, mirror) = lock.withLock { (state.background, state.mirror) }
+        let frame = segmentation.composite(buffer, over: background, mirror: mirror)
+        let models: [YOLOModel]? = lock.withLock {
+            state.frame = frame
+            guard !state.busy, !state.models.isEmpty else { return nil }
+            state.busy = true
+            return state.models
+        }
+        guard let models else { return }
+        Task.detached(priority: .userInitiated) { await self.infer(frame, models) }
+    }
+
+    /// Makes `entries` the active models, in order, loading any that are not loaded yet.
+    func setModels(_ entries: [(id: String, url: URL)]) {
+        let ids = entries.map(\.id)
+        let toLoad: [(id: String, url: URL)] = lock.withLock {
+            state.wanted = ids
+            state.models.removeAll { !ids.contains($0.id) }
+            state.outputs = state.outputs.filter { ids.contains($0.key) }
+            state.trackers = state.trackers.filter { ids.contains($0.key) }
+            let pending = entries.filter { entry in
+                !state.loading.contains(entry.id) && !state.models.contains { $0.id == entry.id }
+            }
+            state.loading.formUnion(pending.map(\.id))
+            return pending
+        }
+        for entry in toLoad {
+            Task.detached(priority: .userInitiated) {
+                let result: Result<YOLOModel, any Error>
+                do { result = .success(try await YOLOModel.load(from: entry.url)) } catch { result = .failure(error) }
+                self.lock.withLock {
+                    self.state.loading.remove(entry.id)
+                    switch result {
+                    case .success(let model) where self.state.wanted.contains(entry.id):
+                        self.state.errors[entry.id] = nil
+                        self.state.models.append(model)
+                        self.state.models.sort { self.state.wanted.firstIndex(of: $0.id)! < self.state.wanted.firstIndex(of: $1.id)! }
+                    case .failure(let error): self.state.errors[entry.id] = error.localizedDescription
+                    default: break
+                    }
+                }
+            }
+        }
+    }
+
+    private func infer(_ frame: CIImage, _ models: [YOLOModel]) async {
+        var outputs: [String: ModelOutput] = [:]
+        for model in models {
+            do {
+                var output = try await model.predict(frame)
+                lock.withLock {
+                    let tracker = state.trackers[model.id] ?? Tracker()
+                    state.trackers[model.id] = tracker
+                    return tracker
+                }.update(&output.detections)
+                outputs[model.id] = output
+            } catch {
+                lock.withLock { state.errors[model.id] = error.localizedDescription }
+            }
+        }
+        lock.withLock {
+            state.outputs = outputs.filter { state.wanted.contains($0.key) }
+            state.busy = false
+        }
+    }
+}
+
+/// Replaces the background behind people using Vision's person segmentation (temporally smoothed per sequence).
+private nonisolated final class PersonSegmentation {
+    private let handler = VNSequenceRequestHandler()
+    private let request: VNGeneratePersonSegmentationRequest = {
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = .balanced
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        return request
+    }()
+    private var fitted: (source: CIImage, extent: CGRect, image: CIImage)?
+
+    func composite(_ buffer: CVPixelBuffer, over background: CIImage?, mirror: Bool) -> CIImage {
+        let camera = CIImage(cvPixelBuffer: buffer).mirrored(mirror)
+        guard let background, (try? handler.perform([request], on: buffer)) != nil,
+            let mask = request.results?.first?.pixelBuffer
+        else { return camera }
+        let maskImage = CIImage(cvPixelBuffer: mask)
+        let scaledMask = maskImage.transformed(by: CGAffineTransform(
+            scaleX: camera.extent.width / maskImage.extent.width, y: camera.extent.height / maskImage.extent.height))
+        return camera.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: fill(background, camera.extent),
+            kCIInputMaskImageKey: scaledMask.mirrored(mirror),
+        ])
+    }
+
+    /// Aspect-fills the background over the frame, cached until either changes.
+    private func fill(_ background: CIImage, _ extent: CGRect) -> CIImage {
+        if let fitted, fitted.source === background, fitted.extent == extent { return fitted.image }
+        let scale = max(extent.width / background.extent.width, extent.height / background.extent.height)
+        let scaled = background.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let image = scaled.transformed(by: CGAffineTransform(
+            translationX: extent.midX - scaled.extent.midX, y: extent.midY - scaled.extent.midY)
+        ).cropped(to: extent)
+        fitted = (background, extent, image)
+        return image
+    }
+}
+
+private nonisolated extension CIImage {
+    func mirrored(_ mirror: Bool) -> CIImage { mirror ? oriented(.upMirrored) : self }
+}
+

@@ -21,8 +21,9 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     let isDETR: Bool
     public var confidence: Float
     public var iou: Float = 0.45
-    /// Longest input side for variable-size exports. Fixed exports keep their own size; classify keeps its training size.
-    public var imgsz: Int
+    /// Longest input side for variable-size exports; nil runs at the training size, as Ultralytics does. Fixed exports
+    /// keep their own size; classify keeps its training size.
+    public var imgsz: Int?
 
     private let function: InferenceFunction
     private let inputName: String
@@ -30,8 +31,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     private let scalarType: NDArray.ScalarType
     /// The export's input size, nil when its height and width are variable.
     private let fixedSize: (width: Int, height: Int)?
-    /// The size the model was exported (or trained) at.
-    private let exportSize: Int
+    /// The size the model was trained (and exported) at.
+    public let trainingSize: Int
     // Input buffers, reallocated when the input size changes.
     private var input: NDArray?
     private var staging: CVPixelBuffer?
@@ -91,9 +92,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             ? ((0..<3).map { -mean[$0] / std[$0] }, (0..<3).map { (1 - mean[$0]) / std[$0] })
             : ([0, 0, 0], [1, 1, 1])
         fixedSize = shape.shape[2] > 0 && shape.shape[3] > 0 ? (shape.shape[3], shape.shape[2]) : nil
-        exportSize = fixedSize.map { max($0.width, $0.height) }
+        trainingSize = fixedSize.map { max($0.width, $0.height) }
             ?? Int(Self.parseNumbers(metadata["imgsz"] ?? "").max() ?? 640)
-        imgsz = exportSize
         info = ModelInfo(
             family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
             parameters: metadata["params"].flatMap(Int.init), gflops: metadata["gflops"].flatMap(Double.init),
@@ -145,11 +145,14 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             geometry = Geometry(gainX: g, gainY: g, padX: (w - extent.width * g) / 2, padY: (h - extent.height * g) / 2)
         }
         // Core Image is bottom-left origin while padY is measured from the top row.
+        // Resampled like the training pipelines: plain bilinear (OpenCV INTER_LINEAR, torchvision without antialias)
+        // for YOLO and RF-DETR; classify's PIL resize is antialiased, closest to Core Image's high-quality downsample.
         let placed = frame.transformed(
             by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
                 .concatenating(CGAffineTransform(scaleX: geometry.gainX, y: geometry.gainY))
                 .concatenating(CGAffineTransform(
-                    translationX: geometry.padX, y: h - geometry.padY - extent.height * geometry.gainY)))
+                    translationX: geometry.padX, y: h - geometry.padY - extent.height * geometry.gainY)),
+            highQualityDownsample: task == .classify && !isDETR)
         let gray = CIImage(color: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255))
         Self.context.render(
             placed.composited(over: gray), to: staging, bounds: CGRect(x: 0, y: 0, width: w, height: h),
@@ -212,8 +215,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     /// multiples of 32 (Ultralytics' rectangular inference: little padding, fewer pixels); classify stays square.
     private func inputSize(for extent: CGRect) -> (width: Int, height: Int) {
         if let fixedSize { return fixedSize }
-        guard task != .classify else { return (exportSize, exportSize) }
-        let side = CGFloat(min(max(imgsz, 128), 2048))
+        guard task != .classify else { return (trainingSize, trainingSize) }
+        let side = CGFloat(min(max(imgsz ?? trainingSize, 128), 2048))
         let gain = side / max(extent.width, extent.height)
         func fit(_ length: CGFloat) -> Int { Int((length * gain / 32).rounded(.up)) * 32 }
         return (fit(extent.width), fit(extent.height))

@@ -33,6 +33,10 @@ nonisolated final class Pipeline: @unchecked Sendable {
     private let segmentation = PersonSegmentation()
 
     var latestOutputs: [String: ModelOutput] { lock.withLock { state.history.compactMapValues(\.last) } }
+    /// Training sizes of the loaded models that follow the image size setting (variable-size, not classify).
+    var trainingSizes: [Int] {
+        lock.withLock { Set(state.models.filter { $0.info.isDynamic && $0.task != .classify }.map(\.trainingSize)).sorted() }
+    }
     var errors: [String: String] { lock.withLock { state.errors } }
     /// Captured frames per second and their size.
     var camera: (fps: Double, size: CGSize) { lock.withLock { (state.cameraRate.rate, state.cameraSize) } }
@@ -128,9 +132,10 @@ nonisolated final class Pipeline: @unchecked Sendable {
     }
 }
 
-/// Applied to every model on stage. Fixed-size exports ignore `imgsz`; RF-DETR has no NMS, so no `iou`.
+/// Applied to every model on stage. `imgsz` nil runs each model at its training size; fixed-size exports ignore it.
+/// RF-DETR has no NMS, so no `iou`.
 nonisolated struct InferenceSettings: Codable, Equatable {
-    var imgsz = 640
+    var imgsz: Int?
     var confidence: Float = 0.25
     var iou: Float = 0.45
 

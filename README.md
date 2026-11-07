@@ -56,7 +56,10 @@ Imported models live in `~/Library/Application Support/YoloMeet/Custom` and can 
 
 The panel's Inference section applies to every model on stage:
 
-- **Image size** (160–1280): the frame's long side. YOLO models are exported with a variable input height and width, so each frame is letterboxed to its own aspect in multiples of 32, like Ultralytics' rectangular inference (a 16:9 camera at 640 runs at 640×384). Classify keeps its training size; RF-DETR and YOLO26 depth keep their fixed export size (variable-size depth falls back to the CPU). Each new size is compiled once by Core AI, so the slider applies on release.
+- **Image size**: by default each model runs at the size it was trained at, as Ultralytics does (640; 1024 for OBB
+  and semantic; 768 for depth; 224 for classify), or set one size (160–1280) for all. It is the frame's long side.
+  Preprocessing matches Ultralytics' (plain bilinear letterbox, gray 114 padding, RGB 0–1) within FP16 rounding.
+  YOLO models are exported with a variable input height and width, so each frame is letterboxed to its own aspect in multiples of 32, like Ultralytics' rectangular inference (a 16:9 camera at 640 runs at 640×384). Classify keeps its training size; RF-DETR and YOLO26 depth keep their fixed export size (variable-size depth falls back to the CPU). Each new size is compiled once by Core AI, so the slider applies on release.
 - **Confidence**: minimum score for boxes, masks and keypoints.
 - **IoU**: NMS overlap threshold for YOLO (RF-DETR has no NMS).
 

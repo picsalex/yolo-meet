@@ -2,8 +2,9 @@
 
 `--convert best.pt` exports a single user checkpoint (Ultralytics or RF-DETR); the app runs this for `.pt` imports.
 
-Every asset carries the app's metadata keys (task, names, family, architecture, params, gflops). Re-running is
-idempotent: existing archives are skipped, or only re-stamped when they predate a metadata key.
+Every asset carries the app's metadata keys (task, names, family, architecture, params, gflops). YOLO models are
+exported at the size they were trained at (e.g. 1024 for OBB and semantic, 768 for depth, 224 for classify), which the
+app uses as their default image size. Re-running is idempotent: existing archives are skipped.
 
 Needs macOS 26+ on Apple silicon (or x86_64 Linux):
     uv venv --python 3.13
@@ -25,7 +26,6 @@ import torch
 from torch.utils.flop_counter import FlopCounterMode
 
 # Names and tasks must match ModelCatalog in Sources/YoloMeetCore/ModelStore.swift.
-YOLO_TASKS = {"": 640, "-seg": 640, "-pose": 640, "-obb": 640, "-cls": 224, "-sem": 640, "-depth": 640}
 YOLO_VERSIONS = {
     "yolov5": [""],  # anchor-free "u" detection models, e.g. yolov5nu
     "yolov8": ["", "-seg", "-pose", "-obb", "-cls"],
@@ -40,7 +40,6 @@ RFDETR = [
         ("2xlarge", "2XLarge")]],
     ("rfdetr-pose", "RFDETRKeypointPreview", "float32"),  # float16 keypoint graphs crash on the Neural Engine
 ]
-STATS = ("params", "gflops", "architecture")
 
 
 def yolo_name(version: str, size: str, suffix: str) -> str:
@@ -98,11 +97,11 @@ def dynamic_input():
         torch.export.export = export
 
 
-def export_yolo(weights: str, name: str, imgsz: int | None, out: Path) -> None:
+def export_yolo(weights: str, name: str, out: Path) -> None:
     from ultralytics import YOLO
 
     model = YOLO(weights)
-    imgsz = imgsz or model.overrides.get("imgsz", 640)  # a custom checkpoint keeps its training size
+    imgsz = model.overrides.get("imgsz", 640)  # the training size, Ultralytics' default for predictions
     imgsz = imgsz if isinstance(imgsz, int) else max(imgsz)
     # Raw head (no embedded NMS): the app decodes and runs NMS in Swift. FP16 runs on the Neural Engine.
     # Depth stays fixed: its variable-size graph falls back to the CPU (~60x slower).
@@ -134,21 +133,6 @@ def export_rfdetr(detector: object, name: str, precision: str | None, out: Path)
         archive(asset, out / f"{name}.aimodel.zip")
 
 
-def restamp(path: Path, fields: dict[str, str]) -> None:
-    """Add metadata to an existing archive without re-exporting the model."""
-    with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run(["ditto", "-x", "-k", str(path), tmp], check=True)
-        asset = next(Path(tmp).glob("*.aimodel"))
-        stamp(asset, fields)
-        path.unlink()
-        archive(asset, path)
-
-
-def has_stats(path: Path) -> bool:
-    listing = subprocess.run(["unzip", "-p", str(path), "*/metadata.json"], capture_output=True, text=True).stdout
-    return all(f'"{key}"' in listing for key in STATS)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path, default=Path("exports"))
@@ -166,9 +150,7 @@ def main() -> None:
                 name = yolo_name(version, size, suffix)
                 path = args.output / f"{name}.aimodel.zip"
                 if not path.exists():
-                    export_yolo(f"{name}.pt", name, YOLO_TASKS[suffix], args.output)
-                elif not has_stats(path):
-                    restamp(path, {"family": "yolo", **yolo_stats(f"{name}.pt", YOLO_TASKS[suffix])})
+                    export_yolo(f"{name}.pt", name, args.output)
 
     if "rfdetr" in args.families:
         import rfdetr
@@ -193,7 +175,7 @@ def convert(weights: Path, out: Path) -> None:
         detector = rfdetr.from_checkpoint(str(weights), trust_checkpoint=True)  # the user chose this file
         export_rfdetr(detector, weights.stem, None, out)
     else:
-        export_yolo(str(weights), weights.stem, None, out)
+        export_yolo(str(weights), weights.stem, out)
 
 
 if __name__ == "__main__":

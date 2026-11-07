@@ -141,18 +141,34 @@ private struct InferenceSettingsView: View {
 
     var body: some View {
         @Bindable var model = model
-        let size = Binding { imgsz ?? Double(model.inference.imgsz) } set: { imgsz = $0 }
-        LabeledContent {
-            Slider(value: size, in: 160...1280, step: 32) {
-                EmptyView()
-            } onEditingChanged: { editing in
-                guard !editing, let imgsz else { return }
-                model.inference.imgsz = Int(imgsz)
-                self.imgsz = nil
+        // One row: the models' training size, or an override set with the slider the switch reveals.
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let training = model.pipeline.trainingSizes
+            let size = Binding { imgsz ?? Double(model.inference.imgsz ?? training.first ?? 640) } set: { imgsz = $0 }
+            LabeledContent {
+                HStack {
+                    if model.inference.imgsz != nil {
+                        Slider(value: size, in: 160...1280, step: 32) {
+                            EmptyView()
+                        } onEditingChanged: { editing in
+                            guard !editing, let imgsz else { return }
+                            model.inference.imgsz = Int(imgsz)
+                            self.imgsz = nil
+                        }
+                    }
+                    Toggle("Override", isOn: Binding { model.inference.imgsz != nil } set: {
+                        model.inference.imgsz = $0 ? training.first ?? 640 : nil
+                    })
+                    .toggleStyle(.checkbox)  // HIG: a checkbox for a setting that adjusts another; box before label
+                    .fixedSize()
+                    .help("Override the training image size")
+                }
+            } label: {
+                Text("Image size")
+                Text(model.inference.imgsz == nil
+                    ? "Training · " + (training.isEmpty ? "per model" : training.map { "\($0) px" }.joined(separator: " / "))
+                    : "\(Int(size.wrappedValue)) px")
             }
-        } label: {
-            Text("Image size")
-            Text("\(Int(size.wrappedValue)) px")
         }
         LabeledContent {
             Slider(value: $model.inference.confidence, in: 0.05...0.95, step: 0.05)
@@ -166,7 +182,7 @@ private struct InferenceSettingsView: View {
             Text("IoU (NMS)")
             Text(model.inference.iou.formatted(.number.precision(.fractionLength(2))))
         }
-        Text("Image size sets the frame's long side; RF-DETR and YOLO26 depth keep their fixed export size. RF-DETR has no NMS, so IoU applies to YOLO only.")
+        Text("Image size sets the frame's long side. Classify, RF-DETR and YOLO26 depth keep their own size. RF-DETR has no NMS, so IoU applies to YOLO only.")
             .font(.caption).foregroundStyle(.secondary)
         if model.inference != InferenceSettings() {
             Button("Reset to Defaults") { model.inference = InferenceSettings() }

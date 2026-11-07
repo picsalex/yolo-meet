@@ -28,7 +28,13 @@ final class AppModel {
     var storyID = Story.all[0].id { didSet { stepIndex = 0 } }
     var stepIndex = 0 { didSet { applyScene() } }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
-    var source = Source.camera { didSet { applyInput() } }
+    /// Media runs in Display mode: stories are for the camera.
+    var source = Source.camera {
+        didSet {
+            if source == .media { mode = .display }
+            applyInput()
+        }
+    }
     /// Off: no capture; the stage shows the background, or black.
     var cameraOn = true { didSet { applyInput() } }
     var inference = InferenceSettings.saved {

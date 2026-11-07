@@ -37,24 +37,26 @@ struct ControlPanel: View {
                 Section("Background") { LibraryStrip(library: model.backgrounds, types: [.image], none: true) }
             }
 
-            Section {
-                Picker("Mode", selection: $model.mode) {
-                    ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-                switch model.mode {
-                case .display:
-                    Text(model.store.downloaded.isEmpty
-                        ? "Download a model below to start."
-                        : "Click a downloaded model below to show or hide it on stage.")
-                        .foregroundStyle(.secondary)
-                case .story: storyControls
-                }
-                if !model.missingModels.isEmpty {
-                    HStack {
-                        Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
-                        Spacer()
-                        Button("Download") { model.downloadMissing() }
+            if model.source == .camera {
+                Section {
+                    Picker("Mode", selection: $model.mode) {
+                        ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                    switch model.mode {
+                    case .display:
+                        Text(model.store.downloaded.isEmpty
+                            ? "Download a model below to start."
+                            : "Click a downloaded model below to show or hide it on stage.")
+                            .foregroundStyle(.secondary)
+                    case .story: storyControls
+                    }
+                    if !model.missingModels.isEmpty {
+                        HStack {
+                            Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
+                            Spacer()
+                            Button("Download") { model.downloadMissing() }
+                        }
                     }
                 }
             }

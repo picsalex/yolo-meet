@@ -41,7 +41,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private lazy var stats = StatsEffect(model: model)
     private var sceneVersion = -1
     private var lastTime = CACurrentMediaTime()
-    private var frameTimes: [TimeInterval] = []
+    private var frameRate = RateCounter()
 
     init(model: AppModel) {
         self.model = model
@@ -61,7 +61,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         let now = CACurrentMediaTime()
         let dt = min(now - lastTime, 0.1)
         lastTime = now
-        recordFrameTime(now)
+        model.renderFPS = Int(frameRate.tick().rounded())
 
         guard let drawable = view.currentDrawable, let commandBuffer = queue.makeCommandBuffer(),
             let pass = view.currentRenderPassDescriptor
@@ -123,9 +123,4 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         }
     }
 
-    private func recordFrameTime(_ now: TimeInterval) {
-        frameTimes.append(now)
-        frameTimes.removeAll { now - $0 > 1 }
-        model.renderFPS = frameTimes.count
-    }
 }

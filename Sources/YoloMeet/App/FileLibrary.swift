@@ -68,6 +68,23 @@ final class FileLibrary {
 
     static func isVideo(_ url: URL) -> Bool { UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true }
 
+    /// Decodes an image once, upright, at the smallest size that still covers `size` (a 24 MP photo would otherwise
+    /// stay file-backed at full size and be decoded again by each renderer).
+    static func image(at url: URL, covering size: CGSize) -> CIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+            let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+            let height = properties[kCGImagePropertyPixelHeight] as? CGFloat
+        else { return nil }
+        let rotated = (properties[kCGImagePropertyOrientation] as? UInt32 ?? 1) >= 5  // 90° turns swap the sides
+        let (w, h) = rotated ? (height, width) : (width, height)
+        let scale = min(max(size.width / w, size.height / h), 1)
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: Int((max(w, h) * scale).rounded(.up)), kCGImageSourceShouldCacheImmediately: true,
+        ] as CFDictionary).map { CIImage(cgImage: $0) }
+    }
+
     private static func videoThumbnail(_ url: URL) async -> NSImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true

@@ -3,13 +3,6 @@ import CoreAI
 import CoreImage
 import Foundation
 
-public nonisolated enum YOLOModelError: LocalizedError {
-    case invalid(String)
-    public var errorDescription: String? {
-        switch self { case .invalid(let reason): "Invalid model: \(reason)" }
-    }
-}
-
 /// A Core AI (`.aimodel`) vision model — Ultralytics YOLO or RF-DETR: GPU resizing, Core AI inference and task
 /// decoding. Not reentrant: callers run one `predict` at a time per instance.
 public nonisolated final class YOLOModel: @unchecked Sendable {
@@ -37,7 +30,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
 
     /// Loads any Ultralytics or RF-DETR Core AI export; the family and task are inferred when metadata lacks them.
     public static func load(from url: URL) async throws -> YOLOModel {
-        try YOLOModel(url: url, metadata: try readMetadata(at: url), function: try await ImageFunction.load(url))
+        try YOLOModel(url: url, metadata: try ModelAsset.metadata(at: url), function: try await ImageFunction.load(url))
     }
 
     private init(url: URL, metadata: [String: String], function: InferenceFunction) throws {
@@ -48,12 +41,12 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         guard
             let task = metadata["task"].flatMap(YOLOTask.init(rawValue:))
                 ?? (isDETR ? (outputs.contains("masks") ? .segment : outputs.contains("keypoints") ? .pose : .detect) : nil)
-        else { throw YOLOModelError.invalid("not an Ultralytics or RF-DETR export (no task in its metadata)") }
+        else { throw ModelError.invalid("not an Ultralytics or RF-DETR export (no task in its metadata)") }
         if !isDETR, [.detect, .segment, .pose, .obb].contains(task),
             case .ndArray(let head)? = descriptor.outputDescriptor(of: descriptor.outputNames[0]), head.shape.count == 3,
             (0..<head.shape[1]).contains(head.shape[2])  // [1, 300, 6]; raw heads have more (or variable, -1) anchors
         {
-            throw YOLOModelError.invalid("end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
+            throw ModelError.invalid("end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
         }
         self.id = url.deletingPathExtension().lastPathComponent
         self.task = task
@@ -70,18 +63,16 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         fixedSize = shape[2] > 0 && shape[3] > 0 ? (shape[3], shape[2]) : nil
         trainingSize = fixedSize.map { max($0.width, $0.height) }
             ?? Int(Self.parseNumbers(metadata["imgsz"] ?? "").max() ?? 640)
-        info = ModelInfo(
-            family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
-            parameters: metadata["params"].flatMap(Int.init), gflops: metadata["gflops"].flatMap(Double.init),
-            isDynamic: fixedSize == nil, precision: self.function.scalarType == .float16 ? "FP16" : "FP32",
-            bytes: Self.size(of: url))
+        info = ModelAsset.info(
+            at: url, metadata: metadata, family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
+            isDynamic: fixedSize == nil, precision: self.function.precision)
     }
 
     /// Runs the model on a frame. Output geometry is in the frame's pixel space (top-left origin).
     public func predict(_ frame: CIImage) async throws -> ModelOutput {
         let start = CFAbsoluteTimeGetCurrent()
         let extent = frame.extent
-        guard extent.width > 0, extent.height > 0 else { throw YOLOModelError.invalid("empty frame") }
+        guard extent.width > 0, extent.height > 0 else { throw ModelError.invalid("empty frame") }
         let (w, h) = inputSize(for: extent)
         let geometry = geometry(for: extent, width: CGFloat(w), height: CGFloat(h))
         // Core Image is bottom-left origin while padY is measured from the top row.
@@ -94,7 +85,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
                     translationX: geometry.padX, y: CGFloat(h) - geometry.padY - extent.height * geometry.gainY)),
             highQualityDownsample: task == .classify && !isDETR)
         let tensors = try await function.run(
-            placed, width: w, height: h, background: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255))
+            placed, width: w, height: h, background: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255),
+            deferring: isDETR ? ["masks"] : [])  // RF-DETR: masks of every query, few kept
         var output = ModelOutput(modelID: id, task: task, names: names, info: info, frameSize: frame.extent.size)
         output.inputSize = CGSize(width: width, height: height)
         decode(tensors, geometry: geometry, into: &output)
@@ -131,22 +123,8 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
 
     // MARK: Metadata
 
-    static func readMetadata(at url: URL) throws -> [String: String] {
-        let data = try Data(contentsOf: url.appendingPathComponent("metadata.json"))
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        return json?["creatorDefinedMetadata"] as? [String: String] ?? [:]
-    }
-
     static func parseNumbers(_ string: String) -> [Float] {
         string.matches(of: /-?\d+(?:\.\d+)?(?:[eE]-?\d+)?/).compactMap { Float($0.output) }
-    }
-
-    /// Total size of an asset directory in bytes.
-    public static func size(of url: URL) -> Int {
-        let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey])
-        return (files?.allObjects as? [URL] ?? []).reduce(0) { total, file in
-            total + ((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-        }
     }
 
     /// Parses Ultralytics' Python-dict names string, e.g. `{0: 'person', 1: "people's"}`.
@@ -162,9 +140,11 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
 }
 
 /// A model output as Float32 values in row-major order.
-nonisolated struct Tensor {
+nonisolated struct Tensor: Sendable {
     let values: [Float]
     let shape: [Int]
+    /// The model's own output, kept instead of `values` for outputs converted in part (`ImageFunction.planes`).
+    var array: NDArray?
 }
 
 /// Maps model-input pixels back to frame pixels: `frame = (input - pad) / gain`.

@@ -22,23 +22,26 @@ import Testing
         let expected = (reference[key]!["landmarks"] as! [[[Double]]])
         let image = CIImage(contentsOf: root.appending(path: "img/\(key.split(separator: "/").last!)"))!
         let landmarker = try await Landmarker.load(from: root.appending(path: "\(model).aimodel"))
-        let output = try await landmarker.predict(image)
         let size = image.extent.size
-        #expect(output.detections.count == expected.count)
-        for group in expected {
-            // The detection nearest this reference group, compared landmark by landmark in normalized units.
-            let center = CGPoint(x: group.map { $0[0] }.reduce(0, +) / Double(group.count), y: group.map { $0[1] }.reduce(0, +) / Double(group.count))
-            let detection = try #require(output.detections.min { a, b in
-                hypot(a.box.midX / size.width - center.x, a.box.midY / size.height - center.y)
-                    < hypot(b.box.midX / size.width - center.x, b.box.midY / size.height - center.y)
-            })
-            let errors = zip(detection.keypoints, group).map { k, r in
-                hypot(k.point.x / size.width - r[0], k.point.y / size.height - r[1])
+        // The first frame runs the detector (MediaPipe's IMAGE mode); the second is cropped from the first's landmarks.
+        for pass in ["detected", "tracked"] {
+            let output = try await landmarker.predict(image)
+            #expect(output.detections.count == expected.count)
+            for group in expected {
+                // The detection nearest this reference group, compared landmark by landmark in normalized units.
+                let center = CGPoint(x: group.map { $0[0] }.reduce(0, +) / Double(group.count), y: group.map { $0[1] }.reduce(0, +) / Double(group.count))
+                let detection = try #require(output.detections.min { a, b in
+                    hypot(a.box.midX / size.width - center.x, a.box.midY / size.height - center.y)
+                        < hypot(b.box.midX / size.width - center.x, b.box.midY / size.height - center.y)
+                })
+                let errors = zip(detection.keypoints, group).map { k, r in
+                    hypot(k.point.x / size.width - r[0], k.point.y / size.height - r[1])
+                }
+                let mean = errors.reduce(0, +) / Double(errors.count)
+                print("LANDMARKS \(pass) \(model) \(key): \(group.count) points, mean error \(String(format: "%.4f", mean)), max \(String(format: "%.4f", errors.max()!))")
+                // Typically 0.1-0.3% of the image; 1.4% on the small thumbs-up photo.
+                #expect(mean < 0.02)
             }
-            let mean = errors.reduce(0, +) / Double(errors.count)
-            print("LANDMARKS \(model) \(key): \(group.count) points, mean error \(String(format: "%.4f", mean)), max \(String(format: "%.4f", errors.max()!))")
-            // Typically 0.1-0.3% of the image; 1.4% on the small thumbs-up photo.
-            #expect(mean < 0.02)
         }
     }
 

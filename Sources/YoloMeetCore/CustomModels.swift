@@ -24,6 +24,7 @@ public enum CustomModelError: LocalizedError {
 public final class CustomModels {
     public private(set) var models: [CustomModel] = []
     public private(set) var isImporting = false
+    private var sizes: [String: Int] = [:]
     public let directory: URL
     private var index: URL { directory.appending(path: "models.json") }
 
@@ -31,12 +32,13 @@ public final class CustomModels {
         self.directory = directory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         models = (try? JSONDecoder().decode([CustomModel].self, from: Data(contentsOf: index))) ?? []
+        for model in models { sizes[model.id] = ModelAsset.size(of: url(for: model.id)) }
     }
 
     public func model(_ id: String) -> CustomModel? { models.first { $0.id == id } }
     public func url(for id: String) -> URL { directory.appending(path: "\(id).aimodel") }
-    /// Size of the imported Core AI model on disk, in bytes.
-    public func size(of id: String) -> Int { YOLOModel.size(of: url(for: id)) }
+    /// Size of the imported Core AI model on disk, in bytes; measured once, at launch or import.
+    public func size(of id: String) -> Int { sizes[id] ?? 0 }
 
     /// Imports an `.aimodel` (or a zip of one) exported by Ultralytics or RF-DETR. The model is loaded once to validate
     /// it and to infer its family and task.
@@ -76,6 +78,7 @@ public final class CustomModels {
             let sidecar = URL(filePath: asset.path + ".rfdetr.json")
             if let names = Self.rfdetrNames(at: sidecar) { try Self.stampNames(names, into: destination) }
             let loaded = try await YOLOModel.load(from: destination)
+            sizes[id] = loaded.info.bytes
             models.append(CustomModel(
                 id: id, name: asset.deletingPathExtension().lastPathComponent, family: loaded.info.family,
                 task: loaded.task))
@@ -96,6 +99,7 @@ public final class CustomModels {
     public func delete(_ id: String) {
         try? FileManager.default.removeItem(at: url(for: id))
         models.removeAll { $0.id == id }
+        sizes[id] = nil
         save()
     }
 

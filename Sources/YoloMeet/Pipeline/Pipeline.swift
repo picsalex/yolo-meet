@@ -5,15 +5,21 @@ import Vision
 import YoloMeetCore
 
 /// Camera frame → background replacement → models → tracked results.
-/// Each model runs at its own rate on the newest frame and never queues up stale frames. The renderer asks for a
-/// `snapshot` at display rate: the newest frame, with results predicted to its capture time.
+/// Each model runs at its own rate on the newest frame, once per frame, and never queues up stale frames. The renderer
+/// asks for a `snapshot` at display rate: the newest frame, with results predicted to its capture time.
 nonisolated final class Pipeline: @unchecked Sendable {
     /// Where frames come from. `off`: the stage shows the background, or black, and models do not run.
     enum Input { case camera, media, off }
+    /// Frames, stills and backgrounds are used at this size at most (the camera's).
+    static let workingSize = CGSize(width: 1920, height: 1080)
 
     private struct State {
         /// Newest frame and its capture time (`CACurrentMediaTime`).
         var frame: (time: TimeInterval, image: CIImage)?
+        /// Bumped with each new frame.
+        var frameID = 0
+        /// The frame each model last started on.
+        var ran: [String: Int] = [:]
         /// Recent results per model, oldest first.
         var history: [String: [ModelOutput]] = [:]
         var wanted: [String] = []
@@ -67,6 +73,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
             state.input = input
             state.history = [:]
             state.trackers = [:]
+            state.ran = [:]
             state.frame = input == .off ? (CACurrentMediaTime(), offFrame()) : nil
         }
         onPendingChange()
@@ -74,11 +81,17 @@ nonisolated final class Pipeline: @unchecked Sendable {
 
     /// Caller holds `lock`.
     private func offFrame() -> CIImage {
-        let extent = CGRect(origin: .zero, size: state.cameraSize == .zero ? CGSize(width: 1920, height: 1080) : state.cameraSize)
+        let extent = CGRect(origin: .zero, size: state.cameraSize == .zero ? Self.workingSize : state.cameraSize)
         return state.background?.filling(extent) ?? CIImage(color: .black).cropped(to: extent)
     }
     func setMirror(_ mirror: Bool) { lock.withLock { state.mirror = mirror } }
-    func setSettings(_ settings: InferenceSettings) { lock.withLock { state.settings = settings } }
+    /// New settings apply from the next frame, and to a repeated one (a still) too.
+    func setSettings(_ settings: InferenceSettings) {
+        lock.withLock {
+            state.settings = settings
+            state.ran = [:]
+        }
+    }
 
     /// Called on the camera queue for every captured frame.
     func handle(_ buffer: CVPixelBuffer) {
@@ -87,21 +100,26 @@ nonisolated final class Pipeline: @unchecked Sendable {
         show(segmentation.composite(buffer, over: background, mirror: mirror), from: .camera)
     }
 
-    /// Shows a frame from `input` and starts every idle model on it. Media frames come here directly.
-    func show(_ frame: CIImage, from input: Input = .media) {
-        let time = CACurrentMediaTime()
-        let (idle, settings) = lock.withLock {
-            guard state.input == input else { return ([any Predictor](), state.settings) }
-            state.frame = (time, frame)
-            state.cameraRate.tick()
-            state.cameraSize = frame.extent.size
-            let idle = state.models.filter { !state.busy.contains($0.id) }
+    /// Shows a frame from `input` and starts every idle model that has not run on it. Media frames come here directly;
+    /// a still image or a paused video is sent again (`isNew` false) so that models added later still get to run.
+    func show(_ frame: CIImage, from input: Input = .media, isNew: Bool = true) {
+        let (idle, shown, settings) = lock.withLock {
+            guard state.input == input else { return ([any Predictor](), state.frame, state.settings) }
+            if isNew || state.frame == nil {
+                state.frame = (CACurrentMediaTime(), frame)
+                state.frameID += 1
+                state.cameraRate.tick()
+                state.cameraSize = frame.extent.size
+            }
+            let idle = state.models.filter { !state.busy.contains($0.id) && state.ran[$0.id] != state.frameID }
+            for model in idle { state.ran[model.id] = state.frameID }
             state.busy.formUnion(idle.map(\.id))
-            return (idle, state.settings)
+            return (idle, state.frame, state.settings)
         }
         // One task per idle model: a fast model is not held back by a slow one.
+        guard let shown else { return }
         for model in idle {
-            Task.detached(priority: .userInitiated) { await self.infer(frame, at: time, model, settings) }
+            Task.detached(priority: .userInitiated) { await self.infer(shown.image, at: shown.time, model, settings) }
         }
     }
 
@@ -209,7 +227,7 @@ nonisolated struct RateCounter {
     mutating func tick() -> Double {
         let now = CFAbsoluteTimeGetCurrent()
         times.append(now)
-        times.removeAll { now - $0 > 1 }
+        times.removeFirst(times.prefix { now - $0 > 1 }.count)
         return rate
     }
 }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 /// The Ultralytics task a model was exported for, read from its metadata.
 public enum YOLOTask: String, Sendable, CaseIterable, Codable {
@@ -34,6 +35,39 @@ public nonisolated struct Detection: Sendable {
     /// Pose keypoints, empty for other tasks.
     public var keypoints: [Keypoint] = []
 }
+
+nonisolated extension Detection {
+    /// Sets the box around the keypoints at least `minConfidence` confident.
+    func boxed(minConfidence: Float = 0) -> Detection {
+        let bounds = keypoints.filter { $0.confidence >= minConfidence }.map(\.point).bounds
+        guard !bounds.isNull else { return self }
+        var detection = self
+        detection.box = bounds
+        return detection
+    }
+}
+
+nonisolated extension [CGPoint] {
+    /// The smallest rectangle around the points; null when there are none.
+    var bounds: CGRect {
+        let (xs, ys) = (map(\.x), map(\.y))
+        guard let minX = xs.min(), let maxX = xs.max(), let minY = ys.min(), let maxY = ys.max() else { return .null }
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+}
+
+nonisolated extension CGRect {
+    /// Intersection over union.
+    func iou(_ other: CGRect) -> CGFloat {
+        let inter = intersection(other)
+        guard !inter.isNull else { return 0 }
+        let i = inter.width * inter.height
+        return i / (width * height + other.width * other.height - i)
+    }
+}
+
+/// Logistic function, clamped so large logits stay finite.
+nonisolated func sigmoid(_ x: Float) -> Float { 1 / (1 + exp(-min(max(x, -100), 100))) }
 
 public nonisolated struct Keypoint: Sendable {
     public var point: CGPoint

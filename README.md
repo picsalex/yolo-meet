@@ -30,7 +30,7 @@ MediaPipe's sample photos (woman_hands, thumb_up, pose, portrait) and `reference
 ## How it works
 
 `Camera` → `Pipeline` (Vision person segmentation, on its own queue, replaces the background; each active model runs
-at its own rate on the newest frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
+at its own rate on the newest frame, once per frame, and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
 pass at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
 at the speed they moved between the last two runs: the video has no added delay and overlays keep up with fast hands.
 
@@ -56,9 +56,12 @@ Under Models › Other, next to RF-DETR:
   Core AI by `scripts/export_mediapipe.py` (each step checked against the previous runtime; the pose detector's sparse
   weights are densified first). `Landmarker` runs MediaPipe's two-stage pipeline in Swift: the detector on the
   letterboxed frame (SSD anchors, weighted NMS), then the landmark model on a square crop rotated upright (palm, hips
-  or eyes), with MediaPipe's heatmap refinement for pose. Landmarks match MediaPipe Tasks within 0.1–0.3% of the image
-  on its sample photos (`LandmarkerTests`). Up to two hands, bodies or faces; MediaPipe's own 0.5 thresholds apply.
-- **Apple Vision**: the hand (21 points), body (17, COCO order) and face landmark requests built into macOS.
+  or eyes), with MediaPipe's heatmap refinement for pose. As in MediaPipe's video mode, each result's next crop comes
+  from its landmarks, so the detector only runs to find new ones; crops run in parallel. Landmarks match MediaPipe
+  Tasks within 0.1–0.4% of the image on its sample photos, detected or tracked (`LandmarkerTests`). Up to two hands,
+  bodies or faces; MediaPipe's own 0.5 thresholds apply.
+- **Apple Vision**: the hand (21 points), body (17, COCO order) and face landmark requests built into macOS. Faces are
+  tracked from frame to frame, so face detection only runs every 10 frames or when a face is lost.
 
 Both produce detections with keypoints, so tracking, smoothing and the pose effects work on them like on YOLO pose.
 
@@ -82,7 +85,8 @@ The panel's Source section picks what the stage shows under the effects:
   `~/Library/Application Support/YoloMeet/Tools`, checked against the release's SHA-256 list, and refreshed every two
   weeks. Only the video stream is downloaded (H.264 MP4 up to 1080p; the stage is muted). Media lives in
   `~/Library/Application Support/YoloMeet/Media`. Videos loop, with play/pause and a scrubber; models, tracking and
-  stories run on media exactly as on the camera.
+  stories run on media exactly as on the camera. Images and video frames are scaled to the camera's 1080p, and models
+  run once on a still or paused frame.
 
 ## Inference settings
 

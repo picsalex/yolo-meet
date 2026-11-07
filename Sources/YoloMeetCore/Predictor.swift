@@ -26,6 +26,40 @@ public nonisolated enum Predictors {
     }
 }
 
+public nonisolated enum ModelError: LocalizedError {
+    case invalid(String)
+    public var errorDescription: String? {
+        switch self { case .invalid(let reason): "Invalid model: \(reason)" }
+    }
+}
+
+/// A model folder on disk (`.aimodel`, or a MediaPipe bundle of two).
+nonisolated enum ModelAsset {
+    /// The creator-defined metadata of its `metadata.json`.
+    static func metadata(at url: URL) throws -> [String: String] {
+        let data = try Data(contentsOf: url.appending(path: "metadata.json"))
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return json?["creatorDefinedMetadata"] as? [String: String] ?? [:]
+    }
+
+    /// Total size of the folder in bytes.
+    static func size(of url: URL) -> Int {
+        guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        return files.reduce(0) { total, file in
+            total + (((file as? URL).flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }) ?? 0)
+        }
+    }
+
+    static func info(
+        at url: URL, metadata: [String: String], family: String, architecture: String?, isDynamic: Bool, precision: String
+    ) -> ModelInfo {
+        ModelInfo(
+            family: family, architecture: architecture, parameters: metadata["params"].flatMap(Int.init),
+            gflops: metadata["gflops"].flatMap(Double.init), isDynamic: isDynamic, precision: precision,
+            bytes: size(of: url))
+    }
+}
+
 nonisolated extension YOLOModel: Predictor {
     public func configure(imgsz: Int?, confidence: Float, iou: Float) {
         (self.imgsz, self.confidence, self.iou) = (imgsz, confidence, iou)

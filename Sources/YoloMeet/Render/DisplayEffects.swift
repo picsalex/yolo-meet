@@ -68,20 +68,20 @@ final class BoxNode: SKNode {
         self.rect = rect
         let line = theme.lineWidth * unit
         shape.path = CGPath(rect: rect, transform: nil)
-        shape.strokeColor = color
-        shape.lineWidth = line
+        shape.set(\.strokeColor, color)
+        shape.set(\.lineWidth, line)
 
         let pad = 5 * unit
-        if label.fontName != theme.labelFont { label.fontName = theme.labelFont }
-        label.text = text
-        label.fontSize = 15 * unit
-        label.fontColor = theme.textColor(on: color)
+        label.set(\.fontName, theme.labelFont)
+        label.set(\.text, text)
+        label.set(\.fontSize, 15 * unit)
+        label.set(\.fontColor, theme.textColor(on: color))
         label.position = CGPoint(x: rect.minX - line / 2 + pad, y: rect.maxY + line / 2 + pad / 2)
         let size = label.frame.size
         chip.path = CGPath(
             rect: CGRect(x: rect.minX - line / 2, y: rect.maxY + line / 2, width: size.width + 2 * pad, height: size.height + pad),
             transform: nil)
-        chip.fillColor = color
+        chip.set(\.fillColor, color)
     }
 }
 
@@ -151,17 +151,17 @@ final class PoseNode: SKNode {
         for (limb, path, color) in [(left, paths.left, theme.leftLimb), (right, paths.right, theme.rightLimb),
                                     (center, paths.center, theme.centerLimb)] {
             limb.path = path
-            limb.strokeColor = color
-            limb.lineWidth = (mesh ? 0.75 : theme.limbWidth) * unit
+            limb.set(\.strokeColor, color)
+            limb.set(\.lineWidth, (mesh ? 0.75 : theme.limbWidth) * unit)
         }
 
         let jointPath = CGMutablePath()
         let r = theme.jointRadius * unit
         for case let p? in mesh ? [] : points { jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
         joints.path = jointPath
-        joints.fillColor = theme.joint
-        joints.strokeColor = theme.jointOutline
-        joints.lineWidth = 1.5 * unit
+        joints.set(\.fillColor, theme.joint)
+        joints.set(\.strokeColor, theme.jointOutline)
+        joints.set(\.lineWidth, 1.5 * unit)
     }
 }
 
@@ -204,12 +204,12 @@ final class OrientedBoxNode: SKNode {
         path.addLines(between: points)
         path.closeSubpath()
         shape.path = path
-        shape.strokeColor = color
-        shape.lineWidth = 2.5 * unit
-        if label.fontName != font { label.fontName = font }
-        label.text = text
-        label.fontSize = 13 * unit
-        label.fontColor = color
+        shape.set(\.strokeColor, color)
+        shape.set(\.lineWidth, 2.5 * unit)
+        label.set(\.fontName, font)
+        label.set(\.text, text)
+        label.set(\.fontSize, 13 * unit)
+        label.set(\.fontColor, color)
         label.position = points.max { $0.y < $1.y }.map { CGPoint(x: $0.x, y: $0.y + 4 * unit) } ?? .zero
     }
 }
@@ -245,7 +245,7 @@ final class OverlayEffect: Effect {
 /// Top-5 classes as animated bars in the top-left corner.
 final class ClassifyEffect: Effect {
     let model: String
-    private var rows: [(label: SKLabelNode, bar: SKShapeNode, width: CGFloat)] = []
+    private var rows: [(label: SKLabelNode, bar: SKShapeNode, width: CGFloat, shown: (index: Int, percent: Int)?)] = []
 
     init(model: String) {
         self.model = model
@@ -259,7 +259,7 @@ final class ClassifyEffect: Effect {
             bar.lineWidth = 0
             node.addChild(bar)
             node.addChild(label)
-            rows.append((label, bar, 0))
+            rows.append((label, bar, 0, nil))
         }
     }
 
@@ -275,10 +275,14 @@ final class ClassifyEffect: Effect {
             row.bar.path = CGPath(
                 roundedRect: CGRect(x: 24 * u, y: y - 13 * u, width: max(width, 1), height: 26 * u),
                 cornerWidth: 6 * u, cornerHeight: 6 * u, transform: nil)
-            row.bar.fillColor = theme.color(i).withAlphaComponent(0.85)
-            row.label.fontColor = theme.textColor(on: theme.color(i))
-            row.label.text = top.map { "\(output.name(of: $0.index).replacingOccurrences(of: "_", with: " ")) \(Int($0.confidence * 100))%" }
-            row.label.fontSize = 16 * u
+            row.bar.set(\.fillColor, theme.color(i).withAlphaComponent(0.85))
+            row.label.set(\.fontColor, theme.textColor(on: theme.color(i)))
+            let shown = top.map { (index: $0.index, percent: Int($0.confidence * 100)) }
+            if shown?.index != row.shown?.index || shown?.percent != row.shown?.percent {
+                rows[i].shown = shown
+                row.label.text = shown.map { "\(output.name(of: $0.index).replacingOccurrences(of: "_", with: " ")) \($0.percent)%" }
+            }
+            row.label.set(\.fontSize, 16 * u)
             row.label.position = CGPoint(x: 32 * u, y: y)
         }
     }

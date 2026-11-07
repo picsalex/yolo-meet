@@ -4,11 +4,18 @@ import Vision
 
 /// Apple Vision's built-in hand, body and face landmarks, as detections with keypoints like the other models: hands in
 /// MediaPipe's 21-point order, bodies in COCO's 17-point order, faces as Vision's landmark regions.
+/// Faces are tracked: each frame's landmarks place the next frame's faces, so Vision skips face detection except every
+/// `redetectEvery` frames or once a face is lost.
 public nonisolated final class VisionLandmarker: @unchecked Sendable {
     public let id: String
     public let task: YOLOTask
     public let info: ModelInfo
+    let redetectEvery = 10
     private let handler = VNSequenceRequestHandler()
+    /// Faces for the next frame, each with how its detected box fit its landmarks.
+    private var faces: [(face: VNFaceObservation, fit: Fit)] = []
+    private var facesExtent = CGRect.null
+    private var sinceDetection = 0
 
     /// Vision's hand joints in MediaPipe's order: wrist, then thumb, index, middle, ring and little finger, base to tip.
     private static let hand: [VNHumanHandPoseObservation.JointName] = [
@@ -26,7 +33,7 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
     public init(id: String) throws {
         guard let task = id.split(separator: "-").last.flatMap({ YOLOTask(rawValue: String($0)) }),
             [.hand, .pose, .face].contains(task)
-        else { throw YOLOModelError.invalid("unknown Apple Vision model \(id)") }
+        else { throw ModelError.invalid("unknown Apple Vision model \(id)") }
         self.id = id
         self.task = task
         info = ModelInfo(
@@ -56,7 +63,7 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
                 let joints = (try? hand.recognizedPoints(.all)) ?? [:]
                 var detection = Detection(box: .zero, confidence: hand.confidence, classIndex: hand.chirality == .right ? 1 : 0)
                 detection.keypoints = Self.hand.map { keypoint(joints[$0]) }
-                return detection.boxed()
+                return detection.boxed(minConfidence: 0.1)
             }
         case .pose:
             let request = VNDetectHumanBodyPoseRequest()
@@ -65,13 +72,29 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
                 let joints = (try? body.recognizedPoints(.all)) ?? [:]
                 var detection = Detection(box: .zero, confidence: body.confidence, classIndex: 0)
                 detection.keypoints = Self.body.map { keypoint(joints[$0]) }
-                return detection.boxed()
+                return detection.boxed(minConfidence: 0.1)
             }
         default:
             let request = VNDetectFaceLandmarksRequest()
+            if frame.extent != facesExtent { (faces, facesExtent) = ([], frame.extent) }  // another input
+            let tracked = !faces.isEmpty && sinceDetection < redetectEvery
+            sinceDetection = tracked ? sinceDetection + 1 : 0
+            if tracked { request.inputFaceObservations = faces.map(\.face) }
             try handler.perform([request], on: frame)
+            let results = request.results ?? []
+            // Results come in the order of the input faces.
+            faces = results.enumerated().compactMap { i, face in
+                guard let region = face.landmarks?.allPoints else { return nil }
+                let box = face.boundingBox
+                let bounds = region.normalizedPoints.map { CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height) }.bounds
+                guard bounds.width > 0, bounds.height > 0 else { return nil }
+                let fit = tracked && faces.indices.contains(i) ? faces[i].fit : Fit(box, around: bounds)
+                return (VNFaceObservation(
+                    requestRevision: face.requestRevision, boundingBox: fit.box(around: bounds), roll: face.roll,
+                    yaw: face.yaw, pitch: face.pitch), fit)
+            }
             var skeleton: [(Int, Int)] = []
-            output.detections = (request.results ?? []).compactMap { face in
+            output.detections = results.compactMap { face in
                 guard let landmarks = face.landmarks else { return nil }
                 var detection = Detection(box: .zero, confidence: face.confidence, classIndex: 0)
                 // Each region as a polyline; eyes and lips close into loops.
@@ -90,24 +113,26 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
                     guard last > first else { continue }
                     skeleton += (first..<last).map { ($0, $0 + 1) } + (closed ? [(last, first)] : [])
                 }
-                return detection.boxed()
+                return detection.boxed(minConfidence: 0.1)
             }
             output.skeleton = skeleton
         }
         output.latency = CFAbsoluteTimeGetCurrent() - start
         return output
     }
-}
 
-private nonisolated extension Detection {
-    /// Sets the box around the confident keypoints.
-    func boxed() -> Detection {
-        let points = keypoints.filter { $0.confidence > 0.1 }.map(\.point)
-        guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(), let minY = points.map(\.y).min(),
-            let maxY = points.map(\.y).max()
-        else { return self }
-        var detection = self
-        detection.box = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-        return detection
+    /// A face box relative to the bounds of its landmarks: center offset and size, in units of the bounds.
+    struct Fit {
+        let dx, dy, width, height: CGFloat
+
+        init(_ box: CGRect, around bounds: CGRect) {
+            (dx, dy) = ((box.midX - bounds.midX) / bounds.width, (box.midY - bounds.midY) / bounds.height)
+            (width, height) = (box.width / bounds.width, box.height / bounds.height)
+        }
+
+        func box(around bounds: CGRect) -> CGRect {
+            let (w, h) = (width * bounds.width, height * bounds.height)
+            return CGRect(x: bounds.midX + dx * bounds.width - w / 2, y: bounds.midY + dy * bounds.height - h / 2, width: w, height: h)
+        }
     }
 }

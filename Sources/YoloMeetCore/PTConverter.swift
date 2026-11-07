@@ -37,7 +37,7 @@ public final class PTConverter {
     /// Disk space used by the environment, in bytes (walks ~50k files, so call off the main thread's hot paths).
     public func environmentSize() async -> Int {
         let directory = directory
-        return await Task.detached { YOLOModel.size(of: directory) }.value
+        return await Task.detached { ModelAsset.size(of: directory) }.value
     }
 
     /// Deletes the environment; the next `.pt` import sets it up again.

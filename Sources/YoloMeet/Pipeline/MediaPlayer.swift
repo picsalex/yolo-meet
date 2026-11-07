@@ -3,7 +3,7 @@ import CoreImage
 import Observation
 
 /// Plays a media file into the pipeline like a camera: videos (muted, looping) frame by frame, images as a steady
-/// stream so models and tracking behave as they do on live video.
+/// stream so models and tracking behave as they do on live video. Both come at most at the camera's size.
 @Observable
 final class MediaPlayer {
     private(set) var isVideo = false
@@ -24,7 +24,8 @@ final class MediaPlayer {
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: (any NSObjectProtocol)?
 
-    init(onFrame: @escaping @Sendable (CIImage) -> Void) {
+    /// `onFrame` receives each frame, and whether it differs from the previous one.
+    init(onFrame: @escaping @Sendable (CIImage, Bool) -> Void) {
         pump = FramePump(onFrame: onFrame)
         player.isMuted = true
         player.actionAtItemEnd = .none
@@ -42,18 +43,33 @@ final class MediaPlayer {
         guard let url else { return }
         if FileLibrary.isVideo(url) {
             let item = AVPlayerItem(url: url)
-            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
-                pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)], compatibility: [.ioSurfaceCoreAnimation]))
-            item.add(output)
             player.replaceCurrentItem(with: item)
             endObserver = NotificationCenter.default.addObserver(
                 forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
             ) { [weak self] _ in MainActor.assumeIsolated { _ = self?.player.seek(to: .zero) } }  // loop
-            pump.set(output: output, image: nil)
             isVideo = true
-            Task { duration = (try? await item.asset.load(.duration).seconds) ?? 0 }
+            Task {
+                duration = (try? await item.asset.load(.duration).seconds) ?? 0
+                // Frames scaled on the GPU to cover the camera's size, so a 4K video doesn't pass 4K frames around.
+                var size: CVImageSize?
+                if let track = try? await item.asset.loadTracks(withMediaType: .video).first,
+                    let (natural, transform) = try? await track.load(.naturalSize, .preferredTransform)
+                {
+                    let upright = natural.applying(transform)
+                    let (w, h) = (abs(upright.width), abs(upright.height))
+                    let scale = min(max(Pipeline.workingSize.width / w, Pipeline.workingSize.height / h), 1)
+                    // Sides as stored (the transform applies later), even for the 4:2:0 decoder.
+                    size = CVImageSize(width: Int(natural.width * scale / 2) * 2, height: Int(natural.height * scale / 2) * 2)
+                }
+                guard player.currentItem === item else { return }  // another file meanwhile
+                let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
+                    pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)], size: size,
+                    compatibility: [.ioSurfaceCoreAnimation]))
+                item.add(output)
+                pump.set(output: output, image: nil)
+            }
         } else {
-            pump.set(output: nil, image: CIImage(contentsOf: url, options: [.applyOrientationProperty: true]))
+            pump.set(output: nil, image: FileLibrary.image(at: url, covering: Pipeline.workingSize))
         }
         isPlaying = isActive && isVideo
     }
@@ -71,13 +87,15 @@ private nonisolated final class FramePump: @unchecked Sendable {
     private var output: AVPlayerItemVideoOutput?
     /// The image, or the video's latest frame.
     private var image: CIImage?
+    /// The last frame sent (timer queue only).
+    private var sent: CIImage?
     /// When the video last produced a new frame.
     private var fresh: CFTimeInterval = 0
     private var ticks = 0
-    private let onFrame: @Sendable (CIImage) -> Void
+    private let onFrame: @Sendable (CIImage, Bool) -> Void
     private let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "MediaPlayer", qos: .userInteractive))
 
-    init(onFrame: @escaping @Sendable (CIImage) -> Void) {
+    init(onFrame: @escaping @Sendable (CIImage, Bool) -> Void) {
         self.onFrame = onFrame
         timer.schedule(deadline: .now(), repeating: 1.0 / 60)
         timer.setEventHandler { [weak self] in self?.tick() }
@@ -110,10 +128,15 @@ private nonisolated final class FramePump: @unchecked Sendable {
             if output.hasNewPixelBuffer(forItemTime: time), let buffer = output.pixelBufferAndDisplayTime(forItemTime: time).0 {
                 let frame = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
                 lock.withLock { (self.image, self.fresh) = (frame, now) }
-                return onFrame(frame)
+                sent = frame
+                return onFrame(frame, true)
             }
             guard now - fresh > 0.1 else { return }  // between two frames of a playing video
         }
-        if let image, ticks % 2 == 0 { onFrame(image) }  // a still (image, or paused video) at 30 fps, like a camera
+        // A still (image, or paused video) at 30 fps, like a camera.
+        if let image, ticks % 2 == 0 {
+            defer { sent = image }
+            onFrame(image, image !== sent)
+        }
     }
 }

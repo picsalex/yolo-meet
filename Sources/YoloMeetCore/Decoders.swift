@@ -89,12 +89,7 @@ nonisolated extension YOLOModel {
     }
 
     private func overlap(_ a: Detection, _ b: Detection, rotated: Bool) -> Float {
-        guard rotated else {
-            let inter = a.box.intersection(b.box)
-            guard !inter.isNull else { return 0 }
-            let i = inter.width * inter.height
-            return Float(i / (a.box.width * a.box.height + b.box.width * b.box.height - i))
-        }
+        guard rotated else { return Float(a.box.iou(b.box)) }
         guard a.box.insetBy(dx: -a.box.width, dy: -a.box.height).intersects(b.box) else { return 0 }
         let (pa, pb) = (corners(of: a), corners(of: b))
         let i = area(clip(pa, by: pb))
@@ -142,7 +137,7 @@ nonisolated extension YOLOModel {
                 for px in xs {
                     let logit = masks[i * ph * pw + py * pw + px]
                     guard logit > -1 else { continue }
-                    let alpha = min(max((1 / (1 + exp(-logit)) - 0.35) / 0.3, 0), 1) * 0.55
+                    let alpha = min(max((sigmoid(logit) - 0.35) / 0.3, 0), 1) * 0.55
                     let o = ((py - crop.y) * w + px - crop.x) * 4
                     rgba[o] = UInt8(Float(r) * alpha)
                     rgba[o + 1] = UInt8(Float(g) * alpha)
@@ -168,7 +163,7 @@ nonisolated extension YOLOModel {
         for q in 0..<queries {
             let row = logits.values[(q * classes)..<((q + 1) * classes)]
             guard let best = row.indices.max(by: { row[$0] < row[$1] }) else { continue }
-            let score = 1 / (1 + exp(-row[best]))
+            let score = sigmoid(row[best])
             guard score >= confidence else { continue }
             let b = boxes.values[(q * 4)..<(q * 4 + 4)].map { $0 }
             let (cx, cy, bw, bh) = (b[0] * w, b[1] * h, b[2] * w, b[3] * h)
@@ -187,20 +182,14 @@ nonisolated extension YOLOModel {
                 let base = (kept[i].anchor * slots + kept[i].detection.classIndex * perClass) * dims
                 kept[i].detection.keypoints = (0..<perClass).map { k in
                     let v = { keypoints.values[base + k * dims + $0] }
-                    return Keypoint(point: geometry.point(v(0) * w, v(1) * h), confidence: 1 / (1 + exp(-v(2))))
+                    return Keypoint(point: geometry.point(v(0) * w, v(1) * h), confidence: sigmoid(v(2)))
                 }
             }
         }
         output.detections = kept.map(\.detection)
 
-        if let masks = named["masks"], !kept.isEmpty {
+        if let masks = named["masks"], !kept.isEmpty, let gathered = try? ImageFunction.planes(of: masks, kept.map(\.anchor)) {
             let (mh, mw) = (masks.shape[2], masks.shape[3])
-            let plane = mh * mw
-            var gathered = [Float](repeating: 0, count: kept.count * plane)
-            for (i, candidate) in kept.enumerated() {
-                gathered.replaceSubrange(
-                    (i * plane)..<((i + 1) * plane), with: masks.values[(candidate.anchor * plane)..<((candidate.anchor + 1) * plane)])
-            }
             output.overlay = paintInstances(
                 kept, masks: gathered, width: mw, height: mh, scale: CGFloat(mw) / CGFloat(width), crop: (0, 0))
         }
@@ -209,30 +198,44 @@ nonisolated extension YOLOModel {
     /// Per-pixel argmax colored with the Cityscapes palette, cropped to the frame.
     private func classMap(_ logits: Tensor, geometry: Geometry) -> CGImage? {
         let (classes, mh, mw) = (logits.shape[1], logits.shape[2], logits.shape[3])
-        let plane = mh * mw
-        var best = [Float](repeating: -.infinity, count: plane)
-        var bestClass = [UInt8](repeating: 0, count: plane)
+        let (x0, y0) = (Int(geometry.padX.rounded()), Int(geometry.padY.rounded()))
+        let (w, h) = (mw - 2 * x0, mh - 2 * y0)
+        guard w > 0, h > 0 else { return nil }
+        // Premultiplied RGBA at half opacity, one 32-bit word per class.
+        let colors = Palette.cityscapes.map { r, g, b in
+            Int32(bitPattern: UInt32(r / 2) | UInt32(g / 2) << 8 | UInt32(b / 2) << 16 | 127 << 24)
+        }
+        // Over the frame's rows, 16 pixels at a time: each class's logits replace the best so far where higher, and its
+        // color the pixel's. Ties keep the lower class.
+        let count = h * mw
+        var best = [Float](repeating: -.infinity, count: count)
+        var pixels = [Int32](repeating: colors[0], count: count)
         logits.values.withUnsafeBufferPointer { values in
-            for c in 0..<classes {
-                let row = values.baseAddress! + c * plane
-                for p in 0..<plane where row[p] > best[p] {
-                    best[p] = row[p]
-                    bestClass[p] = UInt8(c)
+            best.withUnsafeMutableBufferPointer { best in
+                pixels.withUnsafeMutableBufferPointer { pixels in
+                    let (top, pixel) = (UnsafeMutableRawPointer(best.baseAddress!), UnsafeMutableRawPointer(pixels.baseAddress!))
+                    for c in 0..<classes {
+                        let row = values.baseAddress! + c * mh * mw + y0 * mw
+                        let color = colors[c % colors.count]
+                        for o in stride(from: 0, to: count / 16 * 64, by: 64) {
+                            let logit = UnsafeRawPointer(row).loadUnaligned(fromByteOffset: o, as: SIMD16<Float>.self)
+                            let current = top.loadUnaligned(fromByteOffset: o, as: SIMD16<Float>.self)
+                            let higher = logit .> current
+                            top.storeBytes(of: current.replacing(with: logit, where: higher), toByteOffset: o, as: SIMD16<Float>.self)
+                            let shown = pixel.loadUnaligned(fromByteOffset: o, as: SIMD16<Int32>.self)
+                            pixel.storeBytes(of: shown.replacing(with: color, where: higher), toByteOffset: o, as: SIMD16<Int32>.self)
+                        }
+                        for p in count / 16 * 16..<count where row[p] > best[p] { (best[p], pixels[p]) = (row[p], color) }
+                    }
                 }
             }
         }
-        let (x0, y0) = (Int(geometry.padX.rounded()), Int(geometry.padY.rounded()))
-        let (w, h) = (mw - 2 * x0, mh - 2 * y0)
-        let alpha: Float = 0.5
-        var rgba = [UInt8](repeating: 0, count: max(w * h, 0) * 4)
-        for y in 0..<max(h, 0) {
-            for x in 0..<w {
-                let (r, g, b) = Palette.cityscapes[Int(bestClass[(y + y0) * mw + x + x0]) % Palette.cityscapes.count]
-                let o = (y * w + x) * 4
-                rgba[o] = UInt8(Float(r) * alpha)
-                rgba[o + 1] = UInt8(Float(g) * alpha)
-                rgba[o + 2] = UInt8(Float(b) * alpha)
-                rgba[o + 3] = UInt8(255 * alpha)
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        rgba.withUnsafeMutableBytes { rgba in
+            pixels.withUnsafeBytes { pixels in
+                for y in 0..<h {
+                    rgba.baseAddress!.advanced(by: y * w * 4).copyMemory(from: pixels.baseAddress! + (y * mw + x0) * 4, byteCount: w * 4)
+                }
             }
         }
         return makeImage(rgba: rgba, width: w, height: h)

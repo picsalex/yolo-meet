@@ -90,6 +90,16 @@ final class TrackedNodes<N: SKNode> {
     }
 }
 
+/// SpriteKit redoes text layout or shape tessellation on every property write, even an equal one.
+protocol ChangeOnly: AnyObject {}
+extension SKNode: ChangeOnly {}
+extension ChangeOnly {
+    /// Writes `value` only when it differs.
+    func set<Value: Equatable>(_ property: ReferenceWritableKeyPath<Self, Value>, _ value: Value) {
+        if self[keyPath: property] != value { self[keyPath: property] = value }
+    }
+}
+
 extension CGFloat {
     func approaching(_ target: CGFloat, _ k: CGFloat) -> CGFloat { self + (target - self) * k }
 }

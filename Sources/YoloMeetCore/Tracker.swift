@@ -24,7 +24,7 @@ public nonisolated final class Tracker {
         var pairs: [(track: Int, detection: Int, iou: CGFloat)] = []
         for (t, track) in tracks.enumerated() {
             for (d, detection) in detections.enumerated() where detection.classIndex == track.classIndex {
-                let score = iou(track.box, detection.box)
+                let score = track.box.iou(detection.box)
                 if score >= minIoU { pairs.append((t, d, score)) }
             }
         }
@@ -45,12 +45,5 @@ public nonisolated final class Tracker {
             detections[d].trackID = nextID
             nextID += 1
         }
-    }
-
-    private func iou(_ a: CGRect, _ b: CGRect) -> CGFloat {
-        let inter = a.intersection(b)
-        guard !inter.isNull else { return 0 }
-        let i = inter.width * inter.height
-        return i / (a.width * a.height + b.width * b.height - i)
     }
 }

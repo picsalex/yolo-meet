@@ -18,7 +18,7 @@ final class AppModel {
     /// Images and videos to run models on instead of the camera.
     let media = FileLibrary(folder: "Media", key: "media")
     let links = LinkDownloader()
-    @ObservationIgnored lazy var player = MediaPlayer { [pipeline] in pipeline.show($0) }
+    @ObservationIgnored lazy var player = MediaPlayer { [pipeline] in pipeline.show($0, isNew: $1) }
     @ObservationIgnored lazy var camera = Camera { [pipeline] in pipeline.handle($0) }
     @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
 
@@ -74,7 +74,7 @@ final class AppModel {
     private func start() async {
         pipeline.setSettings(inference)
         backgrounds.onChange = { [pipeline] url in
-            pipeline.setBackground(url.flatMap { CIImage(contentsOf: $0, options: [.applyOrientationProperty: true]) })
+            pipeline.setBackground(url.flatMap { FileLibrary.image(at: $0, covering: Pipeline.workingSize) })
         }
         media.onChange = { [player] in player.load($0) }
         await camera.start()

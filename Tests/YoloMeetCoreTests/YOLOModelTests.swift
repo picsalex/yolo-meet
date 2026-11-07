@@ -154,6 +154,27 @@ import Testing
         #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
     }
 
+    /// The stage shows the newest frame with results carried forward to its capture time.
+    @Test func predicted() {
+        func output(at time: Double, x: CGFloat) -> ModelOutput {
+            var output = ModelOutput(modelID: "m", task: .pose, names: [], info: ModelInfo(
+                family: "YOLO", architecture: nil, parameters: nil, gflops: nil, isDynamic: true, precision: "FP16", bytes: 0),
+                frameSize: CGSize(width: 100, height: 100))
+            output.time = time
+            var detection = Detection(box: CGRect(x: x, y: 0, width: 10, height: 10), confidence: 0.9, classIndex: 0)
+            detection.trackID = 1
+            detection.keypoints = [Keypoint(point: CGPoint(x: x, y: 5), confidence: 0.9)]
+            output.detections = [detection]
+            return output
+        }
+        let history = [output(at: 1.0, x: 0), output(at: 1.1, x: 20)]  // moving 200 px/s
+        #expect(abs(history.predicted(at: 1.15)!.detections[0].box.minX - 30) < 1e-6)
+        #expect(abs(history.predicted(at: 1.15)!.detections[0].keypoints[0].point.x - 30) < 1e-6)
+        #expect(abs(history.predicted(at: 2)!.detections[0].box.minX - 50) < 1e-6)  // at most 0.15 s ahead
+        #expect(history.predicted(at: 1.1)?.detections[0].box.minX == 20)
+        #expect([output(at: 1.0, x: 7)].predicted(at: 1.2)?.detections[0].box.minX == 7)  // one run: as is
+    }
+
     @Test func tracker() {
         let tracker = Tracker()
         var first = [Detection(box: CGRect(x: 0, y: 0, width: 100, height: 100), confidence: 0.9, classIndex: 0)]

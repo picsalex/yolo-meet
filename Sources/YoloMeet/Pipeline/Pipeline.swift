@@ -1,15 +1,18 @@
 import CoreImage
 import Foundation
+import QuartzCore
 import Vision
 import YoloMeetCore
 
 /// Camera frame → background replacement → models → tracked results.
-/// The renderer reads `latestFrame` and `latestOutputs` at display rate; inference runs at its own rate on the newest
-/// frame and never queues up stale frames.
+/// Inference runs at its own rate on the newest frame and never queues up stale frames. The renderer asks for a
+/// `snapshot` at display rate: the newest frame, with results predicted to its capture time.
 nonisolated final class Pipeline: @unchecked Sendable {
     private struct State {
-        var frame: CIImage?
-        var outputs: [String: ModelOutput] = [:]
+        /// Newest frame and its capture time (`CACurrentMediaTime`).
+        var frame: (time: TimeInterval, image: CIImage)?
+        /// Recent results per model, oldest first.
+        var history: [String: [ModelOutput]] = [:]
         var wanted: [String] = []
         var models: [YOLOModel] = []
         var loading: Set<String> = []
@@ -28,8 +31,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
     private var state = State()
     private let segmentation = PersonSegmentation()
 
-    var latestFrame: CIImage? { lock.withLock { state.frame } }
-    var latestOutputs: [String: ModelOutput] { lock.withLock { state.outputs } }
+    var latestOutputs: [String: ModelOutput] { lock.withLock { state.history.compactMapValues(\.last) } }
     var errors: [String: String] { lock.withLock { state.errors } }
     /// Captured frames per second and their size.
     var camera: (fps: Double, size: CGSize) { lock.withLock { (state.cameraRate.rate, state.cameraSize) } }
@@ -40,10 +42,11 @@ nonisolated final class Pipeline: @unchecked Sendable {
 
     /// Called on the camera queue for every captured frame.
     func handle(_ buffer: CVPixelBuffer) {
+        let time = CACurrentMediaTime()
         let (background, mirror) = lock.withLock { (state.background, state.mirror) }
         let frame = segmentation.composite(buffer, over: background, mirror: mirror)
         let run: (models: [YOLOModel], settings: InferenceSettings)? = lock.withLock {
-            state.frame = frame
+            state.frame = (time, frame)
             state.cameraRate.tick()
             state.cameraSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
             guard !state.busy, !state.models.isEmpty else { return nil }
@@ -51,7 +54,14 @@ nonisolated final class Pipeline: @unchecked Sendable {
             return (state.models, state.settings)
         }
         guard let run else { return }
-        Task.detached(priority: .userInitiated) { await self.infer(frame, run.models, run.settings) }
+        Task.detached(priority: .userInitiated) { await self.infer(frame, at: time, run.models, run.settings) }
+    }
+
+    /// The newest frame and every model's results predicted to its capture time.
+    var snapshot: (frame: CIImage, outputs: [String: ModelOutput])? {
+        lock.withLock {
+            state.frame.map { frame in (frame.image, state.history.compactMapValues { $0.predicted(at: frame.time) }) }
+        }
     }
 
     /// Makes `entries` the active models, in order, loading any that are not loaded yet.
@@ -60,7 +70,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
         let toLoad: [(id: String, url: URL)] = lock.withLock {
             state.wanted = ids
             state.models.removeAll { !ids.contains($0.id) }
-            state.outputs = state.outputs.filter { ids.contains($0.key) }
+            state.history = state.history.filter { ids.contains($0.key) }
             state.trackers = state.trackers.filter { ids.contains($0.key) }
             state.modelRates = state.modelRates.filter { ids.contains($0.key) }
             let pending = entries.filter { entry in
@@ -90,12 +100,13 @@ nonisolated final class Pipeline: @unchecked Sendable {
         }
     }
 
-    private func infer(_ frame: CIImage, _ models: [YOLOModel], _ settings: InferenceSettings) async {
+    private func infer(_ frame: CIImage, at time: TimeInterval, _ models: [YOLOModel], _ settings: InferenceSettings) async {
         var outputs: [String: ModelOutput] = [:]
         for model in models {
             (model.imgsz, model.confidence, model.iou) = (settings.imgsz, settings.confidence, settings.iou)
             do {
                 var output = try await model.predict(frame)
+                output.time = time
                 let tracker = lock.withLock {
                     output.fps = state.modelRates[model.id, default: RateCounter()].tick()
                     let tracker = state.trackers[model.id] ?? Tracker()
@@ -109,7 +120,10 @@ nonisolated final class Pipeline: @unchecked Sendable {
             }
         }
         lock.withLock {
-            state.outputs = outputs.filter { state.wanted.contains($0.key) }
+            for (id, output) in outputs where state.wanted.contains(id) {
+                state.history[id, default: []].append(output)
+                state.history[id]!.removeFirst(max(state.history[id]!.count - 2, 0))  // prediction uses the last two
+            }
             state.busy = false
         }
     }

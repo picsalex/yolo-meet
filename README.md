@@ -28,7 +28,8 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 
 `Camera` → `Pipeline` (Vision person segmentation replaces the background, then every active model runs on the newest
 frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
-pass at 60 fps). Models run at their own rate; effects animate toward the latest results, so motion stays smooth.
+pass at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
+at the speed they moved between the last two runs: the video has no added delay and overlays keep up with fast hands.
 
 Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py` and attached to the `models` release. They are downloaded from the panel,
 and live in `~/Library/Application Support/YoloMeet/Models`.

@@ -69,13 +69,14 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         let size = view.drawableSize
         let bounds = CGRect(origin: .zero, size: size)
 
-        guard let frame = model.pipeline.latestFrame else {
+        guard let snapshot = model.pipeline.snapshot else {
             commandBuffer.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()  // clears to black
             commandBuffer.present(drawable)
             commandBuffer.commit()
             return
         }
 
+        let frame = snapshot.frame
         // Camera: aspect-fill into the drawable on the GPU.
         let scale = max(size.width / frame.extent.width, size.height / frame.extent.height)
         let scaled = frame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -92,8 +93,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         if model.sceneVersion != sceneVersion { swapEffects() }
         if scene.size != size { scene.size = size }
         let stageFrame = StageFrame(
-            outputs: model.pipeline.latestOutputs, stage: Stage(frameSize: frame.extent.size, viewSize: size),
-            time: now, dt: dt)
+            outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt)
         for effect in effects { effect.update(stageFrame) }
         stats.node.isHidden = !model.showStats
         if model.showStats { stats.update(stageFrame) }

@@ -71,7 +71,7 @@ final class AppModel {
     func makeEffects() -> [Effect] {
         switch mode {
         case .display:
-            displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id) } ?? [] }
+            displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? [] }
         case .story:
             story.steps[stepIndex].effects()
         }

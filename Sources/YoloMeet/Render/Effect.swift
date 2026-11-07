@@ -33,12 +33,17 @@ struct StageFrame {
     let time: TimeInterval
     let dt: TimeInterval
 
-    /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate.
-    var smoothing: CGFloat { CGFloat(1 - exp(-dt * 14)) }
+    /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate. Results are
+    /// already predicted to each video frame, so this only softens jitter.
+    var smoothing: CGFloat { CGFloat(1 - exp(-dt * 30)) }
+
+    /// Blend factor that adapts to how far a point is from its target (stage points), like a One Euro filter: small
+    /// gaps (jitter) are smoothed, large ones (fast motion) are caught up within a frame or two.
+    func smoothing(gap: CGFloat) -> CGFloat { CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) }
 }
 
 /// Something drawn on the stage. Subclasses add children to `node` and update them in `update(_:)`, which runs every
-/// rendered frame (60 fps) while model results arrive at inference rate, so animate toward targets rather than jump.
+/// rendered frame (60 fps) with results predicted to the shown video frame; animate toward them to soften jitter.
 class Effect {
     let node = SKNode()
     func update(_ frame: StageFrame) {}

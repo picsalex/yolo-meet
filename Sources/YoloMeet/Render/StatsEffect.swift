@@ -42,10 +42,10 @@ final class StatsEffect: Effect {
     private func text(_ frame: StageFrame) -> String {
         let camera = model.pipeline.camera
         var lines = [
-            row("Camera", "\(Int(camera.size.width))×\(Int(camera.size.height)) @ \(Int(camera.fps.rounded())) fps"),
+            row(model.source.rawValue, "\(Int(camera.size.width))×\(Int(camera.size.height)) @ \(Int(camera.fps.rounded())) fps"),
             row("Stage", "\(Int(frame.stage.viewSize.width))×\(Int(frame.stage.viewSize.height)) @ \(model.renderFPS) fps"),
         ]
-        if model.backgrounds.selected != nil { lines.append(row("Background", "replaced (Vision)")) }
+        if model.source == .camera, model.backgrounds.selected != nil { lines.append(row("Background", "replaced (Vision)")) }
         for output in frame.outputs.values.sorted(by: { $0.modelID < $1.modelID }) {
             let info = output.info
             lines.append("")

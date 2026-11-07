@@ -52,6 +52,19 @@ Models › Custom › Import Model… takes PyTorch weights (`.pt`/`.pth`) from 
 
 Imported models live in `~/Library/Application Support/YoloMeet/Custom` and can be renamed or deleted.
 
+## Sources
+
+The panel's Source section picks what the stage shows under the effects:
+
+- **Camera**: switch it off to stop capture (the camera light goes off); the stage then shows the background, or black.
+  Background replacement and mirroring apply to the camera only.
+- **Media**: images and videos added with "+", or downloaded from a pasted link (YouTube and most video sites) with
+  [yt-dlp](https://github.com/yt-dlp/yt-dlp). yt-dlp is fetched from its GitHub release on first use into
+  `~/Library/Application Support/YoloMeet/Tools`, checked against the release's SHA-256 list, and refreshed every two
+  weeks. Only the video stream is downloaded (H.264 MP4 up to 1080p; the stage is muted). Media lives in
+  `~/Library/Application Support/YoloMeet/Media`. Videos loop, with play/pause and a scrubber; models, tracking and
+  stories run on media exactly as on the camera.
+
 ## Inference settings
 
 The panel's Inference section applies to every model on stage:

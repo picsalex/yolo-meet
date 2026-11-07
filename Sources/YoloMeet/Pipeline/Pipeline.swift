@@ -8,6 +8,9 @@ import YoloMeetCore
 /// Each model runs at its own rate on the newest frame and never queues up stale frames. The renderer asks for a
 /// `snapshot` at display rate: the newest frame, with results predicted to its capture time.
 nonisolated final class Pipeline: @unchecked Sendable {
+    /// Where frames come from. `off`: the stage shows the background, or black, and models do not run.
+    enum Input { case camera, media, off }
+
     private struct State {
         /// Newest frame and its capture time (`CACurrentMediaTime`).
         var frame: (time: TimeInterval, image: CIImage)?
@@ -21,6 +24,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
         var busy: Set<String> = []
         var background: CIImage?
         var mirror = true
+        var input = Input.camera
         var settings = InferenceSettings()
         var errors: [String: String] = [:]
         var cameraRate = RateCounter()
@@ -40,26 +44,57 @@ nonisolated final class Pipeline: @unchecked Sendable {
     var errors: [String: String] { lock.withLock { state.errors } }
     /// Active models with no result yet (loading, compiling for this Mac, first run) and no error.
     var pending: Set<String> {
-        lock.withLock { Set(state.wanted.filter { state.history[$0] == nil && state.errors[$0] == nil }) }
+        lock.withLock {
+            state.input != .off ? Set(state.wanted.filter { state.history[$0] == nil && state.errors[$0] == nil }) : []
+        }
     }
     /// Called, on any thread, when `pending` may have changed. Set once before models are added.
     nonisolated(unsafe) var onPendingChange: @Sendable () -> Void = {}
-    /// Captured frames per second and their size.
+    /// Input frames per second and their size.
     var camera: (fps: Double, size: CGSize) { lock.withLock { (state.cameraRate.rate, state.cameraSize) } }
 
-    func setBackground(_ image: CIImage?) { lock.withLock { state.background = image } }
+    func setBackground(_ image: CIImage?) {
+        lock.withLock {
+            state.background = image
+            if state.input == .off { state.frame = (CACurrentMediaTime(), offFrame()) }
+        }
+    }
+
+    /// Switching input clears results and tracks; the stage stays black until the new input's first frame.
+    func setInput(_ input: Input) {
+        lock.withLock {
+            guard state.input != input else { return }
+            state.input = input
+            state.history = [:]
+            state.trackers = [:]
+            state.frame = input == .off ? (CACurrentMediaTime(), offFrame()) : nil
+        }
+        onPendingChange()
+    }
+
+    /// Caller holds `lock`.
+    private func offFrame() -> CIImage {
+        let extent = CGRect(origin: .zero, size: state.cameraSize == .zero ? CGSize(width: 1920, height: 1080) : state.cameraSize)
+        return state.background?.filling(extent) ?? CIImage(color: .black).cropped(to: extent)
+    }
     func setMirror(_ mirror: Bool) { lock.withLock { state.mirror = mirror } }
     func setSettings(_ settings: InferenceSettings) { lock.withLock { state.settings = settings } }
 
     /// Called on the camera queue for every captured frame.
     func handle(_ buffer: CVPixelBuffer) {
+        let (input, background, mirror) = lock.withLock { (state.input, state.background, state.mirror) }
+        guard input == .camera else { return }  // a frame still in flight after switching input
+        show(segmentation.composite(buffer, over: background, mirror: mirror), from: .camera)
+    }
+
+    /// Shows a frame from `input` and starts every idle model on it. Media frames come here directly.
+    func show(_ frame: CIImage, from input: Input = .media) {
         let time = CACurrentMediaTime()
-        let (background, mirror) = lock.withLock { (state.background, state.mirror) }
-        let frame = segmentation.composite(buffer, over: background, mirror: mirror)
         let (idle, settings) = lock.withLock {
+            guard state.input == input else { return ([YOLOModel](), state.settings) }
             state.frame = (time, frame)
             state.cameraRate.tick()
-            state.cameraSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
+            state.cameraSize = frame.extent.size
             let idle = state.models.filter { !state.busy.contains($0.id) }
             state.busy.formUnion(idle.map(\.id))
             return (idle, state.settings)
@@ -229,11 +264,7 @@ private nonisolated final class PersonSegmentation: @unchecked Sendable {
     /// Aspect-fills the background over the frame, cached until either changes.
     private func fill(_ background: CIImage, _ extent: CGRect) -> CIImage {
         if let fitted, fitted.source === background, fitted.extent == extent { return fitted.image }
-        let scale = max(extent.width / background.extent.width, extent.height / background.extent.height)
-        let scaled = background.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let image = scaled.transformed(by: CGAffineTransform(
-            translationX: extent.midX - scaled.extent.midX, y: extent.midY - scaled.extent.midY)
-        ).cropped(to: extent)
+        let image = background.filling(extent)
         fitted = (background, extent, image)
         return image
     }
@@ -241,5 +272,14 @@ private nonisolated final class PersonSegmentation: @unchecked Sendable {
 
 private nonisolated extension CIImage {
     func mirrored(_ mirror: Bool) -> CIImage { mirror ? oriented(.upMirrored) : self }
+
+    /// Scaled to cover `extent`, centered and cropped to it.
+    func filling(_ extent: CGRect) -> CIImage {
+        let scale = max(extent.width / self.extent.width, extent.height / self.extent.height)
+        let scaled = transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        return scaled.transformed(by: CGAffineTransform(
+            translationX: extent.midX - scaled.extent.midX, y: extent.midY - scaled.extent.midY)
+        ).cropped(to: extent)
+    }
 }
 

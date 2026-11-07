@@ -14,6 +14,16 @@ final class Camera {
         }
     }
 
+    /// Capture runs only while on, so the camera (and its light) is really off. On at every launch.
+    var isOn = true {
+        didSet {
+            guard isOn != oldValue else { return }
+            nonisolated(unsafe) let session = session
+            let isOn = isOn
+            queue.async { isOn ? session.startRunning() : session.stopRunning() }
+        }
+    }
+
     @ObservationIgnored private nonisolated(unsafe) let session = AVCaptureSession()
     @ObservationIgnored private let output = AVCaptureVideoDataOutput()
     @ObservationIgnored private let receiver: FrameReceiver
@@ -47,7 +57,8 @@ final class Camera {
         session.sessionPreset = session.canSetSessionPreset(.hd1920x1080) ? .hd1920x1080 : .high
         session.commitConfiguration()
         nonisolated(unsafe) let session = session
-        queue.async { if !session.isRunning { session.startRunning() } }
+        let isOn = isOn
+        queue.async { if isOn && !session.isRunning { session.startRunning() } }
     }
 }
 

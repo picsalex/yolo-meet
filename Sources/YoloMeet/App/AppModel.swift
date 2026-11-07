@@ -7,12 +7,18 @@ import YoloMeetCore
 @Observable
 final class AppModel {
     enum Mode: String, CaseIterable { case display = "Display", story = "Story" }
+    /// What the stage shows under the effects.
+    enum Source: String, CaseIterable { case camera = "Camera", media = "Media" }
 
     let pipeline = Pipeline()
     let store = ModelStore()
     let custom = CustomModels()
     let converter = PTConverter(script: Bundle.main.url(forResource: "export_models", withExtension: "py"))
-    let backgrounds = BackgroundLibrary()
+    let backgrounds = FileLibrary(folder: "Backgrounds", key: "background")
+    /// Images and videos to run models on instead of the camera.
+    let media = FileLibrary(folder: "Media", key: "media")
+    let links = LinkDownloader()
+    @ObservationIgnored lazy var player = MediaPlayer { [pipeline] in pipeline.show($0) }
     @ObservationIgnored lazy var camera = Camera { [pipeline] in pipeline.handle($0) }
     @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
 
@@ -22,6 +28,9 @@ final class AppModel {
     var storyID = Story.all[0].id { didSet { stepIndex = 0 } }
     var stepIndex = 0 { didSet { applyScene() } }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
+    var source = Source.camera { didSet { applyInput() } }
+    /// Off: no capture; the stage shows the background, or black.
+    var cameraOn = true { didSet { applyInput() } }
     var inference = InferenceSettings.saved {
         didSet {
             inference.save()
@@ -57,8 +66,21 @@ final class AppModel {
         backgrounds.onChange = { [pipeline] url in
             pipeline.setBackground(url.flatMap { CIImage(contentsOf: $0, options: [.applyOrientationProperty: true]) })
         }
+        media.onChange = { [player] in player.load($0) }
         await camera.start()
         applyScene()
+    }
+
+    /// Only one input runs: the camera (when on) or the media player.
+    private func applyInput() {
+        camera.isOn = source == .camera && cameraOn
+        pipeline.setInput(source == .media ? .media : cameraOn ? .camera : .off)
+        player.isActive = source == .media
+    }
+
+    /// Downloads a video link into the media library and shows it.
+    func addLink(_ link: String) async throws {
+        media.adopt(try await links.download(link, into: media.directory))
     }
 
     func next() { if mode == .story, stepIndex < story.steps.count - 1 { stepIndex += 1 } }

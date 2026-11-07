@@ -16,6 +16,7 @@ mkdir -p "$APP/Contents/Resources"
 cp scripts/export_models.py "$APP/Contents/Resources/"  # run by the in-app .pt converter
 cp Support/AppIcon.icns "$APP/Contents/Resources/"  # from scripts/make_icon.swift
 cp -R Support/Fonts "$APP/Contents/Resources/"  # Archivo and Geist Mono, SIL OFL (licenses alongside)
+cp -R Sources/YoloMeet/Stories/Assets "$APP/Contents/Resources/Stories"  # found by Story.asset(_:in:)
 codesign --force --sign - "$APP"
 echo "Built $APP"
 

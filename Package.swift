@@ -8,7 +8,10 @@ let package = Package(
     platforms: [.macOS("27.0")],
     targets: [
         .target(name: "YoloMeetCore", swiftSettings: settings),
-        .executableTarget(name: "YoloMeet", dependencies: ["YoloMeetCore"], swiftSettings: settings),
+        // Story assets (3D models, images, sounds) are copied into the app by scripts/build.sh, not compiled.
+        .executableTarget(
+            name: "YoloMeet", dependencies: ["YoloMeetCore"], exclude: ["Stories/README.md", "Stories/Assets"],
+            swiftSettings: settings),
         .testTarget(name: "YoloMeetCoreTests", dependencies: ["YoloMeetCore"]),
     ]
 )

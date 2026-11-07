@@ -3,7 +3,8 @@ import MetalKit
 import SpriteKit
 import SwiftUI
 
-/// The shareable output: camera frame (Core Image) plus effects (SpriteKit), both rendered into one Metal drawable.
+/// The shareable output, rendered into one Metal drawable: camera frame (Core Image), then the effects' 3D content
+/// (RealityKit), then their 2D content (SpriteKit).
 struct StageView: NSViewRepresentable {
     let model: AppModel
 
@@ -37,6 +38,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let context: CIContext
     private let renderer: SKRenderer
     private let scene = SKScene()
+    private let reality: RealityLayer
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private var sceneVersion = -1
@@ -51,6 +53,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         scene.backgroundColor = .clear
         scene.scaleMode = .fill  // scene size tracks the drawable, so this is 1:1
         renderer.scene = scene
+        reality = RealityLayer(queue: queue)
         super.init()
         scene.addChild(stats.node)
     }
@@ -63,7 +66,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         lastTime = now
         model.renderFPS = Int(frameRate.tick().rounded())
 
-        guard let drawable = view.currentDrawable, let commandBuffer = queue.makeCommandBuffer(),
+        guard let drawable = view.currentDrawable, var commandBuffer = queue.makeCommandBuffer(),
             let pass = view.currentRenderPassDescriptor
         else { return }
         let size = view.drawableSize
@@ -98,6 +101,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         for effect in effects { effect.update(stageFrame) }
         stats.node.isHidden = !model.showStats
         if model.showStats { stats.update(stageFrame) }
+        if effects.contains(where: { !$0.entity.children.isEmpty }) {
+            commandBuffer = reality.render(over: drawable.texture, size: size, dt: dt, after: commandBuffer)
+        }
 
         renderer.update(atTime: now)
         let overlay = MTLRenderPassDescriptor()
@@ -113,6 +119,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private func swapEffects() {
         for effect in effects {
             effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+            reality.entities.remove(effect.entity)
         }
         effects = model.makeEffects()
         sceneVersion = model.sceneVersion
@@ -120,6 +127,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             effect.node.alpha = 0
             scene.addChild(effect.node)
             effect.node.run(.fadeIn(withDuration: 0.4))
+            reality.entities.append(effect.entity)
         }
     }
 

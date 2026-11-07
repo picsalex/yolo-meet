@@ -1,4 +1,5 @@
 import AppKit
+import RealityKit
 import SpriteKit
 import YoloMeetCore
 
@@ -24,6 +25,12 @@ struct Stage {
     }
 
     var frameRect: CGRect { rect(CGRect(origin: .zero, size: frameSize)) }
+
+    /// A frame point in the 3D layer's space (stage points), at depth `z` (0 is the video, positive toward the viewer).
+    func position(_ p: CGPoint, z: Float = 0) -> SIMD3<Float> {
+        let point = point(p)
+        return [Float(point.x), Float(point.y), z]
+    }
 }
 
 /// What effects see on every rendered frame.
@@ -44,22 +51,53 @@ struct StageFrame {
     func smoothing(gap: CGFloat) -> CGFloat { smooth ? CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) : 1 }
 }
 
-/// Something drawn on the stage. Subclasses add children to `node` and update them in `update(_:)`, which runs every
-/// rendered frame (60 fps) with results predicted to the shown video frame; animate toward them to soften jitter.
+/// Something drawn on the stage. Subclasses add children to `node` (2D, SpriteKit) and/or `entity` (3D and particles,
+/// RealityKit) and update them in `update(_:)`, which runs every rendered frame (60 fps) with results predicted to the
+/// shown video frame; animate toward them to soften jitter. The stage draws the video, then the 3D layer, then 2D.
 class Effect {
     let node = SKNode()
+    /// Root of the effect's 3D content, in stage points: x right, y up (as `node`), z toward the viewer, seen through
+    /// an orthographic camera, so `frame.stage.position(_:)` places content on a frame point.
+    let entity = Entity()
     func update(_ frame: StageFrame) {}
 }
 
-/// One node per track ID. Nodes fade in when a track appears and fade out once it has been gone for `grace` seconds,
-/// so a single missed detection never blinks. Without smoothing, nodes appear and disappear with the detections.
-final class TrackedNodes<N: SKNode> {
+/// Content shown per track: a SpriteKit node (fades in and out) or a RealityKit entity (appears and goes at once).
+protocol TrackedContent: AnyObject {
+    associatedtype Parent
+    func appear(in parent: Parent, fading: Bool)
+    func retire(fading: Bool)
+}
+
+extension SKNode: TrackedContent {
+    func appear(in parent: SKNode, fading: Bool) {
+        if fading {
+            alpha = 0
+            run(.fadeIn(withDuration: 0.2))
+        }
+        parent.addChild(self)
+    }
+
+    func retire(fading: Bool) {
+        run(fading ? .sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]) : .removeFromParent())
+    }
+}
+
+extension Entity: TrackedContent {
+    func appear(in parent: Entity, fading: Bool) { parent.addChild(self) }
+    func retire(fading: Bool) { removeFromParent() }
+}
+
+/// One node (or entity) per track ID. Nodes fade in when a track appears and fade out once it has been gone for
+/// `grace` seconds, so a single missed detection never blinks. Without smoothing, nodes appear and disappear with the
+/// detections.
+final class TrackedNodes<N: TrackedContent> {
     private var nodes: [Int: (node: N, lastSeen: TimeInterval)] = [:]
-    private let parent: SKNode
+    private let parent: N.Parent
     private let grace: TimeInterval
     private let make: () -> N
 
-    init(in parent: SKNode, grace: TimeInterval = 0.35, make: @escaping () -> N) {
+    init(in parent: N.Parent, grace: TimeInterval = 0.35, make: @escaping () -> N) {
         self.parent = parent
         self.grace = grace
         self.make = make
@@ -74,17 +112,13 @@ final class TrackedNodes<N: SKNode> {
                 return entry.node
             }
             let node = make()
-            if frame.smooth {
-                node.alpha = 0
-                node.run(.fadeIn(withDuration: 0.2))
-            }
-            parent.addChild(node)
+            node.appear(in: parent, fading: frame.smooth)
             nodes[id] = (node, time)
             return node
         }
         for (id, entry) in nodes where frame.smooth ? time - entry.lastSeen > grace : entry.lastSeen < time {
             nodes[id] = nil
-            entry.node.run(frame.smooth ? .sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]) : .removeFromParent())
+            entry.node.retire(fading: frame.smooth)
         }
         return visible
     }

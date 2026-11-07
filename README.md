@@ -1,6 +1,6 @@
 # YOLO-meet
 
-Native macOS app (Swift, Core AI, Metal, SpriteKit) that runs Ultralytics YOLO models on your camera and draws effects
+Native macOS app (Swift, Core AI, Metal, RealityKit, SpriteKit) that runs Ultralytics YOLO models on your camera and draws effects
 into a **Stage** window you share in Google Meet (Present → A window). The **YOLO-meet** panel window stays private.
 
 Requires macOS 27+ on Apple silicon and Xcode 27.
@@ -30,8 +30,8 @@ MediaPipe's sample photos (woman_hands, thumb_up, pose, portrait) and `reference
 ## How it works
 
 `Camera` → `Pipeline` (Vision person segmentation, on its own queue, replaces the background; each active model runs
-at its own rate on the newest frame, once per frame, and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
-pass at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
+at its own rate on the newest frame, once per frame, and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, RealityKit the effects' 3D content and particles, SpriteKit their 2D content, into one Metal
+drawable at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
 at the speed they moved between the last two runs: the video has no added delay and overlays keep up with fast hands.
 
 Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py`; MediaPipe hand, pose (lite, full, heavy) and face landmarkers, exported by `scripts/export_mediapipe.py`; all attached to the `models` release. Apple Vision's hand, body and face landmarks are built into macOS. They are downloaded from the panel,
@@ -106,6 +106,6 @@ Toggle it in the panel's Status section. It draws on the stage (so it is visible
 ## Extending
 
 - **Display mode**: any downloaded model, rendered by `displayEffects(for:model:)` according to its task.
-- **Stories**: add a file like `Sources/YoloMeet/Stories/HelloStory.swift`, then list it in `Story.all`. Each step
-  names its models and builds `Effect`s. An `Effect` owns an `SKNode` and gets `update(_:)` every frame with all model
-  outputs and a `Stage` that maps frame pixels to the screen.
+- **Stories**: one folder per story under `Sources/YoloMeet/Stories/`, with its steps, effects and assets; see
+  [Stories/README.md](Sources/YoloMeet/Stories/README.md). An `Effect` owns a 2D `SKNode` and a 3D RealityKit `Entity`
+  and gets `update(_:)` every frame with all model outputs and a `Stage` that maps frame pixels to the screen.

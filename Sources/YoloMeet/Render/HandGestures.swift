@@ -8,15 +8,19 @@ import YoloMeetCore
 struct HandGesture {
     enum Phase { case began, changed, ended }
     enum Kind {
-        /// One hand pinching thumb and middle finger: `location` is the pinch, `start` where it began.
+        /// One hand pinching thumb and middle finger: `location` is the pinch, `start` where it began. Or both hands
+        /// pinching and moving together (`hands` 2): the point between the pinches.
         case drag(start: CGPoint, location: CGPoint)
-        /// Both hands pinching: `scale` is the distance between the pinches over that when the zoom began (> 1: apart).
+        /// Both hands pinching and moving apart or closer: `scale` is the distance between the pinches over that when
+        /// they started pinching (> 1: apart).
         case zoom(scale: CGFloat, center: CGPoint)
         /// A closed fist: `location` is the hand's center (mean of its points).
         case fist(location: CGPoint)
     }
     var kind: Kind
     var phase: Phase
+    /// Hands making it: 2 for a zoom and for a two-hand drag.
+    var hands = 1
 
     /// Where the hand acts: the pinch (drag), between the pinches (zoom), the hand's center (fist). Compare it with an object's
     /// position on `.began` so gestures only act on the object the hand is on.
@@ -31,8 +35,10 @@ struct HandGesture {
 /// Recognizes `HandGesture`s from a 21-point hand model (`mediapipe-hand`, else `vision-hand`), for every scene. The
 /// stage runs it once per frame and hands the result to effects as `frame.gesture`.
 ///
-/// One gesture at a time. A fist wins over pinches; two pinching hands zoom, one drags (a drag turns into a zoom when
-/// the second hand pinches, and into a fist when its hand closes, since closing a fist passes through a pinch). When a
+/// One gesture at a time. A fist wins over pinches; one pinching hand drags; two pinching hands zoom when they move
+/// apart or closer and drag when they move together, decided once they have moved `pairDecision` and kept until they
+/// let go (a one-hand drag ends when the second hand pinches, and turns into a fist when its hand closes, since closing
+/// a fist passes through a pinch). When a
 /// gesture ends, hands still pinching (or in a fist) must let go before they start another pinch (or fist) gesture, so
 /// releasing one hand of a zoom doesn't start a drag. A hand at the frame's edge counts as open: the model's
 /// points become unreliable as a hand leaves.
@@ -55,6 +61,12 @@ final class HandGestures {
     /// A gesture whose pinch or fist is released for less than this goes on (with its last values meanwhile): a
     /// pinch the model misses for a frame or two keeps the same drag (with smoothing on).
     static let hold: TimeInterval = 0.15
+    /// Two pinching hands are reported once their distance or their midpoint has changed this much (stage points at unit
+    /// 1): a zoom if the distance changed more, a two-hand drag if the midpoint moved more.
+    static let pairDecision: CGFloat = 12
+    /// Closing a pinch moves the point between thumb and middle finger: for this long after both hands pinch, their
+    /// starting distance and midpoint follow them, so that motion doesn't count toward the decision.
+    static let pairSettle: TimeInterval = 0.15
 
     struct Hand {
         var pinchRatio: CGFloat
@@ -73,13 +85,20 @@ final class HandGestures {
 
     private enum Active {
         case drag(Int, start: CGPoint)
-        case zoom(Int, Int, distance: CGFloat)
+        /// Two pinching hands, with their distance and midpoint when they started (after `pairSettle`), and when they
+        /// started pinching together.
+        case pair(Int, Int, distance: CGFloat, center: CGPoint, since: TimeInterval)
         case fist(Int)
     }
+    private enum PairMode { case zoom, drag }
 
     /// Hands by track ID.
     private(set) var hands: [Int: Hand] = [:]
     private var active: Active?
+    /// What a pair of hands does, once decided.
+    private var pairMode: PairMode?
+    /// Whether the active gesture has been reported (`.began`): a pair isn't until it is decided.
+    private var announced = false
     /// The active gesture's recent values, newest last, for `.ended`.
     private var history: [(time: TimeInterval, kind: HandGesture.Kind)] = []
     /// When the active gesture stopped holding, while within `hold`.
@@ -96,24 +115,27 @@ final class HandGestures {
         hands = hands.filter { frame.time - $0.value.lastSeen <= (frame.smooth ? Self.grace : 0) }
         consumed = consumed.filter { id, fist in hands[id].map { fist ? $0.fist : $0.pinching } ?? false }
 
-        if let current = active {
-            if let kind = kind(of: current) {
-                releasedAt = nil
-                history.removeAll { $0.time < frame.time - 2 * Self.settle }
-                history.append((frame.time, kind))
-                return HandGesture(kind: kind, phase: .changed)
-            }
-            let released = releasedAt ?? frame.time
-            if frame.smooth, frame.time - released < Self.hold, !turnsIntoAnother(current), let last = history.last {
-                releasedAt = released
-                return HandGesture(kind: last.kind, phase: .changed)
-            }
-            return end(at: released)
+        if active == nil {
+            guard let started = start(at: frame.time) else { return nil }
+            (active, pairMode, announced, history) = (started, nil, false, [])
         }
-        guard let started = start(), let kind = kind(of: started) else { return nil }
-        active = started
-        history = [(frame.time, kind)]
-        return HandGesture(kind: kind, phase: .began)
+        guard let current = active else { return nil }
+        let count = if case .pair = current { 2 } else { 1 }
+        if holds(current) {
+            releasedAt = nil
+            decide(frame)
+            guard let current = active, let kind = kind(of: current) else { return nil }  // two hands that haven't moved enough to tell
+            history.removeAll { $0.time < frame.time - 2 * Self.settle }
+            history.append((frame.time, kind))
+            defer { announced = true }
+            return HandGesture(kind: kind, phase: announced ? .changed : .began, hands: count)
+        }
+        let released = releasedAt ?? frame.time
+        if announced, frame.smooth, frame.time - released < Self.hold, !turnsIntoAnother(current), let last = history.last {
+            releasedAt = released
+            return HandGesture(kind: last.kind, phase: .changed, hands: count)
+        }
+        return end(at: released, hands: count)
     }
 
     private func measure(_ p: [CGPoint], in size: CGSize, previous: Hand?, frame: StageFrame) -> Hand {
@@ -134,30 +156,55 @@ final class HandGestures {
             center: previous?.center.filtering(center, frame) ?? OneEuroFilter(center), lastSeen: frame.time)
     }
 
-    /// The gesture's current values, or nil once it no longer holds.
-    private func kind(of active: Active) -> HandGesture.Kind? {
+    /// Whether the gesture's hands still pinch (or make a fist).
+    private func holds(_ active: Active) -> Bool {
         switch active {
-        case let .drag(id, start):
-            guard let hand = hands[id], hand.pinching, secondPinch(besides: id) == nil else { return nil }
-            return .drag(start: start, location: hand.pinch.value)
-        case let .zoom(a, b, distance):
-            guard let a = hands[a], let b = hands[b], a.pinching, b.pinching else { return nil }
-            return .zoom(scale: a.pinch.value.distance(to: b.pinch.value) / distance, center: a.pinch.value.midpoint(b.pinch.value))
-        case let .fist(id):
-            guard let hand = hands[id], hand.fist else { return nil }
-            return .fist(location: hand.center.value)
+        case let .drag(id, _): hands[id]?.pinching == true && secondPinch(besides: id) == nil
+        case let .pair(a, b, _, _, _): hands[a]?.pinching == true && hands[b]?.pinching == true
+        case let .fist(id): hands[id]?.fist == true
         }
     }
 
-    /// A drag ends at once when a second hand pinches (both go on to zoom) or when its hand closes into a fist.
+    /// Decides what a pair of hands does once they have moved enough (after settling).
+    private func decide(_ frame: StageFrame) {
+        guard pairMode == nil, case let .pair(a, b, distance, center, since) = active, let (p, q) = pinches(a, b) else { return }
+        if frame.time - since < Self.pairSettle {
+            active = .pair(a, b, distance: max(p.distance(to: q), 1), center: p.midpoint(q), since: since)
+            return
+        }
+        let (spread, moved) = (abs(p.distance(to: q) - distance), p.midpoint(q).distance(to: center))
+        if max(spread, moved) > Self.pairDecision * frame.stage.unit { pairMode = spread > moved ? .zoom : .drag }
+    }
+
+    /// The gesture's current values (it holds); nil for a pair not decided yet.
+    private func kind(of active: Active) -> HandGesture.Kind? {
+        switch active {
+        case let .drag(id, start):
+            return hands[id].map { .drag(start: start, location: $0.pinch.value) }
+        case let .pair(a, b, distance, center, _):
+            guard let mode = pairMode, let (p, q) = pinches(a, b) else { return nil }
+            return mode == .zoom
+                ? .zoom(scale: p.distance(to: q) / distance, center: p.midpoint(q))
+                : .drag(start: center, location: p.midpoint(q))
+        case let .fist(id):
+            return hands[id].map { .fist(location: $0.center.value) }
+        }
+    }
+
+    private func pinches(_ a: Int, _ b: Int) -> (CGPoint, CGPoint)? {
+        guard let a = hands[a], let b = hands[b] else { return nil }
+        return (a.pinch.value, b.pinch.value)
+    }
+
+    /// A drag ends at once when a second hand pinches (both go on as a pair) or when its hand closes into a fist.
     private func turnsIntoAnother(_ active: Active) -> Bool {
         guard case let .drag(id, _) = active else { return false }
         return secondPinch(besides: id) != nil || hands[id]?.fist == true
     }
 
     /// Ends the gesture that stopped holding at `time`.
-    private func end(at time: TimeInterval) -> HandGesture? {
-        // The hands of a drag that goes on as a zoom, or as a fist, stay free.
+    private func end(at time: TimeInterval, hands count: Int) -> HandGesture? {
+        // The hands of a drag that goes on as a pair, or as a fist, stay free.
         var free: Set<Int> = []
         if case let .drag(id, _) = active {
             if let other = secondPinch(besides: id) { free = [id, other] }
@@ -167,17 +214,19 @@ final class HandGestures {
         active = nil
         releasedAt = nil
         defer { history = [] }
+        guard announced else { return nil }  // a pair that let go before it was decided
         let settled = history.last { $0.time <= time - Self.settle } ?? history.first
-        return settled.map { HandGesture(kind: $0.kind, phase: .ended) }
+        return settled.map { HandGesture(kind: $0.kind, phase: .ended, hands: count) }
     }
 
-    private func start() -> Active? {
+    private func start(at time: TimeInterval) -> Active? {
         let hands = hands.sorted { $0.key < $1.key }
         if let (id, _) = hands.first(where: { $0.value.fist && consumed[$0.key] != true }) { return .fist(id) }
         let pinching = hands.filter { $0.value.pinching && consumed[$0.key] != false }
         if pinching.count >= 2 {
             let (a, b) = (pinching[0], pinching[1])
-            return .zoom(a.key, b.key, distance: max(a.value.pinch.value.distance(to: b.value.pinch.value), 1))
+            let (p, q) = (a.value.pinch.value, b.value.pinch.value)
+            return .pair(a.key, b.key, distance: max(p.distance(to: q), 1), center: p.midpoint(q), since: time)
         }
         return pinching.first.map { .drag($0.key, start: $0.value.pinch.value) }
     }
@@ -237,7 +286,7 @@ final class GestureDebugEffect: Effect {
         let name: String
         switch gesture.kind {
         case let .drag(start, location):
-            name = String(format: "Drag  Δ %+.0f, %+.0f", location.x - start.x, location.y - start.y)
+            name = String(format: "Drag%@  Δ %+.0f, %+.0f", gesture.hands == 2 ? " (2 hands)" : "", location.x - start.x, location.y - start.y)
         case let .zoom(scale, _):
             name = String(format: "Zoom  ×%.2f", scale)
         case let .fist(location):

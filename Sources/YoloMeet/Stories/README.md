@@ -76,14 +76,16 @@ them lists that model. Effects read `frame.gesture` (`Render/HandGestures.swift`
 
 | Gesture | `kind` | How |
 | --- | --- | --- |
-| Drag | `.drag(start:location:)` | one hand pinches thumb and middle finger, then moves |
-| Zoom | `.zoom(scale:center:)` | both hands pinch; `scale` > 1 when they move apart (since the zoom began) |
+| Drag | `.drag(start:location:)` | one hand pinches thumb and middle finger, then moves; or both hands pinch and move together (`hands` 2, the point between them) |
+| Zoom | `.zoom(scale:center:)` | both hands pinch and move apart or closer; `scale` > 1 apart (since they started pinching) |
 | Fist | `.fist(location:)` | a closed fist; `location` is the hand's center, to follow it |
 
 `phase` is `.began` once, `.changed` every frame, then `.ended` once (e.g. act on a fist's release), with the
 values from 0.1 s before the end, since releasing a pinch or a hand leaving the frame moves them. A hand at the frame's
 edge counts as open. A pinch or fist missed for under 0.15 s doesn't end its gesture. One gesture at a
-time: a fist wins, a drag becomes a zoom when the second hand pinches, and a fist when its hand
+time: a fist wins; two pinching hands become a zoom or a two-hand drag once they have moved
+12 points (whichever changed more, their distance or their midpoint, kept until they let go); a one-hand drag ends
+when the second hand pinches and becomes a fist when its hand
 closes (closing a fist passes through a pinch). Positions are One Euro filtered
 (steady at rest, quick when moving fast); `gesture.location` is where the hand acts (pinch, between the pinches,
 hand's center): on `.began`, compare it with your object so gestures only act on the object the hand is on (see

@@ -3,8 +3,8 @@ import simd
 
 /// A swirling cloud of particles in the middle of the stage. A fist closed on it gathers the particles into a ball that
 /// follows the fist; opening the hand forms a cube there, spinning slowly. On the cube, a pinch pulled away from its
-/// center explodes it into its faces (pushed back toward it, reassembles it), and both hands pinching resize it. A fist
-/// on the cube breaks it again. Keys: R turns the slow spin on or off, Q/D turn and Z/S tilt while held, 0 resets the
+/// center explodes it into its faces (pushed back toward it, reassembles it); both hands pinching resize it when they
+/// move apart or closer, and move it when they move together. A fist on the cube breaks it again. Keys: R turns the slow spin on or off, Q/D turn and Z/S tilt while held, 0 resets the
 /// turn, tilt and zoom.
 final class ParticleMorphEffect: Effect {
     /// Released below this, the cube springs back together; above, it stays exploded.
@@ -23,10 +23,11 @@ final class ParticleMorphEffect: Effect {
     /// Turn around the vertical axis (positive: the front moves right) and tilt (positive: the top comes forward).
     private var turn: Float = 0, tilt = restingTilt
     private var autoSpin = true
-    /// Explode and zoom the hands ask for, the shown ones (eased toward them), and their values when the gesture began.
+    /// Explode and zoom the hands ask for, the shown ones (eased toward them), and their values (with the position) when
+    /// the gesture began.
     private var explode: CGFloat = 0, zoom: CGFloat = 1
     private var shown: (explode: CGFloat, zoom: CGFloat) = (0, 1)
-    private var base: (explode: CGFloat, zoom: CGFloat) = (0, 1)
+    private var base: (explode: CGFloat, zoom: CGFloat, home: CGPoint) = (0, 1, .zero)
 
     override init() {
         super.init()
@@ -45,7 +46,7 @@ final class ParticleMorphEffect: Effect {
                 // The cube's reach grows with its explosion.
                 let reach = formed ? (1.6 + 1.2 * explode) * size : 1.1 * cloud
                 held = home.distance(to: gesture.location) < reach
-                base = (explode, zoom)
+                base = (explode, zoom, home)
             }
             switch gesture.kind {
             case _ where !held: break
@@ -56,6 +57,8 @@ final class ParticleMorphEffect: Effect {
                     system.form(ParticleShapes.cube(system.count))
                     (formed, explode, shown.explode) = (true, 0, 0)
                 }
+            case let .drag(start, location) where formed && gesture.hands == 2:
+                home = CGPoint(x: base.home.x + location.x - start.x, y: base.home.y + location.y - start.y)
             case let .drag(start, location) where formed:
                 // Pulled one half-size further from the center: fully exploded.
                 let pulled = home.distance(to: location) - home.distance(to: start)

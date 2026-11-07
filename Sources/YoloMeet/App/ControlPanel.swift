@@ -278,6 +278,10 @@ private struct InferenceSettingsView: View {
             Text("IoU (NMS)")
             Text(model.inference.iou.formatted(.number.precision(.fractionLength(2))))
         }
+        Toggle(isOn: $model.smoothing) {
+            Text("Smoothing")
+            Text("Predicts motion between model runs and fades out vanished objects")
+        }
         if model.inference != InferenceSettings() {
             Button("Reset to Defaults") { model.inference = InferenceSettings() }
         }

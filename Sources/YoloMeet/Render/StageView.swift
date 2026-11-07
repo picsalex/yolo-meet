@@ -69,7 +69,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         let size = view.drawableSize
         let bounds = CGRect(origin: .zero, size: size)
 
-        guard let snapshot = model.pipeline.snapshot else {
+        guard let snapshot = model.pipeline.snapshot(predicting: model.smoothing) else {
             commandBuffer.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()  // clears to black
             commandBuffer.present(drawable)
             commandBuffer.commit()
@@ -93,7 +93,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         if model.sceneVersion != sceneVersion { swapEffects() }
         if scene.size != size { scene.size = size }
         let stageFrame = StageFrame(
-            outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt)
+            outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
+            smooth: model.smoothing)
         for effect in effects { effect.update(stageFrame) }
         stats.node.isHidden = !model.showStats
         if model.showStats { stats.update(stageFrame) }

@@ -48,6 +48,10 @@ final class AppModel {
     var showStats = UserDefaults.standard.bool(forKey: "showStats") {
         didSet { UserDefaults.standard.set(showStats, forKey: "showStats") }
     }
+    /// Prediction between model runs, smoothing, and fading out vanished objects. Off: each model's latest raw result.
+    var smoothing = UserDefaults.standard.object(forKey: "smoothing") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(smoothing, forKey: "smoothing") }
+    }
 
     /// Bumped whenever the effects on stage must be rebuilt.
     private(set) var sceneVersion = 0

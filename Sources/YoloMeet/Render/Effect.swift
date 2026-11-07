@@ -32,14 +32,16 @@ struct StageFrame {
     let stage: Stage
     let time: TimeInterval
     let dt: TimeInterval
+    /// Off: effects show results as they are (no smoothing, vanished objects removed at once).
+    let smooth: Bool
 
     /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate. Results are
     /// already predicted to each video frame, so this only softens jitter.
-    var smoothing: CGFloat { CGFloat(1 - exp(-dt * 30)) }
+    var smoothing: CGFloat { smooth ? CGFloat(1 - exp(-dt * 30)) : 1 }
 
     /// Blend factor that adapts to how far a point is from its target (stage points), like a One Euro filter: small
     /// gaps (jitter) are smoothed, large ones (fast motion) are caught up within a frame or two.
-    func smoothing(gap: CGFloat) -> CGFloat { CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) }
+    func smoothing(gap: CGFloat) -> CGFloat { smooth ? CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) : 1 }
 }
 
 /// Something drawn on the stage. Subclasses add children to `node` and update them in `update(_:)`, which runs every
@@ -50,7 +52,7 @@ class Effect {
 }
 
 /// One node per track ID. Nodes fade in when a track appears and fade out once it has been gone for `grace` seconds,
-/// so a single missed detection never blinks.
+/// so a single missed detection never blinks. Without smoothing, nodes appear and disappear with the detections.
 final class TrackedNodes<N: SKNode> {
     private var nodes: [Int: (node: N, lastSeen: TimeInterval)] = [:]
     private let parent: SKNode
@@ -64,22 +66,25 @@ final class TrackedNodes<N: SKNode> {
     }
 
     /// Returns the node for each visible track ID and retires nodes of tracks gone for longer than `grace`.
-    func sync(_ ids: [Int], at time: TimeInterval) -> [N] {
+    func sync(_ ids: [Int], in frame: StageFrame) -> [N] {
+        let time = frame.time
         let visible = ids.map { id -> N in
             if let entry = nodes[id] {
                 nodes[id]?.lastSeen = time
                 return entry.node
             }
             let node = make()
-            node.alpha = 0
-            node.run(.fadeIn(withDuration: 0.2))
+            if frame.smooth {
+                node.alpha = 0
+                node.run(.fadeIn(withDuration: 0.2))
+            }
             parent.addChild(node)
             nodes[id] = (node, time)
             return node
         }
-        for (id, entry) in nodes where time - entry.lastSeen > grace {
+        for (id, entry) in nodes where frame.smooth ? time - entry.lastSeen > grace : entry.lastSeen < time {
             nodes[id] = nil
-            entry.node.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+            entry.node.run(frame.smooth ? .sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]) : .removeFromParent())
         }
         return visible
     }

@@ -36,7 +36,7 @@ final class BoxesEffect: Effect {
     override func update(_ frame: StageFrame) {
         let output = frame.outputs[model]
         let detections = output?.detections.filter { d in d.trackID != nil && filter(d, output!) } ?? []
-        let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(
@@ -102,7 +102,7 @@ final class PoseEffect: Effect {
         let output = frame.outputs[model]
         let theme = Theme.of(output)
         let detections = output?.detections.filter { $0.trackID != nil } ?? []
-        let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         for (node, detection) in zip(nodes, detections) {
             let points = detection.keypoints.map { $0.confidence >= minConfidence ? frame.stage.point($0.point) : nil }
             node.update(to: points, skeleton: skeleton, theme: theme, unit: frame.stage.unit, smoothing: frame.smoothing(gap:))
@@ -168,9 +168,9 @@ final class OrientedBoxesEffect: Effect {
     init(model: String) { self.model = model }
 
     override func update(_ frame: StageFrame) {
-        guard let output = frame.outputs[model] else { _ = tracks.sync([], at: frame.time); return }
+        guard let output = frame.outputs[model] else { _ = tracks.sync([], in: frame); return }
         let detections = output.detections.filter { $0.trackID != nil }
-        let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(

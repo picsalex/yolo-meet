@@ -105,10 +105,12 @@ nonisolated final class Pipeline: @unchecked Sendable {
         }
     }
 
-    /// The newest frame and every model's results predicted to its capture time.
-    var snapshot: (frame: CIImage, outputs: [String: ModelOutput])? {
+    /// The newest frame and every model's results: predicted to its capture time, or the latest as they are.
+    func snapshot(predicting: Bool) -> (frame: CIImage, outputs: [String: ModelOutput])? {
         lock.withLock {
-            state.frame.map { frame in (frame.image, state.history.compactMapValues { $0.predicted(at: frame.time) }) }
+            state.frame.map { frame in
+                (frame.image, state.history.compactMapValues { predicting ? $0.predicted(at: frame.time) : $0.last })
+            }
         }
     }
 

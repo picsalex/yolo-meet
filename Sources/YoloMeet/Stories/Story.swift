@@ -81,7 +81,7 @@ final class SparkleHandsEffect: Effect {
         let output = frame.outputs[model]
         let theme = Theme.of(output)
         let detections = output?.detections.filter { $0.trackID != nil } ?? []
-        let nodes = tracks.sync(detections.map { $0.trackID! }, at: frame.time)
+        let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         for (hands, detection) in zip(nodes, detections) {
             for (emitter, index) in zip(hands.children.compactMap { $0 as? SKEmitterNode }, Self.wrists) {
                 emitter.particleColor = index % 2 == 1 ? theme.leftLimb : theme.rightLimb  // COCO: odd = left

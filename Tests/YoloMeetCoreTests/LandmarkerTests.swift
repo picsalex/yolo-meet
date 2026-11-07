@@ -57,6 +57,17 @@ import Testing
         #expect(try await landmarker.predict(wall).detections.isEmpty)
     }
 
+    /// A tracked Vision face is dropped as soon as the person leaves: Vision returns landmarks for any box it is given,
+    /// so a face left on an empty wall must not linger (it used to shrink for 5 frames, then make Vision throw).
+    @Test(.enabled(if: root != nil))
+    func visionLosesFace() async throws {
+        let frame = CIImage(contentsOf: Self.root!.appending(path: "img/portrait.jpg"))!
+        let landmarker = try VisionLandmarker(id: "vision-face")
+        for _ in 0..<3 { #expect(try await landmarker.predict(frame).detections.count == 1) }  // detected, then tracked
+        let wall = CIImage(color: CIColor(red: 0.8, green: 0.75, blue: 0.65)).cropped(to: frame.extent)
+        for _ in 0..<3 { #expect(try await landmarker.predict(wall).detections.isEmpty) }
+    }
+
     /// Apple Vision finds the same hands, body and face.
     @Test(.enabled(if: root != nil), arguments: [
         ("vision-hand", "woman_hands.jpg", 2), ("vision-pose", "pose.jpg", 1), ("vision-face", "portrait.jpg", 1),

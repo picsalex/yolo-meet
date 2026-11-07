@@ -9,8 +9,8 @@ import CoreGraphics
 nonisolated extension YOLOModel {
     static let maxDetections = 100
 
-    func decode(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) {
-        guard !isDETR else { return decodeDETR(tensors, geometry: geometry, into: &output) }
+    func decode(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) throws {
+        guard !isDETR else { return try decodeDETR(tensors, geometry: geometry, into: &output) }
         let head = tensors[0]
         switch task {
         case .detect:
@@ -154,7 +154,7 @@ nonisolated extension YOLOModel {
     /// RF-DETR outputs, by name: `dets [1, Q, 4]` normalized center xywh, `labels [1, Q, C]` logits indexed by class id,
     /// plus `masks [1, Q, h, w]` logits or `keypoints [1, Q, C*K, D]` (normalized x, y, visibility logit, ...).
     /// Queries are already one per object, so there is no NMS.
-    private func decodeDETR(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) {
+    private func decodeDETR(_ tensors: [Tensor], geometry: Geometry, into output: inout ModelOutput) throws {
         let named = Dictionary(uniqueKeysWithValues: zip(outputNames, tensors))
         guard let boxes = named["dets"], let logits = named["labels"] else { return }
         let (queries, classes) = (logits.shape[1], logits.shape[2])
@@ -188,7 +188,8 @@ nonisolated extension YOLOModel {
         }
         output.detections = kept.map(\.detection)
 
-        if let masks = named["masks"], !kept.isEmpty, let gathered = try? ImageFunction.planes(of: masks, kept.map(\.anchor)) {
+        if let masks = named["masks"], !kept.isEmpty {
+            let gathered = try ImageFunction.planes(of: masks, kept.map(\.anchor))
             let (mh, mw) = (masks.shape[2], masks.shape[3])
             output.overlay = paintInstances(
                 kept, masks: gathered, width: mw, height: mh, scale: CGFloat(mw) / CGFloat(width), crop: (0, 0))

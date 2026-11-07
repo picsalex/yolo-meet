@@ -38,7 +38,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let context: CIContext
     private let renderer: SKRenderer
     private let scene = SKScene()
-    private let reality: RealityLayer
+    /// Nil when RealityKit can't start.
+    private let reality: RealityLayer?
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private let gestures = HandGestures()
@@ -107,7 +108,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             debug.node.isHidden = !model.debugMode
             if model.debugMode { debug.update(stageFrame) }
         }
-        if effects.contains(where: { !$0.entity.children.isEmpty }) {
+        if let reality, effects.contains(where: { !$0.entity.children.isEmpty }) {
             commandBuffer = reality.render(over: drawable.texture, size: size, dt: dt, after: commandBuffer)
         }
 
@@ -125,7 +126,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private func swapEffects() {
         for effect in effects {
             effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
-            reality.entities.remove(effect.entity)
+            reality?.entities.remove(effect.entity)
         }
         effects = model.makeEffects()
         sceneVersion = model.sceneVersion
@@ -133,7 +134,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             effect.node.alpha = 0
             scene.addChild(effect.node)
             effect.node.run(.fadeIn(withDuration: 0.4))
-            reality.entities.append(effect.entity)
+            reality?.entities.append(effect.entity)
         }
     }
 

@@ -59,7 +59,7 @@ Under Models › Other, next to RF-DETR:
   or eyes), with MediaPipe's heatmap refinement for pose. As in MediaPipe's video mode, each result's next crop comes
   from its landmarks, so the detector only runs to find new ones; crops run in parallel. Landmarks match MediaPipe
   Tasks within 0.1–0.4% of the image on its sample photos, detected or tracked (`LandmarkerTests`). Up to two hands,
-  bodies or faces; MediaPipe's own 0.5 thresholds apply.
+  one body and one face (MediaPipe's defaults; the scenes show one person); MediaPipe's own 0.5 thresholds apply.
 - **Apple Vision**: the hand (21 points), body (17, COCO order) and face landmark requests built into macOS. Faces are
   tracked from frame to frame, so face detection only runs every 10 frames or when a face is lost.
 

@@ -5,12 +5,16 @@ import Vision
 /// Apple Vision's built-in hand, body and face landmarks, as detections with keypoints like the other models: hands in
 /// MediaPipe's 21-point order, bodies in COCO's 17-point order, faces as Vision's landmark regions.
 /// Faces are tracked: each frame's landmarks place the next frame's faces, so Vision skips face detection except every
-/// `redetectEvery` frames or once a face is lost.
+/// `redetectEvery` frames or once a face is lost. Given a face's box, Vision returns landmarks whether or not a face is
+/// still there; a tracked face under `trackedConfidence` (or a failed or partial tracking pass) means the face is gone
+/// or slipping, so that frame runs face detection instead.
 public nonisolated final class VisionLandmarker: @unchecked Sendable {
     public let id: String
     public let task: YOLOTask
     public let info: ModelInfo
     let redetectEvery = 10
+    /// Landmark confidence a tracked face must keep: about 0.8–0.9 on faces, 0.65 on a box left on an empty wall.
+    let trackedConfidence: Float = 0.7
     private let handler = VNSequenceRequestHandler()
     /// Faces for the next frame, each with how its detected box fit its landmarks.
     private var faces: [(face: VNFaceObservation, fit: Fit)] = []
@@ -75,14 +79,24 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
                 return detection.boxed(minConfidence: 0.1)
             }
         default:
-            let request = VNDetectFaceLandmarksRequest()
+            var request = VNDetectFaceLandmarksRequest()
             if frame.extent != facesExtent { (faces, facesExtent) = ([], frame.extent) }  // another input
-            let tracked = !faces.isEmpty && sinceDetection < redetectEvery
-            sinceDetection = tracked ? sinceDetection + 1 : 0
-            if tracked { request.inputFaceObservations = faces.map(\.face) }
-            try handler.perform([request], on: frame)
+            var tracked = !faces.isEmpty && sinceDetection < redetectEvery
+            if tracked {
+                request.inputFaceObservations = faces.map(\.face)
+                let results = (try? handler.perform([request], on: frame)) != nil ? request.results ?? [] : []
+                tracked = results.count == faces.count
+                    && results.allSatisfy { ($0.landmarks?.confidence ?? 0) >= trackedConfidence }
+            }
+            if tracked {
+                sinceDetection += 1
+            } else {
+                sinceDetection = 0
+                request = VNDetectFaceLandmarksRequest()
+                try handler.perform([request], on: frame)
+            }
             let results = request.results ?? []
-            // Results come in the order of the input faces.
+            // Tracked results come one per input face, in order.
             faces = results.enumerated().compactMap { i, face in
                 guard let region = face.landmarks?.allPoints else { return nil }
                 let box = face.boundingBox

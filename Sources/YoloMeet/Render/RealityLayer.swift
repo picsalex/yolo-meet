@@ -17,10 +17,12 @@ final class RealityLayer {
         set { renderer.entities = newValue }
     }
 
-    init(queue: any MTLCommandQueue) {
+    /// Nil when RealityKit can't start: the stage then draws no 3D content.
+    init?(queue: any MTLCommandQueue) {
+        guard let event = queue.device.makeEvent(), let renderer = try? RealityRenderer() else { return nil }
         self.queue = queue
-        event = queue.device.makeEvent()!
-        renderer = try! RealityRenderer()
+        self.event = event
+        self.renderer = renderer
         renderer.cameraSettings.colorBackground = .outputTexture()
         renderer.cameraSettings.isToneMappingEnabled = false  // colors as given, like SpriteKit
         renderer.entities.append(camera)

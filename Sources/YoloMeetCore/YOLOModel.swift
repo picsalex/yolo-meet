@@ -89,7 +89,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
             deferring: isDETR ? ["masks"] : [])  // RF-DETR: masks of every query, few kept
         var output = ModelOutput(modelID: id, task: task, names: names, info: info, frameSize: frame.extent.size)
         output.inputSize = CGSize(width: width, height: height)
-        decode(tensors, geometry: geometry, into: &output)
+        try decode(tensors, geometry: geometry, into: &output)
         output.latency = CFAbsoluteTimeGetCurrent() - start
         return output
     }

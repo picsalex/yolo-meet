@@ -71,14 +71,8 @@ nonisolated final class ImageFunction: @unchecked Sendable {
         Self.context.render(
             placed.composited(over: CIImage(color: background)), to: staging,
             bounds: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: nil)
-        let t0 = CFAbsoluteTimeGetCurrent()
-        Self.context.render(placed.composited(over: CIImage(color: background)), to: staging, bounds: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: nil)
-        let t1 = CFAbsoluteTimeGetCurrent()
         try convert(staging)
-        let t2 = CFAbsoluteTimeGetCurrent()
         var outputs = try await function.run(inputs: [inputName: input!])
-        let t3 = CFAbsoluteTimeGetCurrent()
-        defer { if ProcessInfo.processInfo.environment["YOLO_MEET_SPLIT"] != nil { print(String(format: "SPLIT render %.2f convert %.2f model %.2f floats %.2f", (t1 - t0) * 1000, (t2 - t1) * 1000, (t3 - t2) * 1000, (CFAbsoluteTimeGetCurrent() - t3) * 1000)) } }
         return try outputNames.enumerated().map { i, name in
             guard let array = outputs.remove(name)?.ndArray else { throw ModelError.invalid("missing \(name)") }
             return deferred.contains(name) ? Tensor(values: [], shape: array.shape, array: array) : try floats(of: array, into: i)

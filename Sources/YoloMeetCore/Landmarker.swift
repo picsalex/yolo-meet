@@ -5,7 +5,7 @@ import Foundation
 /// palm, body or face in the letterboxed frame, then a landmark model reads a square crop around it, rotated upright.
 /// Results are detections with keypoints (in frame pixels), so tracking and pose effects work on them unchanged.
 /// Like MediaPipe on video, each result's next crop comes from its landmarks, and the detector only runs while fewer
-/// than `maxResults` are tracked (every frame with none, every `redetectEvery` frames otherwise). A new instance's
+/// than `Config.maxResults` are tracked (every frame with none, every `redetectEvery` frames otherwise). A new instance's
 /// first frame is MediaPipe's IMAGE mode: detector, then landmarks. Crops run at the same time, on one copy of the
 /// landmark model each.
 /// A model is a folder holding `detector.aimodel`, `landmarks.aimodel` and `metadata.json` (task: hand, pose, face).
@@ -13,7 +13,6 @@ public nonisolated final class Landmarker: @unchecked Sendable {
     public let id: String
     public let task: YOLOTask
     public let info: ModelInfo
-    static let maxResults = 2
     let redetectEvery = 10
 
     private let detector: ImageFunction
@@ -41,6 +40,9 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         let stride: Int
         /// The presence output is a logit (face); hand and pose output a probability.
         var presenceIsLogit = false
+        /// Results tracked at once, each on its own copy of the landmark model: two hands, one body, one face (the
+        /// scenes show one person).
+        var maxResults = 1
         let detectorRange: (low: [Float], high: [Float])
         let names: [String]
         let connections: [(Int, Int)]
@@ -59,7 +61,7 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 // Tracked: the wrist, finger bases and lower joints, wrist toward the middle knuckles pointing up; 2x.
                 return Config(
                     detectorSize: 192, strides: [8, 16, 16, 16], keypoints: 7, landmarkSize: 224, landmarkCount: 21,
-                    stride: 3, detectorRange: unit, names: ["Left", "Right"], connections: MediaPipeConnections.hand,
+                    stride: 3, maxResults: 2, detectorRange: unit, names: ["Left", "Right"], connections: MediaPipeConnections.hand,
                     roi: { box, k in
                         ROI(center: box.center, size: max(box.width, box.height), rotation: angle(k[0], k[2], target: .pi / 2))
                             .shifted(y: -0.5, height: box.height).scaled(2.6)
@@ -159,7 +161,7 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         let detector = try ImageFunction(
             try await ImageFunction.load(url.appending(path: "detector.aimodel")), range: config.detectorRange)
         var landmarks: [ImageFunction] = []
-        for _ in 0..<Self.maxResults {
+        for _ in 0..<config.maxResults {
             landmarks.append(try ImageFunction(try await ImageFunction.load(url.appending(path: "landmarks.aimodel")), range: Config.unit))
         }
         return try Landmarker(
@@ -210,7 +212,7 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         output.inputSize = CGSize(width: config.detectorSize, height: config.detectorSize)
         if extent != trackedExtent { (tracked, trackedExtent) = ([], extent) }  // another input
         var rois = tracked
-        if rois.isEmpty || (rois.count < Self.maxResults && sinceDetection >= redetectEvery) {
+        if rois.isEmpty || (rois.count < config.maxResults && sinceDetection >= redetectEvery) {
             sinceDetection = 0
             // Detector on the letterboxed frame (black borders, as MediaPipe pads). Tracked results take precedence.
             let letterbox = ROI(
@@ -218,7 +220,7 @@ public nonisolated final class Landmarker: @unchecked Sendable {
             let raw = try await detector.run(
                 letterbox.crop(frame, config.detectorSize), width: config.detectorSize, height: config.detectorSize,
                 background: .black)
-            for found in detections(raw, letterbox) where rois.count < Self.maxResults {
+            for found in detections(raw, letterbox) where rois.count < config.maxResults {
                 let roi = config.roi(found.box, found.keypoints)
                 if !rois.contains(where: { $0.bounds.iou(roi.bounds) > 0.5 }) { rois.append(roi) }
             }

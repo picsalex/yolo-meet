@@ -5,7 +5,7 @@ import Vision
 import YoloMeetCore
 
 /// Camera frame → background replacement → models → tracked results.
-/// Inference runs at its own rate on the newest frame and never queues up stale frames. The renderer asks for a
+/// Each model runs at its own rate on the newest frame and never queues up stale frames. The renderer asks for a
 /// `snapshot` at display rate: the newest frame, with results predicted to its capture time.
 nonisolated final class Pipeline: @unchecked Sendable {
     private struct State {
@@ -17,7 +17,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
         var models: [YOLOModel] = []
         var loading: Set<String> = []
         var trackers: [String: Tracker] = [:]
-        var busy = false
+        /// Models with a run in flight.
+        var busy: Set<String> = []
         var background: CIImage?
         var mirror = true
         var settings = InferenceSettings()
@@ -45,16 +46,18 @@ nonisolated final class Pipeline: @unchecked Sendable {
         let time = CACurrentMediaTime()
         let (background, mirror) = lock.withLock { (state.background, state.mirror) }
         let frame = segmentation.composite(buffer, over: background, mirror: mirror)
-        let run: (models: [YOLOModel], settings: InferenceSettings)? = lock.withLock {
+        let (idle, settings) = lock.withLock {
             state.frame = (time, frame)
             state.cameraRate.tick()
             state.cameraSize = CGSize(width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer))
-            guard !state.busy, !state.models.isEmpty else { return nil }
-            state.busy = true
-            return (state.models, state.settings)
+            let idle = state.models.filter { !state.busy.contains($0.id) }
+            state.busy.formUnion(idle.map(\.id))
+            return (idle, state.settings)
         }
-        guard let run else { return }
-        Task.detached(priority: .userInitiated) { await self.infer(frame, at: time, run.models, run.settings) }
+        // One task per idle model: a fast model is not held back by a slow one.
+        for model in idle {
+            Task.detached(priority: .userInitiated) { await self.infer(frame, at: time, model, settings) }
+        }
     }
 
     /// The newest frame and every model's results predicted to its capture time.
@@ -100,32 +103,28 @@ nonisolated final class Pipeline: @unchecked Sendable {
         }
     }
 
-    private func infer(_ frame: CIImage, at time: TimeInterval, _ models: [YOLOModel], _ settings: InferenceSettings) async {
-        var outputs: [String: ModelOutput] = [:]
-        for model in models {
-            (model.imgsz, model.confidence, model.iou) = (settings.imgsz, settings.confidence, settings.iou)
-            do {
-                var output = try await model.predict(frame)
-                output.time = time
-                let tracker = lock.withLock {
-                    output.fps = state.modelRates[model.id, default: RateCounter()].tick()
-                    let tracker = state.trackers[model.id] ?? Tracker()
-                    state.trackers[model.id] = tracker
-                    return tracker
-                }
-                tracker.update(&output.detections)
-                outputs[model.id] = output
-            } catch {
-                lock.withLock { state.errors[model.id] = error.localizedDescription }
+    /// Runs one model (not reentrant: one run per instance at a time) and records its result.
+    private func infer(_ frame: CIImage, at time: TimeInterval, _ model: YOLOModel, _ settings: InferenceSettings) async {
+        (model.imgsz, model.confidence, model.iou) = (settings.imgsz, settings.confidence, settings.iou)
+        do {
+            var output = try await model.predict(frame)
+            output.time = time
+            let tracker = lock.withLock {
+                output.fps = state.modelRates[model.id, default: RateCounter()].tick()
+                let tracker = state.trackers[model.id] ?? Tracker()
+                state.trackers[model.id] = tracker
+                return tracker
             }
-        }
-        lock.withLock {
-            for (id, output) in outputs where state.wanted.contains(id) {
-                state.history[id, default: []].append(output)
-                state.history[id]!.removeFirst(max(state.history[id]!.count - 2, 0))  // prediction uses the last two
+            tracker.update(&output.detections)
+            lock.withLock {
+                guard state.wanted.contains(model.id) else { return }
+                state.history[model.id, default: []].append(output)
+                state.history[model.id]!.removeFirst(max(state.history[model.id]!.count - 2, 0))  // prediction uses the last two
             }
-            state.busy = false
+        } catch {
+            lock.withLock { state.errors[model.id] = error.localizedDescription }
         }
+        lock.withLock { _ = state.busy.remove(model.id) }
     }
 }
 
@@ -161,21 +160,38 @@ nonisolated struct RateCounter {
 }
 
 /// Replaces the background behind people using Vision's person segmentation (temporally smoothed per sequence).
-private nonisolated final class PersonSegmentation {
-    private let handler = VNSequenceRequestHandler()
+/// Segmentation takes ~19 ms at 1080p, so it runs on its own queue on the newest frame and every frame is blended with
+/// the latest mask: the camera queue never waits for it.
+private nonisolated final class PersonSegmentation: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "PersonSegmentation", qos: .userInitiated)
+    private let handler = VNSequenceRequestHandler()  // on `queue`
     private let request: VNGeneratePersonSegmentationRequest = {
         let request = VNGeneratePersonSegmentationRequest()
         request.qualityLevel = .balanced
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         return request
     }()
-    private var fitted: (source: CIImage, extent: CGRect, image: CIImage)?
+    private let lock = NSLock()
+    private var mask: CVPixelBuffer?  // guarded by `lock`
+    private var busy = false  // guarded by `lock`
+    private var fitted: (source: CIImage, extent: CGRect, image: CIImage)?  // camera queue
 
     func composite(_ buffer: CVPixelBuffer, over background: CIImage?, mirror: Bool) -> CIImage {
         let camera = CIImage(cvPixelBuffer: buffer).mirrored(mirror)
-        guard let background, (try? handler.perform([request], on: buffer)) != nil,
-            let mask = request.results?.first?.pixelBuffer
-        else { return camera }
+        guard let background else {
+            lock.withLock { mask = nil }  // a stale mask must not cut out the next background
+            return camera
+        }
+        nonisolated(unsafe) let buffer = buffer
+        if lock.withLock({ mask == nil }) {
+            queue.sync { segment(buffer) }  // first frame: wait for a mask, so the real room never shows
+        } else if lock.withLock({ () -> Bool in defer { busy = true }; return !busy }) {
+            queue.async {
+                self.segment(buffer)
+                self.lock.withLock { self.busy = false }
+            }
+        }
+        guard let mask = lock.withLock({ mask }) else { return camera }
         let maskImage = CIImage(cvPixelBuffer: mask)
         let scaledMask = maskImage.transformed(by: CGAffineTransform(
             scaleX: camera.extent.width / maskImage.extent.width, y: camera.extent.height / maskImage.extent.height))
@@ -183,6 +199,13 @@ private nonisolated final class PersonSegmentation {
             kCIInputBackgroundImageKey: fill(background, camera.extent),
             kCIInputMaskImageKey: scaledMask.mirrored(mirror),
         ])
+    }
+
+    /// On `queue`.
+    private func segment(_ buffer: CVPixelBuffer) {
+        guard (try? handler.perform([request], on: buffer)) != nil, let result = request.results?.first?.pixelBuffer
+        else { return }
+        lock.withLock { mask = result }
     }
 
     /// Aspect-fills the background over the frame, cached until either changes.

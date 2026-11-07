@@ -54,22 +54,21 @@ nonisolated extension YOLOModel {
     /// Picks the best class per anchor, thresholds, then runs class-aware NMS.
     private func boxes(_ head: Tensor, classes: Int, geometry: Geometry, rotated: Bool = false) -> [Candidate] {
         let anchors = head.shape[2]
-        var best = [Float](repeating: 0, count: anchors)
-        var bestClass = [Int](repeating: 0, count: anchors)
+        // Best score per anchor, one vectorized max per class row; the class is looked up only for anchors that pass.
+        var best = [Float](repeating: -.infinity, count: anchors)
         head.values.withUnsafeBufferPointer { values in
-            for c in 0..<classes {
-                let row = values.baseAddress! + (4 + c) * anchors
-                for a in 0..<anchors where row[a] > best[a] {
-                    best[a] = row[a]
-                    bestClass[a] = c
+            best.withUnsafeMutableBufferPointer { best in
+                for c in 0..<classes {
+                    vDSP_vmax(best.baseAddress!, 1, values.baseAddress! + (4 + c) * anchors, 1, best.baseAddress!, 1, vDSP_Length(anchors))
                 }
             }
         }
         let candidates = (0..<anchors).filter { best[$0] >= confidence }.map { a -> Candidate in
             let value = { head.values[$0 * anchors + a] }
             let (cx, cy, w, h) = (value(0), value(1), value(2), value(3))
+            let classIndex = (0..<classes).first { value(4 + $0) == best[a] } ?? 0
             var detection = Detection(
-                box: geometry.rect(cx: cx, cy: cy, w: w, h: h), confidence: best[a], classIndex: bestClass[a])
+                box: geometry.rect(cx: cx, cy: cy, w: w, h: h), confidence: best[a], classIndex: classIndex)
             if rotated { detection.angle = value(4 + classes) }
             let inputBox = CGRect(x: CGFloat(cx - w / 2), y: CGFloat(cy - h / 2), width: CGFloat(w), height: CGFloat(h))
             return Candidate(detection: detection, anchor: a, inputBox: inputBox)
@@ -121,28 +120,33 @@ nonisolated extension YOLOModel {
     }
 
     /// Colors each pixel by the highest-scoring instance whose box covers it. `masks` holds one `width x height` logit
-    /// map per candidate in model-input space scaled by `scale`; `crop` trims the letterbox padding.
+    /// map per candidate in model-input space scaled by `scale`; `crop` trims the letterbox padding. `kept` is sorted
+    /// by score, so painting each box in reverse lets the higher score win.
     private func paintInstances(
         _ kept: [Candidate], masks: [Float], width pw: Int, height ph: Int, scale: CGFloat, crop: (x: Int, y: Int)
     ) -> CGImage? {
         let (w, h) = (pw - 2 * crop.x, ph - 2 * crop.y)
-        let regions = kept.map { $0.inputBox.applying(CGAffineTransform(scaleX: scale, y: scale)) }
+        guard w > 0, h > 0 else { return nil }
         let palette = isDETR ? Palette.roboflow : Palette.ultralytics  // each vendor's annotation colors
-        var rgba = [UInt8](repeating: 0, count: max(w * h, 0) * 4)
-        for y in 0..<max(h, 0) {
-            for x in 0..<w {
-                let (px, py) = (x + crop.x, y + crop.y)
-                let point = CGPoint(x: CGFloat(px) + 0.5, y: CGFloat(py) + 0.5)
-                guard let i = kept.indices.first(where: { regions[$0].contains(point) && masks[$0 * ph * pw + py * pw + px] > -1 })
-                else { continue }
-                let probability = 1 / (1 + exp(-masks[i * ph * pw + py * pw + px]))
-                let alpha = min(max((probability - 0.35) / 0.3, 0), 1) * 0.55
-                let (r, g, b) = palette[kept[i].detection.classIndex % palette.count]
-                let o = (y * w + x) * 4
-                rgba[o] = UInt8(Float(r) * alpha)
-                rgba[o + 1] = UInt8(Float(g) * alpha)
-                rgba[o + 2] = UInt8(Float(b) * alpha)
-                rgba[o + 3] = UInt8(255 * alpha)
+        var rgba = [UInt8](repeating: 0, count: w * h * 4)
+        for (i, candidate) in kept.enumerated().reversed() {
+            // Pixels whose centers are in the box, within the crop.
+            let region = candidate.inputBox.applying(CGAffineTransform(scaleX: scale, y: scale))
+            let xs = max(Int((region.minX - 0.5).rounded(.up)), crop.x)..<min(Int((region.maxX - 0.5).rounded(.up)), crop.x + w)
+            let ys = max(Int((region.minY - 0.5).rounded(.up)), crop.y)..<min(Int((region.maxY - 0.5).rounded(.up)), crop.y + h)
+            guard !xs.isEmpty, !ys.isEmpty else { continue }
+            let (r, g, b) = palette[candidate.detection.classIndex % palette.count]
+            for py in ys {
+                for px in xs {
+                    let logit = masks[i * ph * pw + py * pw + px]
+                    guard logit > -1 else { continue }
+                    let alpha = min(max((1 / (1 + exp(-logit)) - 0.35) / 0.3, 0), 1) * 0.55
+                    let o = ((py - crop.y) * w + px - crop.x) * 4
+                    rgba[o] = UInt8(Float(r) * alpha)
+                    rgba[o + 1] = UInt8(Float(g) * alpha)
+                    rgba[o + 2] = UInt8(Float(b) * alpha)
+                    rgba[o + 3] = UInt8(255 * alpha)
+                }
             }
         }
         return makeImage(rgba: rgba, width: w, height: h)
@@ -237,9 +241,12 @@ nonisolated extension YOLOModel {
         let (mh, mw) = (depth.shape[depth.shape.count - 2], depth.shape[depth.shape.count - 1])
         let (low, high) = (vDSP.minimum(depth.values), vDSP.maximum(depth.values))
         guard high > low, low.isFinite, high.isFinite else { return nil }
+        // Gradient step per pixel: 0 for the farthest, 255 for the nearest.
+        let steps = vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values))
+        let gradient = Palette.ultralyticsGradient
         var rgba = [UInt8](repeating: 255, count: mw * mh * 4)
-        for (i, value) in depth.values.enumerated() {
-            let (r, g, b) = Palette.ultralyticsGradient(1 - (value - low) / (high - low))
+        for (i, step) in steps.enumerated() {
+            let (r, g, b) = gradient[255 - Int(step.rounded())]
             rgba[i * 4] = r
             rgba[i * 4 + 1] = g
             rgba[i * 4 + 2] = b

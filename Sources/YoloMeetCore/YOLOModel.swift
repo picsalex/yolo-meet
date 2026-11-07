@@ -42,7 +42,10 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
     private var scratch: [[Float]]
     /// Per-channel value of pixel 0 and pixel 255 after normalization (RGB).
     private let range: (low: [Float], high: [Float])
-    private static let context = CIContext(options: [.cacheIntermediates: false])
+    /// No color management: raw pixel values reach the model, as in Ultralytics' Python preprocessing, with less GPU work.
+    private static let context = CIContext(options: [
+        .cacheIntermediates: false, .workingColorSpace: NSNull(), .outputColorSpace: NSNull(),
+    ])
 
     /// Loads any Ultralytics or RF-DETR Core AI export; the family and task are inferred when metadata lacks them.
     public static func load(from url: URL) async throws -> YOLOModel {
@@ -150,7 +153,7 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         let gray = CIImage(color: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255))
         Self.context.render(
             placed.composited(over: gray), to: staging, bounds: CGRect(x: 0, y: 0, width: w, height: h),
-            colorSpace: CGColorSpaceCreateDeviceRGB())
+            colorSpace: nil)
 
         CVPixelBufferLockBaseAddress(staging, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(staging, .readOnly) }

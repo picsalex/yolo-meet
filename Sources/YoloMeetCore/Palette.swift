@@ -22,10 +22,10 @@ public nonisolated enum Palette {
         (255, 0, 0), (0, 0, 142), (0, 0, 70), (0, 60, 100), (0, 80, 100), (0, 0, 230), (119, 11, 32),
     ]
 
-    /// The Ultralytics gradient (Aqua Blue → Bright Blue → Neon Pink), `t` in 0...1.
-    static func ultralyticsGradient(_ t: Float) -> (UInt8, UInt8, UInt8) {
+    /// The Ultralytics gradient (Aqua Blue → Bright Blue → Neon Pink) in 256 steps.
+    static let ultralyticsGradient: [(UInt8, UInt8, UInt8)] = (0..<256).map { step in
         let stops: [(Float, Float, Float)] = [(0, 255, 255), (4, 42, 255), (255, 100, 218)]
-        let x = min(max(t, 0), 1) * Float(stops.count - 1)
+        let x = Float(step) / 255 * Float(stops.count - 1)
         let i = min(Int(x), stops.count - 2)
         let f = x - Float(i)
         let (a, b) = (stops[i], stops[i + 1])

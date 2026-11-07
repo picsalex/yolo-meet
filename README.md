@@ -26,8 +26,8 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 
 ## How it works
 
-`Camera` → `Pipeline` (Vision person segmentation replaces the background, then every active model runs on the newest
-frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
+`Camera` → `Pipeline` (Vision person segmentation, on its own queue, replaces the background; each active model runs
+at its own rate on the newest frame and a `Tracker` assigns IDs) → `StageRenderer` (Core Image draws the frame, SpriteKit draws effects, one Metal
 pass at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
 at the speed they moved between the last two runs: the video has no added delay and overlays keep up with fast hands.
 

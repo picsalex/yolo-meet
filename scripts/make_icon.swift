@@ -1,5 +1,5 @@
-// Renders the app icon to Support/AppIcon.icns: a person framed by a detection box with pose keypoints, in Ultralytics
-// brand colors. Run from the repo root: swift scripts/make_icon.swift
+// Renders the app icon to Support/AppIcon.icns: the Ultralytics logomark (white, the official reverse variant) detected
+// YOLO-style on a brand-gradient tile. Run from the repo root: swift scripts/make_icon.swift [preview.png]
 import AppKit
 
 func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
@@ -8,56 +8,88 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
         alpha: alpha)
 }
 
-let (darkBlue, brightBlue, aqua, pink, yellow) = (0x111F68 as UInt32, 0x042AFF as UInt32, 0x00FFFF as UInt32, 0xFF64DA as UInt32, 0xE1FF25 as UInt32)
+let (darkBlue, brightBlue, aqua, pink, yellow) = (
+    0x111F68 as UInt32, 0x042AFF as UInt32, 0x00FFFF as UInt32, 0xFF64DA as UInt32, 0xE1FF25 as UInt32
+)
+let sRGB = CGColorSpace(name: CGColorSpace.sRGB)!
+
+/// The logomark's two paths from ultralytics/assets logo/Ultralytics_Logotype_Original.svg (107 x 92 units, y down).
+let logomark = [
+    "M56.7478 25.1939L56.7365 38.0286C56.7824 55.5439 42.5251 69.8368 25.1086 69.8148C18.1905 69.8036 11.8932 67.6925 6.78925 63.9998C15.9461 80.5019 33.5065 91.6475 53.471 91.6608C82.4752 91.6378 106.447 67.9677 106.902 38.8701L106.895 38.7488C106.922 38.0783 106.894 25.6714 106.927 25.1223C106.889 11.317 95.6288 -0.0290768 81.8562 0.00597989C68.0198 -0.0165355 56.7033 11.2672 56.7478 25.1939Z",
+    "M25.0789 12.9165C11.2511 12.9165 0.000768562 24.1938 0.000768562 38.0553C0.000768562 51.9154 11.2511 63.1926 25.0789 63.1926C38.9075 63.1926 50.157 51.9154 50.157 38.0553C50.157 24.1938 38.9075 12.9165 25.0789 12.9165Z",
+]
+
+/// Builds a CGPath from the absolute M/L/C/Z commands these paths use.
+func path(_ svg: String, _ transform: CGAffineTransform) -> CGPath {
+    let tokens = svg.matches(of: #/[MLCZ]|-?\d*\.?\d+(?:e-?\d+)?/#).map { String($0.output) }
+    let path = CGMutablePath()
+    var (i, command) = (0, "")
+    func point() -> CGPoint {
+        defer { i += 2 }
+        return CGPoint(x: Double(tokens[i])!, y: Double(tokens[i + 1])!).applying(transform)
+    }
+    while i < tokens.count {
+        if Double(tokens[i]) == nil {
+            command = tokens[i]
+            i += 1
+        }
+        switch command {
+        case "M": path.move(to: point())
+        case "L": path.addLine(to: point())
+        case "C":
+            let (c1, c2) = (point(), point())
+            path.addCurve(to: point(), control1: c1, control2: c2)
+        case "Z": path.closeSubpath()
+        default: fatalError("unsupported path command \(command)")
+        }
+    }
+    return path
+}
 
 func render(_ size: Int) -> Data {
-    let s = CGFloat(size) / 1024
     let ctx = CGContext(
-        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-        space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.scaleBy(x: s, y: s)
-    // macOS icon grid: 824 pt body centered on a 1024 canvas, with a soft drop shadow.
-    let body = CGRect(x: 100, y: 100, width: 824, height: 824)
-    let shape = CGPath(roundedRect: body, cornerWidth: 185, cornerHeight: 185, transform: nil)
+        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: sRGB,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    ctx.scaleBy(x: CGFloat(size) / 1024, y: CGFloat(size) / 1024)
+
+    // Tile on the macOS icon grid (824 pt body on a 1024 canvas) with a soft shadow.
+    let tile = CGPath(roundedRect: CGRect(x: 100, y: 100, width: 824, height: 824), cornerWidth: 185, cornerHeight: 185, transform: nil)
     ctx.saveGState()
     ctx.setShadow(offset: CGSize(width: 0, height: -10), blur: 28, color: color(0, 0.35))
-    ctx.addPath(shape)
+    ctx.addPath(tile)
     ctx.setFillColor(color(darkBlue))
     ctx.fillPath()
     ctx.restoreGState()
 
+    // Brand gradient, Bright Blue to Dark Blue, lit by an Aqua and a Neon Pink glow.
     ctx.saveGState()
-    ctx.addPath(shape)
+    ctx.addPath(tile)
     ctx.clip()
-    let space = CGColorSpace(name: CGColorSpace.sRGB)!
-    let background = CGGradient(colorsSpace: space, colors: [color(0x1A2C8F), color(darkBlue), color(0x0A1240)] as CFArray, locations: [0, 0.55, 1])!
-    ctx.drawLinearGradient(background, start: CGPoint(x: 512, y: 924), end: CGPoint(x: 512, y: 100), options: [])
-    let glow = CGGradient(colorsSpace: space, colors: [color(brightBlue, 0.55), color(brightBlue, 0)] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(glow, startCenter: CGPoint(x: 512, y: 470), startRadius: 0, endCenter: CGPoint(x: 512, y: 470), endRadius: 420, options: [])
-
-    // Person: head and shoulders, in the brand gradient (Aqua -> Bright Blue -> Neon Pink).
-    let person = CGMutablePath()
-    person.addEllipse(in: CGRect(x: 397, y: 470, width: 230, height: 230))
-    // Shoulders: rounded on top, running off the bottom edge of the icon.
-    person.move(to: CGPoint(x: 272, y: 60))
-    person.addLine(to: CGPoint(x: 272, y: 280))
-    person.addCurve(to: CGPoint(x: 512, y: 445), control1: CGPoint(x: 272, y: 400), control2: CGPoint(x: 380, y: 445))
-    person.addCurve(to: CGPoint(x: 752, y: 280), control1: CGPoint(x: 644, y: 445), control2: CGPoint(x: 752, y: 400))
-    person.addLine(to: CGPoint(x: 752, y: 60))
-    person.closeSubpath()
-    ctx.saveGState()
-    ctx.addPath(person)
-    ctx.clip()
-    let brand = CGGradient(colorsSpace: space, colors: [color(aqua), color(brightBlue), color(pink)] as CFArray, locations: [0, 0.5, 1])!
-    ctx.drawLinearGradient(brand, start: CGPoint(x: 360, y: 720), end: CGPoint(x: 680, y: 120), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-    ctx.restoreGState()
+    let base = CGGradient(colorsSpace: sRGB, colors: [color(brightBlue), color(darkBlue)] as CFArray, locations: [0, 1])!
+    ctx.drawLinearGradient(base, start: CGPoint(x: 200, y: 924), end: CGPoint(x: 824, y: 100), options: [])
+    for (hex, center, radius) in [(aqua, CGPoint(x: 180, y: 860), 520.0), (pink, CGPoint(x: 900, y: 140), 560.0)] {
+        let glow = CGGradient(colorsSpace: sRGB, colors: [color(hex, hex == pink ? 0.8 : 0.55), color(hex, 0)] as CFArray, locations: [0, 1])!
+        ctx.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center, endRadius: radius, options: [])
+    }
     ctx.restoreGState()
 
-    // Detection box: corner brackets around the person, with a label chip.
-    let box = CGRect(x: 250, y: 205, width: 524, height: 545)
-    let arm: CGFloat = 120
-    ctx.setStrokeColor(color(0xFFFFFF))
-    ctx.setLineWidth(22)
+    // The logomark, white, centered in the detection box below.
+    let box = CGRect(x: 232, y: 228, width: 560, height: 500)
+    let scale = 4.1
+    let mark = CGSize(width: 107 * scale, height: 92 * scale)
+    let flip = CGAffineTransform(translationX: box.midX - mark.width / 2, y: box.midY + mark.height / 2)
+        .scaledBy(x: scale, y: -scale)
+    ctx.saveGState()
+    ctx.setShadow(offset: .zero, blur: 40, color: color(aqua, 0.6))
+    for d in logomark { ctx.addPath(path(d, flip)) }
+    ctx.setFillColor(color(0xFFFFFF))
+    ctx.fillPath()
+    ctx.restoreGState()
+
+    // Detection: Neon Yellow corner brackets and an Ultralytics-style label chip.
+    let arm: CGFloat = 110
+    ctx.setStrokeColor(color(yellow))
+    ctx.setLineWidth(20)
     ctx.setLineCap(.round)
     ctx.setLineJoin(.round)
     for (corner, dx, dy) in [
@@ -69,35 +101,17 @@ func render(_ size: Int) -> Data {
         ctx.addLine(to: CGPoint(x: corner.x, y: corner.y + dy))
     }
     ctx.strokePath()
-    let chip = CGPath(roundedRect: CGRect(x: box.minX - 11, y: box.maxY + 26, width: 230, height: 62), cornerWidth: 16, cornerHeight: 16, transform: nil)
-    ctx.addPath(chip)
-    ctx.setFillColor(color(0xFFFFFF))
+    let label = NSAttributedString(string: "ultralytics 99%", attributes: [
+        .font: NSFont(name: "Arial-BoldMT", size: 50)!, .foregroundColor: NSColor(cgColor: color(darkBlue))!,
+    ])
+    let text = label.size()
+    let chip = CGRect(x: box.minX - 10, y: box.maxY + 24, width: text.width + 48, height: text.height + 22)
+    ctx.addPath(CGPath(roundedRect: chip, cornerWidth: 14, cornerHeight: 14, transform: nil))
+    ctx.setFillColor(color(yellow))
     ctx.fillPath()
-    for (i, w) in [CGFloat(70), 104].enumerated() {  // abstract "label" text
-        let bar = CGRect(x: box.minX + 14 + CGFloat(i) * 88, y: box.maxY + 47, width: w - (i == 0 ? 0 : 30), height: 20)
-        ctx.addPath(CGPath(roundedRect: bar, cornerWidth: 10, cornerHeight: 10, transform: nil))
-    }
-    ctx.setFillColor(color(darkBlue))
-    ctx.fillPath()
-
-    // Pose keypoints in the app's pose colors: Aqua left, Neon Pink right, Light Blue center; Neon Yellow joints.
-    let (nose, neck) = (CGPoint(x: 512, y: 575), CGPoint(x: 512, y: 380))
-    let (left, right) = (CGPoint(x: 362, y: 360), CGPoint(x: 662, y: 360))  // the person's left is on our right
-    ctx.setLineWidth(14)
-    for (a, b, c) in [(nose, neck, 0xACF9FF as UInt32), (neck, right, aqua), (neck, left, pink)] {
-        ctx.setStrokeColor(color(c))
-        ctx.move(to: a)
-        ctx.addLine(to: b)
-        ctx.strokePath()
-    }
-    for p in [nose, left, right] {
-        let dot = CGRect(x: p.x - 28, y: p.y - 28, width: 56, height: 56)
-        ctx.setFillColor(color(yellow))
-        ctx.fillEllipse(in: dot)
-        ctx.setStrokeColor(color(darkBlue))
-        ctx.setLineWidth(8)
-        ctx.strokeEllipse(in: dot)
-    }
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+    label.draw(at: CGPoint(x: chip.minX + 24, y: chip.minY + 11))
+    NSGraphicsContext.current = nil
 
     return NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!
 }

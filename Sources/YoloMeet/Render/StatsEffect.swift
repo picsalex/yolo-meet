@@ -59,7 +59,7 @@ final class StatsEffect: Effect {
             let input = "\(Int(output.inputSize.width))×\(Int(output.inputSize.height))\(info.isDynamic ? "" : " fixed")"
             lines.append(row("  Input", "\(input) \(info.precision) · Core AI"))
             switch output.task {
-            case .detect, .segment, .pose, .obb: lines.append(row("  Objects", "\(output.detections.count)"))
+            case .detect, .segment, .pose, .obb, .hand, .face: lines.append(row("  Objects", "\(output.detections.count)"))
             case .classify: lines.append(row("  Top-1", output.topClasses.first.map { output.name(of: $0.index) } ?? "—"))
             case .semantic, .depth: break
             }

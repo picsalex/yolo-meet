@@ -7,7 +7,7 @@ func displayEffects(for task: YOLOTask, model: String, custom: Bool) -> [Effect]
     switch task {
     case .detect: [BoxesEffect(model: model)]
     case .segment: [OverlayEffect(model: model), BoxesEffect(model: model)]
-    case .pose: [PoseEffect(model: model, skeleton: !custom)]
+    case .pose, .hand, .face: [PoseEffect(model: model, skeleton: !custom)]
     case .obb: [OrientedBoxesEffect(model: model)]
     case .classify: [ClassifyEffect(model: model)]
     case .semantic: [OverlayEffect(model: model)]
@@ -105,13 +105,16 @@ final class PoseEffect: Effect {
         let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         for (node, detection) in zip(nodes, detections) {
             let points = detection.keypoints.map { $0.confidence >= minConfidence ? frame.stage.point($0.point) : nil }
-            node.update(to: points, skeleton: skeleton, theme: theme, unit: frame.stage.unit, smoothing: frame.smoothing(gap:))
+            node.update(
+                to: points, skeleton: skeleton ? output?.skeleton ?? [] : [], theme: theme, unit: frame.stage.unit,
+                smoothing: frame.smoothing(gap:))
         }
     }
 }
 
 final class PoseNode: SKNode {
     /// Limbs grouped by body side: COCO keypoints with odd indices are on the left, even (non-zero) on the right.
+    /// Themes without sides (MediaPipe, Apple Vision) color all three alike.
     private let left = SKShapeNode()
     private let right = SKShapeNode()
     private let center = SKShapeNode()
@@ -128,8 +131,10 @@ final class PoseNode: SKNode {
     required init?(coder: NSCoder) { fatalError() }
 
     func update(
-        to targets: [CGPoint?], skeleton: Bool, theme: Theme, unit: CGFloat, smoothing: (CGFloat) -> CGFloat
+        to targets: [CGPoint?], skeleton: [(Int, Int)], theme: Theme, unit: CGFloat, smoothing: (CGFloat) -> CGFloat
     ) {
+        // A dense mesh (MediaPipe's 478-point face) is drawn as thin lines without joints.
+        let mesh = targets.count > 100
         if points.count != targets.count { points = targets }
         points = zip(points, targets).map { current, target in
             guard let target else { return nil }
@@ -137,7 +142,7 @@ final class PoseNode: SKNode {
             return current.approaching(target, smoothing(hypot(target.x - current.x, target.y - current.y)))
         }
         let paths = (left: CGMutablePath(), right: CGMutablePath(), center: CGMutablePath())
-        for (a, b) in skeleton ? poseSkeleton : [] {
+        for (a, b) in skeleton {
             guard let p = points[safe: a] ?? nil, let q = points[safe: b] ?? nil else { continue }
             let side = a % 2 == b % 2 && a != 0 && b != 0 ? (a % 2 == 1 ? paths.left : paths.right) : paths.center
             side.move(to: p)
@@ -147,12 +152,12 @@ final class PoseNode: SKNode {
                                     (center, paths.center, theme.centerLimb)] {
             limb.path = path
             limb.strokeColor = color
-            limb.lineWidth = 4 * unit
+            limb.lineWidth = (mesh ? 0.75 : theme.limbWidth) * unit
         }
 
         let jointPath = CGMutablePath()
-        let r = 4.5 * unit
-        for case let p? in points { jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
+        let r = theme.jointRadius * unit
+        for case let p? in mesh ? [] : points { jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
         joints.path = jointPath
         joints.fillColor = theme.joint
         joints.strokeColor = theme.jointOutline

@@ -151,7 +151,9 @@ final class AppModel {
 
     /// Catalog and custom models share ids' namespace: custom ids start with `custom-`.
     func task(of id: String) -> YOLOTask? { ModelCatalog.entry(id)?.task ?? custom.model(id)?.task }
-    func isAvailable(_ id: String) -> Bool { store.downloaded.contains(id) || custom.model(id) != nil }
+    func isAvailable(_ id: String) -> Bool {
+        store.downloaded.contains(id) || custom.model(id) != nil || ModelCatalog.entry(id)?.family.isBuiltIn == true
+    }
     func url(for id: String) -> URL { custom.model(id) != nil ? custom.url(for: id) : store.url(for: id) }
 
     func downloadMissing() {

@@ -2,9 +2,9 @@ import CoreAI
 import Foundation
 import Observation
 
-/// Model families offered in the catalog: Ultralytics YOLO generations oldest first, then RF-DETR.
+/// Model families offered in the catalog: Ultralytics YOLO generations oldest first, then other vendors.
 public enum ModelFamily: String, CaseIterable, Sendable {
-    case yolov5, yolov8, yolo11, yolo26, rfdetr
+    case yolov5, yolov8, yolo11, yolo26, rfdetr, mediapipe, vision
 
     public var title: String {
         switch self {
@@ -13,24 +13,47 @@ public enum ModelFamily: String, CaseIterable, Sendable {
         case .yolo11: "YOLO11"
         case .yolo26: "YOLO26"
         case .rfdetr: "RF-DETR"
+        case .mediapipe: "MediaPipe"
+        case .vision: "Apple Vision"
+        }
+    }
+
+    /// Who makes it, shown under the family picker for other vendors.
+    public var credit: String? {
+        switch self {
+        case .rfdetr: "by Roboflow · Apache-2.0"
+        case .mediapipe: "by Google · Apache-2.0"
+        case .vision: "built into macOS · nothing to download"
+        default: nil
         }
     }
 
     /// Tasks with official weights. YOLOv5 ships anchor-free detection only (`yolov5nu`).
     public var tasks: [YOLOTask] {
         switch self {
-        case .yolo26: YOLOTask.allCases
+        case .yolo26: [.detect, .segment, .pose, .obb, .classify, .semantic, .depth]
         case .yolo11, .yolov8: [.detect, .segment, .pose, .obb, .classify]
         case .yolov5: [.detect]
         case .rfdetr: [.detect, .segment, .pose]
+        case .mediapipe, .vision: [.hand, .pose, .face]
         }
     }
 
-    /// Ultralytics' own models, as opposed to other vendors' (RF-DETR by Roboflow).
-    public var isUltralytics: Bool { self != .rfdetr }
+    /// Ultralytics' own models, as opposed to other vendors'.
+    public var isUltralytics: Bool { ![.rfdetr, .mediapipe, .vision].contains(self) }
+
+    /// Built into macOS: always available, never downloaded.
+    public var isBuiltIn: Bool { self == .vision }
 
     /// Grid columns.
-    public var sizes: [String] { self == .rfdetr ? ["n", "s", "m", "l", "xl", "2xl"] : ["n", "s", "m", "l", "x"] }
+    public var sizes: [String] {
+        switch self {
+        case .rfdetr: ["n", "s", "m", "l", "xl", "2xl"]
+        case .mediapipe: ["lite", "full", "heavy"]
+        case .vision: ["macOS"]
+        default: ["n", "s", "m", "l", "x"]
+        }
+    }
 }
 
 /// A downloadable model. `id` is the asset name (`yolo26n-seg`, `yolov5su`, `rfdetr-seg-nano`), which is also its
@@ -43,7 +66,12 @@ public struct CatalogEntry: Identifiable, Hashable, Sendable {
     public let url: URL
 
     public var title: String {
-        family == .rfdetr ? "RF-DETR-\(size.uppercased()) \(task.title)" : "\(family.title)\(size) \(task.title)"
+        switch family {
+        case .rfdetr: "RF-DETR-\(size.uppercased()) \(task.title)"
+        case .mediapipe: "MediaPipe \(task.title)\(task == .pose ? " \(size.capitalized)" : "")"
+        case .vision: "Apple Vision \(task.title)"
+        default: "\(family.title)\(size) \(task.title)"
+        }
     }
 }
 
@@ -75,6 +103,9 @@ public enum ModelCatalog {
         case (.rfdetr, .segment): "rfdetr-seg-\(rfdetrSizes[size]!)"
         case (.rfdetr, .pose): size == "xl" ? "rfdetr-pose" : nil  // single keypoint preview (XLarge)
         case (.rfdetr, _): nil
+        case (.mediapipe, .pose): "mediapipe-pose-\(size)"
+        case (.mediapipe, _): size == "full" ? "mediapipe-\(task.rawValue)" : nil  // one hand and one face model
+        case (.vision, _): "vision-\(task.rawValue)"
         default: "\(family.rawValue)\(size)\(family == .yolov5 ? "u" : "")\(suffixes[task]!)"
         }
     }
@@ -132,8 +163,11 @@ public final class ModelStore {
         progress[id] = nil
         observations[id] = nil
         switch result {
-        case .success: downloaded.insert(id)
-        case .failure(let error): lastError = "\(id): \(error.localizedDescription)"
+        case .success:
+            downloaded.insert(id)
+            lastError = nil
+        case .failure(let error):
+            lastError = "Couldn't download \(ModelCatalog.entry(id)?.title ?? id): \(error.localizedDescription)"
         }
     }
 
@@ -141,8 +175,11 @@ public final class ModelStore {
         throws
     {
         if let error { throw error }
-        guard let file, let directory, (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw URLError(.badServerResponse)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard let file, let directory, status == 200 else {
+            throw CocoaError(.fileReadUnknown, userInfo: [
+                NSLocalizedDescriptionKey: status == 404 ? "it is not on the models release." : "the server answered HTTP \(status).",
+            ])
         }
         let unzip = Process()
         unzip.executableURL = URL(filePath: "/usr/bin/ditto")

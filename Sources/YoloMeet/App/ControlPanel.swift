@@ -76,7 +76,6 @@ struct ControlPanel: View {
                         Text("\($0.key): \($0.value)").foregroundStyle(.red)
                     }
                 }
-                if let error = model.store.lastError { Text(error).foregroundStyle(.red) }
             }
         }
         .formStyle(.grouped)

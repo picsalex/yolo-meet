@@ -56,7 +56,7 @@ import Testing
 
     /// Asset names must match scripts/export_models.py.
     @Test @MainActor func catalog() {
-        #expect(ModelCatalog.entries.count == 35 + 25 + 25 + 5 + 11)
+        #expect(ModelCatalog.entries.count == 35 + 25 + 25 + 5 + 11 + 5 + 3)
         #expect(Set(ModelCatalog.entries.map(\.id)).count == ModelCatalog.entries.count)
         for id in ["yolo26x-depth", "yolo11m-obb", "yolov8s-cls", "yolov5lu", "rfdetr-large", "rfdetr-seg-2xlarge"] {
             #expect(ModelCatalog.entry(id) != nil)
@@ -64,6 +64,9 @@ import Testing
         #expect(ModelCatalog.entry("yolov5nu")?.title == "YOLOv5n Detect")
         #expect(ModelCatalog.entry("rfdetr-pose")?.title == "RF-DETR-XL Pose")
         #expect(ModelCatalog.entry("rfdetr-xlarge") == nil)  // XL detection is not Apache-2.0
+        #expect(ModelCatalog.entry("mediapipe-pose-heavy")?.title == "MediaPipe Pose Heavy")
+        #expect(ModelCatalog.entry("mediapipe-hand")?.size == "full")
+        #expect(ModelCatalog.entry("vision-face")?.family.isBuiltIn == true)
     }
 
     /// Variable-size exports take `imgsz` on the frame's long side, at the frame's aspect; results stay in frame pixels.

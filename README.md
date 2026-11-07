@@ -23,6 +23,9 @@ YOLO_MEET_MODELS=/path/to/unzipped/aimodels YOLO_MEET_IMAGE=/path/to/bus.jpg swi
 ```
 
 Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and are skipped when the variables are unset.
+MediaPipe tests run when `YOLO_MEET_MEDIAPIPE` points to unzipped `mediapipe-*.aimodel` folders with an `img` folder of
+MediaPipe's sample photos (woman_hands, thumb_up, pose, portrait) and `reference.json` from
+`scripts/export_mediapipe.py --reference img`.
 
 ## How it works
 
@@ -31,7 +34,7 @@ at its own rate on the newest frame and a `Tracker` assigns IDs) → `StageRende
 pass at 60 fps). Models run at their own rate on older frames than the one shown, so detections are carried forward
 at the speed they moved between the last two runs: the video has no added delay and overlays keep up with fast hands.
 
-Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py` and attached to the `models` release. They are downloaded from the panel,
+Models come from `ModelCatalog`: YOLOv5u (detect), YOLOv8 and YOLO11 (detect, segment, pose, OBB, classify), YOLO26 (all 7 tasks), sizes n–x, and RF-DETR (detect n–l, segment n–2xl, pose preview), exported to Core AI by `scripts/export_models.py`; MediaPipe hand, pose (lite, full, heavy) and face landmarkers, exported by `scripts/export_mediapipe.py`; all attached to the `models` release. Apple Vision's hand, body and face landmarks are built into macOS. They are downloaded from the panel,
 and live in `~/Library/Application Support/YoloMeet/Models`.
 
 ## Visual style
@@ -40,8 +43,24 @@ Overlays follow each vendor's brand so the families stay distinct (`Sources/Yolo
 
 - **YOLO** — [Ultralytics brand](https://www.ultralytics.com/brand): the 20-color annotation palette, Arial labels, 3 px boxes, skeletons in Aqua Blue (left), Neon Pink (right) and Light Blue with Neon Yellow joints, depth in the Ultralytics gradient, captions in Archivo on Dark Blue.
 - **RF-DETR** — [Roboflow brand](https://roboflow.com/brand) and supervision's annotator defaults: supervision's palette, Geist Mono labels, 2 px boxes, Purple/Lavender skeletons with Cream joints.
+- **MediaPipe** — MediaPipe's `drawing_utils` defaults: light gray connections, red landmarks; the face as a thin mesh.
+- **Apple Vision** — white lines, system blue joints.
 
 Archivo and Geist Mono are bundled from Google Fonts under the SIL Open Font License (`Support/Fonts`).
+
+## MediaPipe and Apple Vision
+
+Under Models › Other, next to RF-DETR:
+
+- **MediaPipe** (Google, Apache-2.0): its official hand, pose and face landmarker models, converted TFLite → ONNX →
+  Core AI by `scripts/export_mediapipe.py` (each step checked against the previous runtime; the pose detector's sparse
+  weights are densified first). `Landmarker` runs MediaPipe's two-stage pipeline in Swift: the detector on the
+  letterboxed frame (SSD anchors, weighted NMS), then the landmark model on a square crop rotated upright (palm, hips
+  or eyes), with MediaPipe's heatmap refinement for pose. Landmarks match MediaPipe Tasks within 0.1–0.3% of the image
+  on its sample photos (`LandmarkerTests`). Up to two hands, bodies or faces; MediaPipe's own 0.5 thresholds apply.
+- **Apple Vision**: the hand (21 points), body (17, COCO order) and face landmark requests built into macOS.
+
+Both produce detections with keypoints, so tracking, smoothing and the pose effects work on them like on YOLO pose.
 
 ## Custom models
 

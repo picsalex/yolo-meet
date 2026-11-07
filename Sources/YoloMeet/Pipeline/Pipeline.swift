@@ -17,7 +17,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
         /// Recent results per model, oldest first.
         var history: [String: [ModelOutput]] = [:]
         var wanted: [String] = []
-        var models: [YOLOModel] = []
+        var models: [any Predictor] = []
         var loading: Set<String> = []
         var trackers: [String: Tracker] = [:]
         /// Models with a run in flight.
@@ -91,7 +91,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
     func show(_ frame: CIImage, from input: Input = .media) {
         let time = CACurrentMediaTime()
         let (idle, settings) = lock.withLock {
-            guard state.input == input else { return ([YOLOModel](), state.settings) }
+            guard state.input == input else { return ([any Predictor](), state.settings) }
             state.frame = (time, frame)
             state.cameraRate.tick()
             state.cameraSize = frame.extent.size
@@ -133,8 +133,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
         onPendingChange()
         for entry in toLoad {
             Task.detached(priority: .userInitiated) {
-                let result: Result<YOLOModel, any Error>
-                do { result = .success(try await YOLOModel.load(from: entry.url)) } catch { result = .failure(error) }
+                let result: Result<any Predictor, any Error>
+                do { result = .success(try await Predictors.load(id: entry.id, from: entry.url)) } catch { result = .failure(error) }
                 self.lock.withLock {
                     self.state.loading.remove(entry.id)
                     switch result {
@@ -154,8 +154,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
     }
 
     /// Runs one model (not reentrant: one run per instance at a time) and records its result.
-    private func infer(_ frame: CIImage, at time: TimeInterval, _ model: YOLOModel, _ settings: InferenceSettings) async {
-        (model.imgsz, model.confidence, model.iou) = (settings.imgsz, settings.confidence, settings.iou)
+    private func infer(_ frame: CIImage, at time: TimeInterval, _ model: any Predictor, _ settings: InferenceSettings) async {
+        model.configure(imgsz: settings.imgsz, confidence: settings.confidence, iou: settings.iou)
         do {
             var output = try await model.predict(frame)
             output.time = time

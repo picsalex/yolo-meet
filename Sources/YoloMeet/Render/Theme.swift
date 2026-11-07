@@ -18,6 +18,9 @@ struct Theme {
     let centerLimb: NSColor
     let joint: NSColor
     let jointOutline: NSColor
+    /// Skeleton line width and joint radius at 720 px of stage height.
+    var limbWidth: CGFloat = 4
+    var jointRadius: CGFloat = 4.5
 
     static let ultralytics = Theme(
         classes: Palette.ultralytics.map { NSColor($0) }, labelFont: "ArialMT", lineWidth: 3, darkText: .hex("111F68"),
@@ -29,11 +32,30 @@ struct Theme {
         leftLimb: .hex("C29AF6"), rightLimb: .hex("8033EB"), centerLimb: .hex("E8DAF7"),
         joint: .hex("F4F2EC"), jointOutline: .hex("161026"))
 
+    /// MediaPipe's drawing_utils defaults: light gray connections, red landmarks.
+    static let mediapipe = Theme(
+        classes: [.hex("FF0000"), .hex("00FF00")], labelFont: "ArialMT", lineWidth: 2, darkText: .black,
+        leftLimb: .hex("E0E0E0"), rightLimb: .hex("E0E0E0"), centerLimb: .hex("E0E0E0"),
+        joint: .hex("FF0000"), jointOutline: .hex("FF0000"), limbWidth: 2, jointRadius: 3)
+
+    /// Apple Vision: white lines, system blue joints.
+    static let vision = Theme(
+        classes: [.systemBlue, .systemOrange], labelFont: "ArialMT", lineWidth: 2, darkText: .black,
+        leftLimb: .white, rightLimb: .white, centerLimb: .white, joint: .systemBlue, jointOutline: .white,
+        limbWidth: 2.5, jointRadius: 4)
+
     /// Ultralytics' corporate typeface, for captions and titles.
     static let titleFont = "ArchivoRoman-Bold"
     static let darkBlue = NSColor.hex("111F68")
 
-    static func of(_ output: ModelOutput?) -> Theme { output?.info.family == "RF-DETR" ? .roboflow : .ultralytics }
+    static func of(_ output: ModelOutput?) -> Theme {
+        switch output?.info.family {
+        case "RF-DETR": .roboflow
+        case "MediaPipe": .mediapipe
+        case "Apple Vision": .vision
+        default: .ultralytics
+        }
+    }
 
     func color(_ classIndex: Int) -> NSColor { classes[abs(classIndex) % classes.count] }
 

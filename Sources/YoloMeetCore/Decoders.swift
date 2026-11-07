@@ -39,6 +39,8 @@ nonisolated extension YOLOModel {
             output.overlay = classMap(head, geometry: geometry)
         case .depth:
             output.overlay = depthMap(head)
+        case .hand, .face:
+            break  // MediaPipe and Apple Vision tasks, decoded by their own models
         }
     }
 

@@ -3,6 +3,8 @@ import CoreGraphics
 /// The Ultralytics task a model was exported for, read from its metadata.
 public enum YOLOTask: String, Sendable, CaseIterable, Codable {
     case detect, segment, pose, obb, classify, semantic, depth
+    /// Keypoint tasks of MediaPipe and Apple Vision models.
+    case hand, face
 
     public var title: String {
         switch self {
@@ -13,6 +15,8 @@ public enum YOLOTask: String, Sendable, CaseIterable, Codable {
         case .classify: "Classify"
         case .semantic: "Semantic"
         case .depth: "Depth"
+        case .hand: "Hand"
+        case .face: "Face"
         }
     }
 }
@@ -71,6 +75,8 @@ public nonisolated struct ModelOutput: Sendable {
     public var latency: Double = 0
     /// Results per second, measured by the pipeline.
     public var fps: Double = 0
+    /// Keypoint pairs to connect; COCO's body skeleton unless the model has its own.
+    public var skeleton: [(Int, Int)] = poseSkeleton
 
     public func name(of classIndex: Int) -> String {
         names.indices.contains(classIndex) ? names[classIndex] : "\(classIndex)"
@@ -78,7 +84,7 @@ public nonisolated struct ModelOutput: Sendable {
 }
 
 /// Standard COCO-17 skeleton, as pairs of keypoint indices.
-public let poseSkeleton: [(Int, Int)] = [
+nonisolated public let poseSkeleton: [(Int, Int)] = [
     (15, 13), (13, 11), (16, 14), (14, 12), (11, 12), (5, 11), (6, 12), (5, 6), (5, 7), (6, 8),
     (7, 9), (8, 10), (1, 2), (0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 6),
 ]

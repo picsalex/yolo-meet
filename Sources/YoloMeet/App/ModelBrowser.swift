@@ -22,6 +22,9 @@ struct ModelBrowser: View {
         case .other: ModelGrid(families: ModelFamily.allCases.filter { !$0.isUltralytics })
         case .custom: CustomModelList()
         }
+        if source != .custom, let error = model.store.lastError {
+            Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+        }
         if source != .custom {
             Button("Delete All Downloaded Models…", role: .destructive) { confirmingDeleteAll = true }
                 .disabled(model.store.downloaded.isEmpty)
@@ -67,8 +70,9 @@ private struct ModelGrid: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-        } else {
-            Text("\(family.title) by Roboflow · Apache-2.0").font(.caption).foregroundStyle(.secondary)
+        }
+        if let credit = family.credit {
+            Text("\(family.title) \(credit)").font(.caption).foregroundStyle(.secondary)
         }
         Grid(alignment: .leading, horizontalSpacing: 6, verticalSpacing: 6) {
             GridRow {
@@ -110,7 +114,7 @@ private struct ModelCell: View {
 
     var body: some View {
         let progress = model.store.progress[entry.id]
-        let downloaded = model.store.downloaded.contains(entry.id)
+        let downloaded = model.store.downloaded.contains(entry.id) || entry.family.isBuiltIn
         let shown = model.mode == .display && model.displayModels.contains(entry.id)
         Button {
             if !downloaded { model.store.download(entry) } else if model.mode == .display { model.toggleDisplay(entry.id) }
@@ -133,9 +137,11 @@ private struct ModelCell: View {
         }
         .buttonStyle(.plain)
         .disabled(progress != nil)
-        .help(downloaded ? "\(entry.title) — right-click to delete" : "Download \(entry.title)")
+        .help(entry.family.isBuiltIn ? entry.title : downloaded ? "\(entry.title) — right-click to delete" : "Download \(entry.title)")
         .contextMenu {
-            if downloaded { Button("Delete \(entry.title)", role: .destructive) { model.deleteModel(entry.id) } }
+            if downloaded && !entry.family.isBuiltIn {
+                Button("Delete \(entry.title)", role: .destructive) { model.deleteModel(entry.id) }
+            }
         }
     }
 }

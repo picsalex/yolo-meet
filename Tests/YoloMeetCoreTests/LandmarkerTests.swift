@@ -45,6 +45,18 @@ import Testing
         }
     }
 
+    /// A tracked result is dropped once its object leaves: the next frame without it has no results.
+    @Test(.enabled(if: root != nil), arguments: [
+        ("mediapipe-hand", "woman_hands.jpg"), ("mediapipe-pose-lite", "pose.jpg"), ("mediapipe-face", "portrait.jpg"),
+    ])
+    func losesTrack(_ model: String, _ image: String) async throws {
+        let frame = CIImage(contentsOf: Self.root!.appending(path: "img/\(image)"))!
+        let landmarker = try await Landmarker.load(from: Self.root!.appending(path: "\(model).aimodel"))
+        #expect(try await !landmarker.predict(frame).detections.isEmpty)
+        let wall = CIImage(color: CIColor(red: 0.8, green: 0.75, blue: 0.65)).cropped(to: frame.extent)
+        #expect(try await landmarker.predict(wall).detections.isEmpty)
+    }
+
     /// Apple Vision finds the same hands, body and face.
     @Test(.enabled(if: root != nil), arguments: [
         ("vision-hand", "woman_hands.jpg", 2), ("vision-pose", "pose.jpg", 1), ("vision-face", "portrait.jpg", 1),

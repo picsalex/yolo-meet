@@ -39,6 +39,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         let landmarkCount: Int
         /// Values per landmark in the landmark output.
         let stride: Int
+        /// The presence output is a logit (face); hand and pose output a probability.
+        var presenceIsLogit = false
         let detectorRange: (low: [Float], high: [Float])
         let names: [String]
         let connections: [(Int, Int)]
@@ -87,8 +89,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 }
                 return Config(
                     detectorSize: 128, strides: [8, 16, 16, 16], keypoints: 6, landmarkSize: 256, landmarkCount: 478,
-                    stride: 3, detectorRange: signed, names: ["face"], connections: MediaPipeConnections.faceMesh,
-                    roi: face, track: { k in face(k.bounds, [k[33], k[263]]) })
+                    stride: 3, presenceIsLogit: true, detectorRange: signed, names: ["face"],
+                    connections: MediaPipeConnections.faceMesh, roi: face, track: { k in face(k.bounds, [k[33], k[263]]) })
             default:
                 return nil
             }
@@ -233,7 +235,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         tracked = []
         for (i, roi) in rois.enumerated() {
             guard let raw = crops[i] else { continue }
-            let (values, presence) = (raw[outputs.points].values, sigmoid(raw[outputs.presence].values[0]))
+            let score = raw[outputs.presence].values[0]
+            let (values, presence) = (raw[outputs.points].values, config.presenceIsLogit ? sigmoid(score) : score)
             guard presence >= 0.5 else { continue }  // lost
             let heatmap = outputs.heatmap.map { raw[$0] }
             var points: [Keypoint] = (0..<values.count / config.stride).map { i in

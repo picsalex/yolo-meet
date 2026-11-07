@@ -64,11 +64,15 @@ final class MediaPlayer {
     }
 }
 
-/// Pulls video frames (or repeats the image) on its own queue and hands them to the pipeline.
+/// Pulls video frames (or repeats the image) on its own queue and hands them to the pipeline. A paused or stalled
+/// video keeps sending its current frame, like an image, so models enabled meanwhile still get frames to run on.
 private nonisolated final class FramePump: @unchecked Sendable {
     private let lock = NSLock()
     private var output: AVPlayerItemVideoOutput?
+    /// The image, or the video's latest frame.
     private var image: CIImage?
+    /// When the video last produced a new frame.
+    private var fresh: CFTimeInterval = 0
     private var ticks = 0
     private let onFrame: @Sendable (CIImage) -> Void
     private let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "MediaPlayer", qos: .userInteractive))
@@ -94,19 +98,22 @@ private nonisolated final class FramePump: @unchecked Sendable {
     }
 
     func set(output: AVPlayerItemVideoOutput?, image: CIImage?) {
-        lock.withLock { (self.output, self.image) = (output, image) }
+        lock.withLock { (self.output, self.image, fresh) = (output, image, 0) }
     }
 
     private func tick() {
-        let (output, image) = lock.withLock { (output, image) }
+        ticks += 1
+        let now = CACurrentMediaTime()
+        let (output, image, fresh) = lock.withLock { (output, image, fresh) }
         if let output {
-            let time = output.itemTime(forHostTime: CACurrentMediaTime())
-            guard output.hasNewPixelBuffer(forItemTime: time), let buffer = output.pixelBufferAndDisplayTime(forItemTime: time).0
-            else { return }
-            onFrame(buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) })
-        } else if let image {
-            ticks += 1
-            if ticks % 2 == 0 { onFrame(image) }  // 30 fps, like a camera
+            let time = output.itemTime(forHostTime: now)
+            if output.hasNewPixelBuffer(forItemTime: time), let buffer = output.pixelBufferAndDisplayTime(forItemTime: time).0 {
+                let frame = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
+                lock.withLock { (self.image, self.fresh) = (frame, now) }
+                return onFrame(frame)
+            }
+            guard now - fresh > 0.1 else { return }  // between two frames of a playing video
         }
+        if let image, ticks % 2 == 0 { onFrame(image) }  // a still (image, or paused video) at 30 fps, like a camera
     }
 }

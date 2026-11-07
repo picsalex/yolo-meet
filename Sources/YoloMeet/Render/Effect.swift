@@ -43,6 +43,18 @@ struct StageFrame {
     let smooth: Bool
     /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`).
     var gesture: HandGesture? = nil
+    /// Keyboard keys for effects, while YOLO-meet is the active app (`StageKeys`).
+    var keys = Keys()
+
+    struct Keys {
+        /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
+        /// belong to the clicker (previous and next step).
+        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0"]
+        /// Keys down now (hold to act every frame).
+        var held: Set<String> = []
+        /// Keys pressed since the last frame (toggles).
+        var pressed: Set<String> = []
+    }
 
     /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate. Results are
     /// already predicted to each video frame, so this only softens jitter.
@@ -61,6 +73,8 @@ class Effect {
     /// Root of the effect's 3D content, in stage points: x right, y up (as `node`), z toward the viewer, seen through
     /// an orthographic camera, so `frame.stage.position(_:)` places content on a frame point.
     let entity = Entity()
+    /// Glowing particles simulated on the GPU, drawn over the 3D layer and under the 2D layer.
+    var particles: ParticleSystem?
     func update(_ frame: StageFrame) {}
 }
 

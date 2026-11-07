@@ -33,7 +33,8 @@ final class ClickerKeys {
                 // Leave keys to text fields in the panel.
                 if NSApp.keyWindow?.firstResponder is NSTextView { return event }
                 handle(event)
-                return event
+                // A step key is used up: passed on, it would also move the panel's selection, or beep.
+                return Self.forward.union(Self.backward).contains(event.keyCode) ? nil : event
             },
         ].compactMap { $0 }
     }

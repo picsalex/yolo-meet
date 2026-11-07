@@ -86,16 +86,20 @@ final class BoxNode: SKNode {
 }
 
 /// Skeletons in the vendor's colors (left, right and center limbs; outlined joints), smoothed per track. Without
-/// `skeleton`, only the joints are drawn.
+/// `skeleton`, only the joints are drawn. `opacity` applies to the whole drawing (the stage fades `node` itself in).
 final class PoseEffect: Effect {
     let model: String
     let skeleton: Bool
     let minConfidence: Float = 0.5
-    private lazy var tracks = TrackedNodes(in: node) { PoseNode() }
+    private let layer = SKNode()
+    private lazy var tracks = TrackedNodes(in: layer) { PoseNode() }
 
-    init(model: String, skeleton: Bool = true) {
+    init(model: String, skeleton: Bool = true, opacity: CGFloat = 1) {
         self.model = model
         self.skeleton = skeleton
+        super.init()
+        layer.alpha = opacity
+        node.addChild(layer)
     }
 
     override func update(_ frame: StageFrame) {

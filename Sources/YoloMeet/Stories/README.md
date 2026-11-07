@@ -43,7 +43,7 @@ Other tasks: boxes (`detect`), masks as `overlay` images (`segment`, `semantic`,
 ## Effects
 
 Subclass `Effect` and override `update(_ frame: StageFrame)`, called every rendered frame (60 fps). The stage draws
-the video, then every effect's 3D content, then every effect's 2D content.
+the video, then every effect's 3D content, then its particles, then its 2D content.
 
 - **2D (SpriteKit):** add nodes to `node`. Positions in stage points (bottom-left origin): `frame.stage.point(_:)`
   converts a frame pixel.
@@ -53,6 +53,15 @@ the video, then every effect's 3D content, then every effect's 2D content.
   `Task { entity.addChild(try await Entity(contentsOf: Story.asset("ship.usdz", in: "Space")!)) }`, then scale it to
   stage points. Lit materials get a default studio light (soft environment and a key light from the upper
   left); unlit materials and particles ignore it.
+- **Particles that form shapes:** set `particles = ParticleSystem()` (60,000 glowing points, simulated on the GPU,
+  `Render/Particles.swift`) and steer it every frame: `center`, `radius` (cloud), `size` and `rotation` (shape), in
+  stage points. `form(shape)` flies them into a `ParticleShape` (one point per particle in -1...1, e.g.
+  `ParticleShapes.cube(count)`), `scatter(kick:)` breaks it back into a swirling cloud, and `explode` (0...1) moves
+  each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`.
+- **Keys:** `frame.keys.pressed` (this frame, for toggles) and `frame.keys.held` (hold to act), while YOLO-meet is
+  the active app. Only `StageFrame.Keys.reserved` keys reach effects: R, Z, Q, S, D, 0, read by position and named as
+  on AZERTY (W, A, S, D on QWERTY); arrows and page keys step through the story. See `ParticleMorphEffect` (R spin on
+  or off, Q/D turn, Z/S tilt, 0 reset).
 - **Sizes:** multiply by `frame.stage.unit` (1 at a 720-point-high stage) so effects look the same at any stage size.
   RealityKit particle sizes and speeds don't follow an entity's scale: set them from the unit (see `GlowingDot.resize`).
 - **Per object:** `TrackedNodes(in: node)` or `TrackedNodes(in: entity)` keeps one node or entity per track ID, created
@@ -84,6 +93,8 @@ measures; tune the thresholds in `HandGestures`.
 ## Kit
 
 - `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
+- `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand`, see-through (50%), to guide the gestures.
+- `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart).
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
 
 The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`).

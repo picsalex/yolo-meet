@@ -21,6 +21,8 @@ final class AppModel {
     @ObservationIgnored lazy var player = MediaPlayer { [pipeline] in pipeline.show($0, isNew: $1) }
     @ObservationIgnored lazy var camera = Camera { [pipeline] in pipeline.handle($0) }
     @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
+    /// Keys for the stage's effects (`frame.keys`).
+    @ObservationIgnored let stageKeys = StageKeys()
 
     var mode: Mode = .display { didSet { applyScene() } }
     /// Models drawn in Display mode, in drawing order.

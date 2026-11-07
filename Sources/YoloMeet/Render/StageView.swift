@@ -4,7 +4,7 @@ import SpriteKit
 import SwiftUI
 
 /// The shareable output, rendered into one Metal drawable: camera frame (Core Image), then the effects' 3D content
-/// (RealityKit), then their 2D content (SpriteKit).
+/// (RealityKit), then their particles (Metal), then their 2D content (SpriteKit).
 struct StageView: NSViewRepresentable {
     let model: AppModel
 
@@ -23,11 +23,16 @@ struct StageView: NSViewRepresentable {
     func updateNSView(_ view: MTKView, context: Context) {}
 }
 
-/// Locks the stage window to 16:9 so it shares cleanly.
+/// Locks the stage window to 16:9 so it shares cleanly, and takes key presses so keys the stage doesn't use don't make
+/// macOS beep (its keys reach effects through `StageKeys`).
 private final class StageMTKView: MTKView {
+    override var acceptsFirstResponder: Bool { true }
+    override func keyDown(with event: NSEvent) {}
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.contentAspectRatio = NSSize(width: 16, height: 9)
+        window?.makeFirstResponder(self)
     }
 }
 
@@ -40,6 +45,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let scene = SKScene()
     /// Nil when RealityKit can't start.
     private let reality: RealityLayer?
+    /// Nil if its shaders fail to compile.
+    private lazy var particles = ParticleRenderer(device: device, pixelFormat: .bgra8Unorm)
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private let gestures = HandGestures()
@@ -103,6 +110,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
         stageFrame.gesture = gestures.update(stageFrame)
+        stageFrame.keys = model.stageKeys.take()
         for effect in effects { effect.update(stageFrame) }
         for debug in [stats, gestureDebug] as [Effect] {
             debug.node.isHidden = !model.debugMode
@@ -110,6 +118,10 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         }
         if let reality, effects.contains(where: { !$0.entity.children.isEmpty }) {
             commandBuffer = reality.render(over: drawable.texture, size: size, dt: dt, after: commandBuffer)
+        }
+        let systems = effects.compactMap(\.particles)
+        if !systems.isEmpty {
+            particles?.render(systems, over: drawable.texture, stage: stageFrame.stage, time: now, dt: dt, commandBuffer: commandBuffer)
         }
 
         renderer.update(atTime: now)

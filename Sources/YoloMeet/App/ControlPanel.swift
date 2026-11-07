@@ -66,7 +66,7 @@ struct ControlPanel: View {
             Section("Inference") { InferenceSettingsView() }
 
             Section("Status") {
-                Toggle("Stats for nerds (on stage)", isOn: $model.showStats)
+                Toggle("Debug mode (on stage)", isOn: $model.debugMode)
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                     LabeledContent("Stage", value: "\(model.renderFPS) fps")
                     ForEach(model.pipeline.latestOutputs.values.sorted { $0.modelID < $1.modelID }, id: \.modelID) {

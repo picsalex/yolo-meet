@@ -99,9 +99,9 @@ The panel's Inference section applies to every model on stage:
 - **Confidence**: minimum score for boxes, masks and keypoints.
 - **IoU**: NMS overlap threshold for YOLO (RF-DETR has no NMS).
 
-## Stats for nerds
+## Debug mode
 
-Toggle it in the panel's Status section. It draws on the stage (so it is visible in Meet): camera and stage resolution and FPS, and per model its rate, latency, size on disk, parameters, GFLOPs, architecture (CNN or Transformer), input size and precision. Parameters, GFLOPs and architecture come from each asset's metadata, written by the export script.
+Toggle it in the panel's Status section. It draws on the stage (so it is visible in Meet): the recognized hand gesture with each hand's pinch and curl measures (top left), and (top right) camera and stage resolution and FPS, and per model its rate, latency, size on disk, parameters, GFLOPs, architecture (CNN or Transformer), input size and precision. Parameters, GFLOPs and architecture come from each asset's metadata, written by the export script.
 
 ## Extending
 

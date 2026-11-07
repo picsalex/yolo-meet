@@ -44,9 +44,9 @@ final class AppModel {
         }
     }
     var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
-    /// "Stats for nerds" overlay on the stage.
-    var showStats = UserDefaults.standard.bool(forKey: "showStats") {
-        didSet { UserDefaults.standard.set(showStats, forKey: "showStats") }
+    /// Debug mode: stats and the recognized hand gesture on the stage.
+    var debugMode = UserDefaults.standard.bool(forKey: "debugMode") {
+        didSet { UserDefaults.standard.set(debugMode, forKey: "debugMode") }
     }
     /// Prediction between model runs, smoothing, and fading out vanished objects. Off: each model's latest raw result.
     var smoothing = UserDefaults.standard.object(forKey: "smoothing") as? Bool ?? true {

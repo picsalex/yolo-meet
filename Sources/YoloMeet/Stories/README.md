@@ -10,7 +10,7 @@ Stories/
   Kit/                 building blocks shared by stories (text, glow, particles)
   Test/                one folder per story
     TestStory.swift            the story: its steps
-    FingertipGlowEffect.swift  effects only this story uses
+    ManipulationEffect.swift   effects only this story uses
   Assets/              not compiled; copied into the app by scripts/build.sh
     <Story>/           .usdz models, images, sounds of that story
 ```
@@ -60,9 +60,30 @@ the video, then every effect's 3D content, then every effect's 2D content.
 - **Smoothing:** move toward targets with `frame.smoothing(gap:)` (or `frame.smoothing`); it is 1 when the panel's
   Smoothing switch is off.
 
+## Hand gestures
+
+The stage recognizes hand gestures for every scene from `mediapipe-hand` (else `vision-hand`), so a scene that wants
+them lists that model. Effects read `frame.gesture` (`Render/HandGestures.swift`), positions in stage points:
+
+| Gesture | `kind` | How |
+| --- | --- | --- |
+| Drag | `.drag(start:location:)` | one hand pinches thumb and middle finger, then moves |
+| Zoom | `.zoom(scale:center:)` | both hands pinch; `scale` > 1 when they move apart (since the zoom began) |
+| Fist | `.fist(location:)` | a closed fist; `location` is the hand's center, to follow it |
+
+`phase` is `.began` once, `.changed` every frame, then `.ended` once (e.g. act on a fist's release), with the
+values from 0.1 s before the end, since releasing a pinch or a hand leaving the frame moves them. A hand at the frame's
+edge counts as open. A pinch or fist missed for under 0.15 s doesn't end its gesture. One gesture at a
+time: a fist wins, a drag becomes a zoom when the second hand pinches, and a fist when its hand
+closes (closing a fist passes through a pinch). Positions are One Euro filtered
+(steady at rest, quick when moving fast); `gesture.location` is where the hand acts (pinch, between the pinches,
+hand's center): on `.began`, compare it with your object so gestures only act on the object the hand is on (see
+`ManipulationEffect`). Debug mode shows the gesture and each hand's
+measures; tune the thresholds in `HandGestures`.
+
 ## Kit
 
 - `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
 
-The `Test` story is the reference: MediaPipe hand tracking drives `GlowingDot`s on each fingertip.
+The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`).

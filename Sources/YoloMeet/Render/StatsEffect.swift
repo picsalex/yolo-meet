@@ -2,7 +2,7 @@ import AppKit
 import SpriteKit
 import YoloMeetCore
 
-/// "Stats for nerds": capture, render and per-model numbers in the stage's top-right corner.
+/// Debug mode: capture, render and per-model numbers in the stage's top-right corner.
 final class StatsEffect: Effect {
     private let model: AppModel
     private let label = SKLabelNode(fontNamed: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium).fontName)

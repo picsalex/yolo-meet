@@ -41,6 +41,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let reality: RealityLayer
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
+    private let gestures = HandGestures()
+    private lazy var gestureDebug = GestureDebugEffect(gestures: gestures)
     private var sceneVersion = -1
     private var lastTime = CACurrentMediaTime()
     private var frameRate = RateCounter()
@@ -56,6 +58,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         reality = RealityLayer(queue: queue)
         super.init()
         scene.addChild(stats.node)
+        scene.addChild(gestureDebug.node)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -95,12 +98,15 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         // Effects: rebuild on scene change, then update every frame.
         if model.sceneVersion != sceneVersion { swapEffects() }
         if scene.size != size { scene.size = size }
-        let stageFrame = StageFrame(
+        var stageFrame = StageFrame(
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
+        stageFrame.gesture = gestures.update(stageFrame)
         for effect in effects { effect.update(stageFrame) }
-        stats.node.isHidden = !model.showStats
-        if model.showStats { stats.update(stageFrame) }
+        for debug in [stats, gestureDebug] as [Effect] {
+            debug.node.isHidden = !model.debugMode
+            if model.debugMode { debug.update(stageFrame) }
+        }
         if effects.contains(where: { !$0.entity.children.isEmpty }) {
             commandBuffer = reality.render(over: drawable.texture, size: size, dt: dt, after: commandBuffer)
         }

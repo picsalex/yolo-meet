@@ -41,6 +41,8 @@ struct StageFrame {
     let dt: TimeInterval
     /// Off: effects show results as they are (no smoothing, vanished objects removed at once).
     let smooth: Bool
+    /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`).
+    var gesture: HandGesture? = nil
 
     /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate. Results are
     /// already predicted to each video frame, so this only softens jitter.

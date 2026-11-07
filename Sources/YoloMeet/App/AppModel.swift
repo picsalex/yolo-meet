@@ -38,12 +38,17 @@ final class AppModel {
     private(set) var sceneVersion = 0
     /// Models the current scene needs that are not downloaded.
     private(set) var missingModels: [String] = []
+    /// Active models still loading or waiting for their first result.
+    private(set) var pendingModels: Set<String> = []
     /// Written by the renderer every frame; read periodically by the panel, so not observed.
     @ObservationIgnored var renderFPS = 0
 
     var story: Story { Story.all.first { $0.id == storyID } ?? Story.all[0] }
 
     init() {
+        pipeline.onPendingChange = { [weak self] in
+            Task { @MainActor in self.map { $0.pendingModels = $0.pipeline.pending } }
+        }
         Task { await start() }
     }
 

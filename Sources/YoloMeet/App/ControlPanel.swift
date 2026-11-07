@@ -182,8 +182,6 @@ private struct InferenceSettingsView: View {
             Text("IoU (NMS)")
             Text(model.inference.iou.formatted(.number.precision(.fractionLength(2))))
         }
-        Text("Image size sets the frame's long side. Classify, RF-DETR and YOLO26 depth keep their own size. RF-DETR has no NMS, so IoU applies to YOLO only.")
-            .font(.caption).foregroundStyle(.secondary)
         if model.inference != InferenceSettings() {
             Button("Reset to Defaults") { model.inference = InferenceSettings() }
         }

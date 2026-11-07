@@ -38,6 +38,12 @@ nonisolated final class Pipeline: @unchecked Sendable {
         lock.withLock { Set(state.models.filter { $0.info.isDynamic && $0.task != .classify }.map(\.trainingSize)).sorted() }
     }
     var errors: [String: String] { lock.withLock { state.errors } }
+    /// Active models with no result yet (loading, compiling for this Mac, first run) and no error.
+    var pending: Set<String> {
+        lock.withLock { Set(state.wanted.filter { state.history[$0] == nil && state.errors[$0] == nil }) }
+    }
+    /// Called, on any thread, when `pending` may have changed. Set once before models are added.
+    nonisolated(unsafe) var onPendingChange: @Sendable () -> Void = {}
     /// Captured frames per second and their size.
     var camera: (fps: Double, size: CGSize) { lock.withLock { (state.cameraRate.rate, state.cameraSize) } }
 
@@ -84,8 +90,10 @@ nonisolated final class Pipeline: @unchecked Sendable {
                 !state.loading.contains(entry.id) && !state.models.contains { $0.id == entry.id }
             }
             state.loading.formUnion(pending.map(\.id))
+            for entry in pending { state.errors[entry.id] = nil }  // a retry starts clean
             return pending
         }
+        onPendingChange()
         for entry in toLoad {
             Task.detached(priority: .userInitiated) {
                 let result: Result<YOLOModel, any Error>
@@ -103,6 +111,7 @@ nonisolated final class Pipeline: @unchecked Sendable {
                     default: break
                     }
                 }
+                if case .failure = result { self.onPendingChange() }
             }
         }
     }
@@ -120,13 +129,17 @@ nonisolated final class Pipeline: @unchecked Sendable {
                 return tracker
             }
             tracker.update(&output.detections)
-            lock.withLock {
-                guard state.wanted.contains(model.id) else { return }
+            let first = lock.withLock { () -> Bool in
+                guard state.wanted.contains(model.id) else { return false }
+                let first = state.history[model.id] == nil
                 state.history[model.id, default: []].append(output)
                 state.history[model.id]!.removeFirst(max(state.history[model.id]!.count - 2, 0))  // prediction uses the last two
+                return first
             }
+            if first { onPendingChange() }  // its first result: no longer pending
         } catch {
             lock.withLock { state.errors[model.id] = error.localizedDescription }
+            onPendingChange()
         }
         lock.withLock { _ = state.busy.remove(model.id) }
     }

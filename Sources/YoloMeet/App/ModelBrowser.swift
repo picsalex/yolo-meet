@@ -121,6 +121,8 @@ private struct ModelCell: View {
                 RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(downloaded ? 0 : 0.4))
                 if let progress {
                     ProgressView(value: progress).progressViewStyle(.circular).controlSize(.mini)
+                } else if shown && model.pendingModels.contains(entry.id) {
+                    ProgressView().controlSize(.mini).tint(.white)  // loading until its first result
                 } else {
                     Image(systemName: shown ? "eye.fill" : downloaded ? "checkmark" : "arrow.down")
                         .foregroundStyle(shown ? Color.white : .secondary)
@@ -161,6 +163,7 @@ private struct CustomModelList: View {
                 Spacer()
                 Button("Rename", systemImage: "pencil") { newName = custom.name; renaming = custom }
                 Button("Delete", systemImage: "trash", role: .destructive) { model.deleteCustom(custom.id) }
+                if model.pendingModels.contains(custom.id) { ProgressView().controlSize(.small) }
                 if model.mode == .display {
                     Toggle("Show on stage", isOn: Binding(
                         get: { model.displayModels.contains(custom.id) }, set: { _ in model.toggleDisplay(custom.id) }))

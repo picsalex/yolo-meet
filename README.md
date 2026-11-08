@@ -103,12 +103,18 @@ The panel's Inference section applies to every model on stage:
 
 Toggle it in the panel's Status section. It draws on the stage (so it is visible in Meet): the recognized hand gesture or the one charging, with each hand's pinch, curl, thumb and speed measures (top left), and (top right) camera and stage resolution and FPS, and per model its rate, latency, size on disk, parameters, GFLOPs, architecture (CNN or Transformer), input size and precision. Parameters, GFLOPs and architecture come from each asset's metadata, written by the export script.
 
+## Mouse and trackpad
+
+Everything but the fist also works with the mouse or trackpad on the stage, e.g. to rehearse without a camera: press
+and move to drag, pinch the trackpad (or scroll with Command held) to zoom around the cursor, and in action mode the
+cursor points like a fingertip (hold Space, hover an item, release).
+
 ## Keys
 
 While yolo-meet is the active app (not typing in the panel), scenes can use R, Z, Q, S, D, 0 and the space bar, read by position
 (AZERTY letters; the same keys are W, A, S, D on QWERTY, and 0 works without Shift). In the Test story's Particles
 scene: **R** turns the slow spin on or off, **Q**/**D** turn the shape left or right and **Z**/**S** tilt it while held,
-**0** resets the turn, tilt and zoom, and holding **Space** enters action mode: the item your index fingertip points at grows,
+**0** resets the turn, tilt and zoom, and holding **Space** enters action mode: the item your index fingertip (or the cursor) points at grows,
 and releasing Space acts on it (in the Test story, the 3D shape or the cube's top face: it shows "Action"). Arrows and Page Up/Down step through the story while yolo-meet is active,
 and from any app with Clicker keys on; the stage's other keys (R, Q/D, Z/S, 0, Space) never work from other apps, so typing in Meet's chat can't trigger them.
 

@@ -41,13 +41,14 @@ struct StageFrame {
     let dt: TimeInterval
     /// Off: effects show results as they are (no smoothing, vanished objects removed at once).
     let smooth: Bool
-    /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`).
+    /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`), or made with the mouse or
+    /// trackpad (`MouseGestures`), which wins while it acts.
     var gesture: HandGesture? = nil
     /// A one-hand pinch getting ready to start (`HandGestures.charging`): e.g. swell the object it's on.
     var charge: HandCharge? = nil
     /// Keyboard keys for effects, while yolo-meet is the active app (`StageKeys`).
     var keys = Keys()
-    /// Index fingertips of the hands in view (`HandGestures.pointers`).
+    /// Index fingertips of the hands in view (`HandGestures.pointers`), then the mouse cursor over the stage.
     var pointers: [Pointer] = []
     /// Which hands point at an actionable item, for the hand skeletons to show it (`pointer(on:)`).
     var pointing = Pointing()
@@ -96,8 +97,10 @@ struct Pointer {
     static let reach: CGFloat = 18
     /// The circle's center and 8 points around it, at radius 1.
     static let circle = [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
+    /// The `hand` of the mouse cursor's pointer (`MouseGestures`): no hand's track ID.
+    static let mouse = -1
 
-    /// The hand's track ID.
+    /// The hand's track ID, or `mouse`.
     let hand: Int
     let location: CGPoint
 }

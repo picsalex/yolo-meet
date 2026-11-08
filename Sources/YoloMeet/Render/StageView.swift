@@ -17,17 +17,58 @@ struct StageView: NSViewRepresentable {
         view.preferredFramesPerSecond = 60
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.delegate = context.coordinator
+        view.mouse = context.coordinator.mouse
         return view
     }
 
     func updateNSView(_ view: MTKView, context: Context) {}
 }
 
-/// Locks the stage window to 16:9 so it shares cleanly, and takes key presses so keys the stage doesn't use don't make
-/// macOS beep (its keys reach effects through `StageKeys`).
+/// Locks the stage window to 16:9 so it shares cleanly, takes key presses so keys the stage doesn't use don't make
+/// macOS beep (its keys reach effects through `StageKeys`), and passes the mouse and trackpad to `MouseGestures`.
 private final class StageMTKView: MTKView {
+    var mouse: MouseGestures?
+
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {}
+    /// A click on the stage acts even when its window isn't the key one.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    /// An event's location in stage points (drawable pixels, bottom-left origin).
+    private func stagePoint(_ event: NSEvent) -> CGPoint {
+        let p = convert(event.locationInWindow, from: nil)
+        let scale = bounds.width > 0 ? drawableSize.width / bounds.width : 1
+        return CGPoint(x: p.x * scale, y: p.y * scale)
+    }
+
+    override func mouseEntered(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
+    override func mouseMoved(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
+    override func mouseExited(with event: NSEvent) { mouse?.moved(to: nil) }
+    override func mouseDown(with event: NSEvent) { mouse?.pressed(at: stagePoint(event)) }
+    override func mouseDragged(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
+    override func mouseUp(with event: NSEvent) {
+        mouse?.released()
+        if !bounds.contains(convert(event.locationInWindow, from: nil)) { mouse?.moved(to: nil) }
+    }
+
+    override func magnify(with event: NSEvent) {
+        mouse?.magnified(by: event.magnification, phase: event.phase, at: stagePoint(event))
+    }
+
+    /// Command + scroll zooms; plain scrolling is left alone.
+    override func scrollWheel(with event: NSEvent) {
+        guard event.modifierFlags.contains(.command), event.momentumPhase.isEmpty else { return super.scrollWheel(with: event) }
+        mouse?.scrolled(
+            by: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, at: stagePoint(event),
+            time: CACurrentMediaTime())
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -53,6 +94,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private let gestures = HandGestures()
+    let mouse = MouseGestures()
     private let pointing = Pointing()
     private lazy var gestureDebug = GestureDebugEffect(gestures: gestures)
     private var sceneVersion = -1
@@ -117,9 +159,11 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
         stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Command held
-        stageFrame.gesture = gestures.update(stageFrame)
-        stageFrame.charge = gestures.charging
-        stageFrame.pointers = gestures.pointers
+        let handGesture = gestures.update(stageFrame)  // every frame, to keep following the hands
+        let mouseGesture = mouse.update(time: now)
+        stageFrame.gesture = mouseGesture ?? handGesture  // the mouse wins while it acts
+        stageFrame.charge = mouseGesture == nil ? gestures.charging : nil
+        stageFrame.pointers = gestures.pointers + (mouse.pointer.map { [$0] } ?? [])
         pointing.next()
         stageFrame.pointing = pointing
         stageFrame.nextStep = { [model] in Task { model.next() } }  // after this frame

@@ -76,7 +76,7 @@ its 2D content.
   `stageBounds.contains`; a particle shape's part with `ParticleSystem.stagePoint` (e.g. `CubeFace.corners` mapped
   through it) and `point.isInside(polygon)`, grown with `ParticleSystem.highlight` (its `parts`). `PopLabel` confirms
   an action. See `ManipulationEffect` (the 3D shape) and `ParticleMorphEffect` (the cube's top face). Lower level:
-  `frame.pointers` (the index fingertips of the hands in view, not fists) and `frame.pointer(on:)`.
+  `frame.pointers` (the index fingertips of the hands in view, not fists, then the mouse cursor over the stage) and `frame.pointer(on:)`.
 - **Sizes:** multiply by `frame.stage.unit` (1 at a 720-point-high stage) so effects look the same at any stage size.
   RealityKit particle sizes and speeds don't follow an entity's scale: set them from the unit (see `GlowingDot.resize`).
 - **Per object:** `TrackedNodes(in: node)` or `TrackedNodes(in: entity)` keeps one node or entity per track ID, created
@@ -117,6 +117,11 @@ object (it began on it), so gestures only act on the object the hand is on; draw
 swells while a pinch charges on it and stays slightly larger while held (see `ManipulationEffect`). Debug mode
 shows the gesture, the charge and each hand's measures (pinch, curl, thumb, speed); tune the thresholds in
 `HandGestures`.
+
+The mouse and trackpad make the same gestures (`Render/MouseGestures.swift`), with nothing for effects to add: press
+and move on the stage to drag, pinch the trackpad or Command + scroll to zoom around the cursor (`hands` 2), and the
+cursor over the stage points in action mode (`Pointer.mouse`). No fist with the mouse. A mouse gesture starts at once
+and wins over the hands' while it acts.
 
 ## Kit
 

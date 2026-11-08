@@ -43,7 +43,7 @@ struct StageFrame {
     let smooth: Bool
     /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`).
     var gesture: HandGesture? = nil
-    /// Keyboard keys for effects, while YOLO-meet is the active app (`StageKeys`).
+    /// Keyboard keys for effects, while yolo-meet is the active app (`StageKeys`).
     var keys = Keys()
     /// Index fingertips of the hands in view (`HandGestures.pointers`).
     var pointers: [Pointer] = []
@@ -58,6 +58,8 @@ struct StageFrame {
         var held: Set<String> = []
         /// Keys pressed since the last frame (toggles).
         var pressed: Set<String> = []
+        /// Keys released since the last frame (act on letting go).
+        var released: Set<String> = []
     }
 
     /// The first fingertip on an actionable item (`isOn` tells whether a stage point is on it), marked as pointing at
@@ -93,7 +95,7 @@ final class Pointing {
     func mark(_ hand: Int) { marked.insert(hand) }
     /// Whether the hand points at an item this frame (or last frame, for effects updated before the one that marks it).
     func isPointing(_ hand: Int) -> Bool { marked.contains(hand) || previous.contains(hand) }
-    /// True for the first item that acts this frame, so one space bar press acts on one item (`Actionable`).
+    /// True for the first item that acts this frame, so one space bar release acts on one item (`Actionable`).
     func claimAction() -> Bool {
         defer { acted = true }
         return !acted

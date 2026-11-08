@@ -1,6 +1,6 @@
 import AppKit
 
-/// Keys for the stage's effects (`frame.keys`), while YOLO-meet is the active app and no text field in the panel has
+/// Keys for the stage's effects (`frame.keys`), while yolo-meet is the active app and no text field in the panel has
 /// focus. Keys are read by position, named as on an AZERTY keyboard (Z Q S D are W A S D on QWERTY; 0 is the top row's
 /// 0 without Shift, or the keypad's; "space" the space bar). Only these keys are taken (the others reach the panel as usual); unlike clicker
 /// keys they are never read from other apps, where they would fire while typing in Meet's chat.
@@ -9,6 +9,7 @@ final class StageKeys {
     private static let names: [UInt16: String] = [15: "r", 13: "z", 0: "q", 1: "s", 2: "d", 29: "0", 82: "0", 49: "space"]
     private var held: Set<String> = []
     private var pressed: Set<String> = []
+    private var released: Set<String> = []
     private var monitor: Any?
 
     init() {
@@ -29,15 +30,15 @@ final class StageKeys {
         if event.type == .keyDown {
             if !event.isARepeat { pressed.insert(key) }
             held.insert(key)
-        } else {
-            held.remove(key)
+        } else if held.remove(key) != nil {
+            released.insert(key)
         }
         return nil  // handled: no beep
     }
 
-    /// The keys for this frame: held ones, and those pressed since the last call.
+    /// The keys for this frame: held ones, and those pressed or released since the last call.
     func take() -> StageFrame.Keys {
-        defer { pressed = [] }
-        return StageFrame.Keys(held: held, pressed: pressed)
+        defer { (pressed, released) = ([], []) }
+        return StageFrame.Keys(held: held, pressed: pressed, released: released)
     }
 }

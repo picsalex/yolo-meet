@@ -1,15 +1,15 @@
-# YOLO-meet
+# yolo-meet
 
 Native macOS app (Swift, Core AI, Metal, RealityKit, SpriteKit) that runs Ultralytics YOLO models on your camera and draws effects
-into a **Stage** window you share in Google Meet (Present → A window). The **YOLO-meet** panel window stays private.
+into a **Stage** window you share in Google Meet (Present → A window). The **yolo-meet** panel window stays private.
 
 Requires macOS 27+ on Apple silicon and Xcode 27.
 
 ## Build
 
 ```bash
-./scripts/build.sh          # build/YOLO-meet.app (ad-hoc signed)
-./scripts/build.sh --dmg    # + build/YOLO-meet.dmg
+./scripts/build.sh          # build/yolo-meet.app (ad-hoc signed)
+./scripts/build.sh --dmg    # + build/yolo-meet.dmg
 ```
 
 The app and disk icon (`Support/AppIcon.icns`) is drawn by `swift scripts/make_icon.swift`.
@@ -105,11 +105,11 @@ Toggle it in the panel's Status section. It draws on the stage (so it is visible
 
 ## Keys
 
-While YOLO-meet is the active app (not typing in the panel), scenes can use R, Z, Q, S, D, 0 and the space bar, read by position
+While yolo-meet is the active app (not typing in the panel), scenes can use R, Z, Q, S, D, 0 and the space bar, read by position
 (AZERTY letters; the same keys are W, A, S, D on QWERTY, and 0 works without Shift). In the Test story's Particles
 scene: **R** turns the slow spin on or off, **Q**/**D** turn the shape left or right and **Z**/**S** tilt it while held,
-**0** resets the turn, tilt and zoom, and **Space** acts on the item your index fingertip points at (in the Test story, the
-3D shape or the cube's top face: it shows "Action"). With Clicker keys on, arrows and Page Up/Down step through the story from any
+**0** resets the turn, tilt and zoom, and holding **Space** enters action mode: the item your index fingertip points at grows,
+and releasing Space acts on it (in the Test story, the 3D shape or the cube's top face: it shows "Action"). With Clicker keys on, arrows and Page Up/Down step through the story from any
 app; these keys never work from other apps, so typing in Meet's chat can't trigger them.
 
 ## Extending

@@ -5,8 +5,8 @@ import simd
 /// follows the fist; opening the hand forms a cube there, spinning slowly. On the cube, a pinch pulled away from its
 /// center explodes it into its faces (pushed back toward it, reassembles it); both hands pinching resize it when they
 /// move apart or closer, and move it when they move together. A fist on the cube breaks it again. Keys: R turns the slow spin on or off, Q/D turn and Z/S tilt while held, 0 resets the
-/// turn, tilt and zoom. The cube's top face is actionable: an index fingertip on it grows it, and the space bar then
-/// shows "Action".
+/// turn, tilt and zoom. The cube's top face is actionable: with Space held, an index fingertip on it grows it, and
+/// releasing Space shows "Action". The assembled cube has a title; exploded, each face is described.
 final class ParticleMorphEffect: Effect {
     /// Released below this, the cube springs back together; above, it stays exploded.
     static let keepExploded: CGFloat = 0.33
@@ -31,11 +31,17 @@ final class ParticleMorphEffect: Effect {
     private var base: (explode: CGFloat, zoom: CGFloat, home: CGPoint) = (0, 1, .zero)
     private let topFace = Actionable()
     private let action = PopLabel("Action")
+    private let title = ObjectTitle("Cube", subtitle: "60,000 particles · 6 faces · pull to explode")
+    /// In `CubeFace` order.
+    private let faces = Callouts([
+        "Left face  −X", "Right face  +X", "Bottom face  −Y", "Top face  +Y · actionable", "Back face  −Z",
+        "Front face  +Z",
+    ])
 
     override init() {
         super.init()
         particles = system
-        node.addChild(action)
+        for label in [action, title, faces] { node.addChild(label) }
     }
 
     override func update(_ frame: StageFrame) {
@@ -94,6 +100,16 @@ final class ParticleMorphEffect: Effect {
             action.pop(above: CGRect(enclosing: face), unit: u)
         }
         system.highlight = topFace.scale > 1.001 ? (top.rawValue, top.center, Float(topFace.scale)) : nil
+
+        // Labels: the title on the assembled cube, the faces' descriptions once it's exploded.
+        let all = ParticleShapes.CubeFace.allCases
+        let bounds = CGRect(enclosing: all.flatMap { $0.corners(exploded: system.explode) }.map(system.stagePoint))
+        let exploded = shown.explode > 0.3
+        title.update(beside: bounds, visible: formed && !gathering && !exploded, frame: frame)
+        let explodeBy = 1 + ParticleShapes.cubeExplode * system.explode
+        faces.update(
+            anchors: all.map { system.stagePoint($0.center * explodeBy) }, around: bounds,
+            visible: formed && !gathering && exploded, frame: frame)
     }
 
     private func rotate(_ frame: StageFrame) {

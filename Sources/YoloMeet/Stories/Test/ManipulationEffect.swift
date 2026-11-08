@@ -3,7 +3,8 @@ import RealityKit
 
 /// A slowly spinning 3D shape in the middle of the stage, moved and resized by hand gestures (`frame.gesture`) that
 /// start on it: drag moves it, zoom (hands on either side) resizes it, a fist carries it and releasing the fist turns it
-/// into the next shape. It's actionable: an index fingertip on it grows it, and the space bar then shows "Action".
+/// into the next shape. It's actionable: with Space held, an index fingertip on it grows it, and releasing Space shows
+/// "Action".
 final class ManipulationEffect: Effect {
     private static let shapes: [(mesh: MeshResource, color: NSColor)] = [
         (.generateBox(size: 180, cornerRadius: 24), NSColor(red: 0.25, green: 0.85, blue: 1, alpha: 1)),

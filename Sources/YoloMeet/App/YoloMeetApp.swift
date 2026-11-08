@@ -7,7 +7,7 @@ struct YoloMeetApp: App {
     init() { Theme.registerFonts() }
 
     var body: some Scene {
-        Window("YOLO-meet", id: "panel") {
+        Window("yolo-meet", id: "panel") {
             ControlPanel()
                 .environment(model)
                 .frame(minWidth: 380, minHeight: 640)
@@ -17,7 +17,7 @@ struct YoloMeetApp: App {
         .defaultPosition(.leading)
         .defaultLaunchBehavior(.presented)
 
-        Window("YOLO-meet Stage", id: "stage") {
+        Window("yolo-meet Stage", id: "stage") {
             StageView(model: model)
                 .ignoresSafeArea()
                 // The two windows are one app: closing either quits, so neither lingers on its own.

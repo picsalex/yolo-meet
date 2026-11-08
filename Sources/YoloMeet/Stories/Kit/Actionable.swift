@@ -1,24 +1,27 @@
 import RealityKit
 import SpriteKit
 
-/// An item a hand points at with its index fingertip and acts on with the space bar. While pointed at, the item grows
-/// (`scale`) and so does the fingertip's joint in `handSkeleton()`. One per item; call `update` every frame.
+/// An item a hand points at with its index fingertip and acts on with the space bar. Holding Space enters action mode:
+/// the item pointed at grows (`scale`) and so does the fingertip's joint in `handSkeleton()`; releasing Space while
+/// pointing at it acts. One per item; call `update` every frame.
 final class Actionable {
     /// The item's size while pointed at (1 at rest).
     let grown: CGFloat
+    /// Whether a fingertip is on it in action mode (Space held, or released this frame).
     private(set) var pointed = false
-    /// The item's size now, eased between 1 and `grown`: draw the item at it, and hit-test it at it too (so a fingertip
-    /// on its grown edge keeps it pointed).
+    /// The item's size now, eased between 1 and `grown` (while pointed at in action mode): draw the item at it, and
+    /// hit-test it at it too (so a fingertip on its grown edge keeps it pointed).
     private(set) var scale: CGFloat = 1
 
     init(grown: CGFloat = 1.15) { self.grown = grown }
 
     /// `isOn` tells whether a stage point is on the item, nil when it can't be pointed at now (hidden, facing away).
-    /// Returns true on the frame the space bar acts on it: pressed while it's pointed at, one item per press.
+    /// Returns true on the frame the space bar acts on it: released while it's pointed at, one item per release.
     func update(_ frame: StageFrame, isOn: ((CGPoint) -> Bool)?) -> Bool {
-        pointed = isOn.flatMap { frame.pointer(on: $0) } != nil
-        scale = scale.approaching(pointed ? grown : 1, frame.smoothing)
-        return pointed && frame.keys.pressed.contains("space") && frame.pointing.claimAction()
+        let (holding, releasing) = (frame.keys.held.contains("space"), frame.keys.released.contains("space"))
+        pointed = holding || releasing ? isOn.flatMap { frame.pointer(on: $0) } != nil : false
+        scale = scale.approaching(pointed && holding ? grown : 1, frame.smoothing)
+        return pointed && releasing && frame.pointing.claimAction()
     }
 }
 

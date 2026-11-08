@@ -5,11 +5,11 @@
     <key>CFBundleIdentifier</key>
     <string>com.ultralytics.yolomeet</string>
     <key>CFBundleName</key>
-    <string>YOLO-meet</string>
+    <string>yolo-meet</string>
     <key>CFBundleDisplayName</key>
-    <string>YOLO-meet</string>
+    <string>yolo-meet</string>
     <key>CFBundleExecutable</key>
-    <string>YOLO-meet</string>
+    <string>yolo-meet</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundlePackageType</key>
@@ -23,6 +23,6 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSCameraUsageDescription</key>
-    <string>YOLO-meet runs YOLO models on your camera feed to draw effects.</string>
+    <string>yolo-meet runs YOLO models on your camera feed to draw effects.</string>
 </dict>
 </plist>

@@ -107,7 +107,7 @@ struct ControlPanel: View {
         }
         Toggle("Clicker keys (←/→, Page Up/Down) in any app", isOn: $model.clickerKeys)
         if model.clickerKeys && !ClickerKeys.hasPermission {
-            Text("Allow YOLO-meet in System Settings › Privacy & Security › Accessibility, then toggle again.")
+            Text("Allow yolo-meet in System Settings › Privacy & Security › Accessibility, then toggle again.")
                 .foregroundStyle(.secondary)
         }
     }

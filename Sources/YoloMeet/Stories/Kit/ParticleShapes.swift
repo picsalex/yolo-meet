@@ -1,7 +1,7 @@
 import simd
 
 /// A shape for `ParticleSystem.form(_:)`: one point per particle, and where each point goes when it's exploded.
-struct ParticleShape {
+nonisolated struct ParticleShape {
     /// In -1...1 (x right, y up, z toward the viewer), in random order, so each particle flies to a random point.
     var points: [SIMD3<Float>]
     /// How far and which way each point moves at `ParticleSystem.explode` 1, in the shape's units (its part's

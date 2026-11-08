@@ -2,11 +2,13 @@ import AppKit
 
 /// The hands' skeletons from MediaPipe's hand model, see-through so they guide the gestures without hiding the scene:
 /// MediaPipe's light gray lines with white joints, drawn behind the 3D objects and particles. The index fingertip's
-/// joint grows while it points at an actionable item (`StageFrame.pointer(on:)`). The step must list `mediapipe-hand`.
+/// joint grows to its touch circle while it points at an actionable item (`StageFrame.pointer(on:)`). The step must list `mediapipe-hand`.
 func handSkeleton(opacity: CGFloat = 0.15) -> Effect {
     let effect = PoseEffect(model: "mediapipe-hand", opacity: opacity, theme: .hands)
     effect.behind = true
-    effect.grownJoints = { frame, hand in frame.pointing.isPointing(hand) ? [8: 2.2] : [:] }
+    // The pointing fingertip's joint grows to its touch circle.
+    let grown = Pointer.reach / Theme.hands.jointRadius
+    effect.grownJoints = { frame, hand in frame.pointing.isPointing(hand) ? [8: grown] : [:] }
     return effect
 }
 

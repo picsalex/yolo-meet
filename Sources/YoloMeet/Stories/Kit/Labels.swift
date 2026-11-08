@@ -70,6 +70,9 @@ final class Callouts: SKNode {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Changes the text of a description (e.g. a value of the part it points at).
+    func setText(_ text: String, at index: Int) { items[index].label.set(\.text, text) }
+
     /// `anchors`: each description's point on stage, in the order of the texts (nil hides it); `rect`: the object on
     /// stage, which the columns stand beside.
     func update(anchors: [CGPoint?], around rect: CGRect, visible: Bool, frame: StageFrame) {
@@ -139,8 +142,12 @@ final class ShadowedLabel: SKNode {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Copies the label's layout to the shadow, slightly lower, blurred over about a fifth of the text's height.
+    /// Copies the label's text and layout to the shadow, slightly lower, blurred over about a fifth of the text's height.
     func sync(unit u: CGFloat) {
+        if shadow.text != label.text {
+            shadow.text = label.text
+            blur.filter = nil  // redrawn below
+        }
         shadow.set(\.fontSize, label.fontSize)
         shadow.set(\.horizontalAlignmentMode, label.horizontalAlignmentMode)
         shadow.set(\.verticalAlignmentMode, label.verticalAlignmentMode)

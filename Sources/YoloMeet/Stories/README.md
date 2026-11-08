@@ -58,7 +58,9 @@ its 2D content.
   `Render/Particles.swift`) and steer it every frame: `center`, `radius` (cloud), `size` and `rotation` (shape), in
   stage points. `form(shape)` flies them into a `ParticleShape` (one point per particle in -1...1, e.g.
   `ParticleShapes.cube(count)`), `scatter(kick:)` breaks it back into a swirling cloud, and `explode` (0...1) moves
-  each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`.
+  each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`. The
+  particles spring to their points, so they trail the shape when it moves: 2D content drawn on them uses
+  `shownPoint(_:)` (after `follow(time:dt:)`), not `stagePoint(_:)`, to stay on them. See `BrainEffect`.
 - **Keys:** `frame.keys.pressed` (this frame, for toggles), `frame.keys.held` (hold to act) and
   `frame.keys.released` (this frame), while yolo-meet is
   the active app. Only `StageFrame.Keys.reserved` keys reach effects: R, Z, Q, S, D, 0 and `"space"`, read by position
@@ -66,7 +68,8 @@ its 2D content.
   (R spin on or off, Q/D turn, Z/S tilt, 0 reset, Space acts on the pointed face when released).
 - **Actionable items** (hold the space bar, point with an index fingertip, release to act): keep an `Actionable` per
   item and call `if item.update(frame, isOn: { … }) { act }` every frame, with a test of whether a stage point is on
-  the item (nil while it can't be pointed at). Holding Space is action mode: the item pointed at grows (`item.scale`:
+  the item (nil while it can't be pointed at). A fingertip touches with a small circle (`Pointer.reach`, 12 points),
+  not a point. Holding Space is action mode: the item pointed at grows (`item.scale`:
   draw and hit-test the item at it) and so does the fingertip's joint in `handSkeleton()`. `update` returns true on
   the frame Space is released while it's pointed at (one item per release). Hit tests: a 3D entity's
   `stageBounds.contains`; a particle shape's part with `ParticleSystem.stagePoint` (e.g. `CubeFace.corners` mapped
@@ -89,7 +92,10 @@ them lists that model. Effects read `frame.gesture` (`Render/HandGestures.swift`
 | --- | --- | --- |
 | Drag | `.drag(start:location:)` | one hand pinches thumb and middle finger, then moves; or both hands pinch and move together (`hands` 2, the point between them) |
 | Zoom | `.zoom(scale:center:)` | both hands pinch and move apart or closer; `scale` > 1 apart (since they started pinching) |
-| Fist | `.fist(location:)` | a closed fist; `location` is the hand's center, to follow it |
+| Fist | `.fist(location:)` | a closed fist, started while Space is held (action mode) so a stray fist never acts; `location` is the hand's center, to follow it |
+
+Action mode (Space held) splits the gestures: in it, only fists start and fingertips point at actionable items;
+outside it, only drags and zooms. Pressing Space ends a drag or zoom at once.
 
 `phase` is `.began` once, `.changed` every frame, then `.ended` once (e.g. act on a fist's release), with the
 values from 0.1 s before the end, since releasing a pinch or a hand leaving the frame moves them. A hand at the frame's
@@ -116,7 +122,15 @@ measures; tune the thresholds in `HandGestures`.
   (cube: `CubeFace`, with each face's corners).
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
   hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`.
+- `KeyTurn`: turns an object with the keys (R spin, Q/D turn, Z/S tilt, 0 reset); apply its `rotation`. `spinning:`
+  false starts with the spin off.
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
+
+`Callouts.setText(_:at:)` changes a description (e.g. a value of what's pointed at).
+
+The `NNExplained` story is the first full scene: particles form a brain (`Brain.shape`) holding a network of 300
+neurons (balls of particles, each its own part) and their synapses (lines of particles); neurons are actionable (an
+activated one becomes a gold 2D disc, kept on its particles with `shownPoint`), and synapses are touched in action mode.
 
 The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`), particles
 form and explode a cube (`ParticleMorphEffect`), and both are actionable.

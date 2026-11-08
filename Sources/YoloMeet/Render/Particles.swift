@@ -15,6 +15,9 @@ final class ParticleSystem {
 
     /// Stage points per world unit at stage unit 1.
     static let worldUnit: CGFloat = 200
+    /// Stiffness of the spring that pulls each particle to its point of the shape (per second squared), critically
+    /// damped.
+    static let formStiffness: Float = 80
 
     let count: Int
     var mode = Mode.cloud
@@ -37,6 +40,10 @@ final class ParticleSystem {
     /// Light per particle: lower it for more particles or brighter colors.
     var brightness: Float = 0.5
 
+    /// The shape's placement as the particles show it (`shownPoint`): its rotation and size as one matrix and its
+    /// center, in stage points, with their speeds; and the frame it was last advanced to.
+    private var shown: (matrix: simd_float3x3, center: SIMD3<Float>, speed: simd_float3x3, centerSpeed: SIMD3<Float>)?
+    private var shownTime: TimeInterval?
     private var shape: (points: [SIMD4<Float>], offsets: [SIMD4<Float>])?
     private var shapeChanged = false
     private var formStart: TimeInterval?
@@ -52,6 +59,38 @@ final class ParticleSystem {
         return CGPoint(x: center.x + CGFloat(p.x), y: center.y + CGFloat(p.y))
     }
 
+    /// Where a point of the shape is on stage as the particles show it, and its depth (-1 back, 1 front, at the shape's
+    /// size): they spring to their points, so when the shape moves, turns or resizes they trail `stagePoint`. Draw 2D
+    /// content on the shape with it to stay on the particles. Call `follow(_:)` first each frame, after setting the
+    /// shape's placement.
+    func shownPoint(_ point: SIMD3<Float>) -> (point: CGPoint, depth: Float) {
+        guard let shown else { return (stagePoint(point), rotation.act(point).z) }
+        let p = shown.matrix * point
+        return (CGPoint(x: CGFloat(shown.center.x + p.x), y: CGFloat(shown.center.y + p.y)), p.z / Float(max(size, 1)))
+    }
+
+    /// Advances `shownPoint` to this frame with the particles' spring (the stage also calls it, once per frame).
+    func follow(time: TimeInterval, dt: TimeInterval) {
+        guard shownTime != time else { return }
+        shownTime = time
+        let target = (simd_matrix3x3(rotation) * Float(size), SIMD3<Float>(Float(center.x), Float(center.y), 0))
+        guard var s = shown else {
+            shown = (target.0, target.1, simd_float3x3(0), .zero)
+            return
+        }
+        // As the shader: substeps of a critically damped spring.
+        let dt = Float(min(dt, 0.1)), k = Self.formStiffness
+        let steps = min(max(Int((dt * 120).rounded(.up)), 1), 8)
+        let h = dt / Float(steps)
+        for _ in 0..<steps {
+            s.speed += (k * (target.0 - s.matrix) - 2 * k.squareRoot() * s.speed) * h
+            s.centerSpeed += (k * (target.1 - s.center) - 2 * k.squareRoot() * s.centerSpeed) * h
+            s.matrix += s.speed * h
+            s.center += s.centerSpeed * h
+        }
+        shown = s
+    }
+
     /// Whether a direction of the shape (e.g. a face's normal) turns toward the viewer.
     func faces(_ direction: SIMD3<Float>) -> Bool { rotation.act(direction).z > 0.05 }
 
@@ -63,6 +102,7 @@ final class ParticleSystem {
         self.shape = (zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) })
         shapeChanged = true
         formStart = nil  // set on the next frame
+        shown = nil  // starts where the shape is
         mode = .form
     }
 
@@ -99,6 +139,7 @@ final class ParticleSystem {
 
     fileprivate func uniforms(stage: Stage, time: TimeInterval, dt: TimeInterval) -> ParticleUniforms {
         if mode == .form, formStart == nil { formStart = time }
+        follow(time: time, dt: dt)
         let world = Float(Self.worldUnit * stage.unit)
         let r = simd_matrix3x3(rotation)
         defer { kick = 0 }  // one burst
@@ -205,7 +246,7 @@ final class ParticleRenderer {
         };
 
         // WonderSnap's constants (world units, seconds).
-        constant float SWIRL = 0.45, K_RAD = 14.0, DAMP = 2.2, KICK = 2.2, K_FORM = 80.0, STAGGER = 0.6;
+        constant float SWIRL = 0.45, K_RAD = 14.0, DAMP = 2.2, KICK = 2.2, K_FORM = \(ParticleSystem.formStiffness), STAGGER = 0.6;
         constant float ORBIT = 1.6, RAD_DAMP = 5.0;
         constant float3 K1 = float3(1.7, 2.3, 0.0), K2 = float3(0.0, 1.9, 2.6), K3 = float3(2.4, 0.0, 1.5);
 

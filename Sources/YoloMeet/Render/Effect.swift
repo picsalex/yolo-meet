@@ -62,10 +62,15 @@ struct StageFrame {
         var released: Set<String> = []
     }
 
-    /// The first fingertip on an actionable item (`isOn` tells whether a stage point is on it), marked as pointing at
-    /// it, or nil. Call it every frame for each actionable item; the hand skeletons grow that fingertip's joint.
+    /// The first fingertip touching an actionable item (`isOn` tells whether a stage point is on it) with its circle
+    /// (`Pointer.reach`), marked as pointing at it, or nil. Call it every frame for each actionable item; the hand
+    /// skeletons grow that fingertip's joint to the circle.
     func pointer(on isOn: (CGPoint) -> Bool) -> Pointer? {
-        guard let pointer = pointers.first(where: { isOn($0.location) }) else { return nil }
+        let r = Pointer.reach * stage.unit
+        let touches = { (p: Pointer) in
+            Pointer.circle.contains { isOn(CGPoint(x: p.location.x + $0.x * r, y: p.location.y + $0.y * r)) }
+        }
+        guard let pointer = pointers.first(where: touches) else { return nil }
         pointing.mark(pointer.hand)
         return pointer
     }
@@ -79,8 +84,14 @@ struct StageFrame {
     func smoothing(gap: CGFloat) -> CGFloat { smooth ? CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) : 1 }
 }
 
-/// An index fingertip, in stage points: what a hand points at (e.g. to act on an item with the space bar).
+/// An index fingertip, in stage points: what a hand points at (e.g. to act on an item with the space bar). It touches
+/// with a small circle around it, not a single point.
 struct Pointer {
+    /// The touch circle's radius, in stage points at unit 1.
+    static let reach: CGFloat = 12
+    /// The circle's center and 8 points around it, at radius 1.
+    static let circle = [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
+
     /// The hand's track ID.
     let hand: Int
     let location: CGPoint

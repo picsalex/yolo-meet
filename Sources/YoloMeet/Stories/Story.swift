@@ -14,7 +14,7 @@ struct Story: Identifiable {
         let effects: () -> [Effect]
     }
 
-    static let all: [Story] = [.test]
+    static let all: [Story] = [.nnExplained, .test]
 
     /// A story's file (`Stories/Assets/<story>/<name>`): in the app's resources, or in the source tree when running
     /// from `swift run`.

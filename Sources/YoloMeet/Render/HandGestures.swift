@@ -9,12 +9,13 @@ struct HandGesture {
     enum Phase { case began, changed, ended }
     enum Kind {
         /// One hand pinching thumb and middle finger: `location` is the pinch, `start` where it began. Or both hands
-        /// pinching and moving together (`hands` 2): the point between the pinches.
+        /// pinching and moving together (`hands` 2): the point between the pinches. Drags and zooms only happen outside
+        /// action mode (Space up).
         case drag(start: CGPoint, location: CGPoint)
         /// Both hands pinching and moving apart or closer: `scale` is the distance between the pinches over that when
         /// they started pinching (> 1: apart).
         case zoom(scale: CGFloat, center: CGPoint)
-        /// A closed fist: `location` is the hand's center (mean of its points).
+        /// A closed fist, started while Space is held (action mode): `location` is the hand's center (mean of its points).
         case fist(location: CGPoint)
     }
     var kind: Kind
@@ -38,7 +39,8 @@ struct HandGesture {
 /// One gesture at a time. A fist wins over pinches; one pinching hand drags; two pinching hands zoom when they move
 /// apart or closer and drag when they move together, decided once they have moved `pairDecision` and kept until they
 /// let go (a one-hand drag ends when the second hand pinches, and turns into a fist when its hand closes, since closing
-/// a fist passes through a pinch). When a
+/// a fist passes through a pinch). A fist only starts while Space is held (action mode), and drags and zooms only
+/// outside it: an accidental fist never acts, and pointing at items never moves them. When a
 /// gesture ends, hands still pinching (or in a fist) must let go before they start another pinch (or fist) gesture, so
 /// releasing one hand of a zoom doesn't start a drag. A hand at the frame's edge counts as open: the model's
 /// points become unreliable as a hand leaves.
@@ -124,12 +126,15 @@ final class HandGestures {
         hands = hands.filter { frame.time - $0.value.lastSeen <= (frame.smooth ? Self.grace : 0) }
         consumed = consumed.filter { id, fist in hands[id].map { fist ? $0.fist : $0.pinching } ?? false }
 
+        let action = frame.keys.held.contains("space")
         if active == nil {
-            guard let started = start(at: frame.time) else { return nil }
+            guard let started = start(at: frame.time, action: action) else { return nil }
             (active, pairMode, announced, history) = (started, nil, false, [])
         }
         guard let current = active else { return nil }
         let count = if case .pair = current { 2 } else { 1 }
+        // Action mode stops a drag or zoom at once (the hands must let go before pinching again).
+        if action, !isFist(current) { return end(at: frame.time, hands: count) }
         if holds(current) {
             releasedAt = nil
             decide(frame)
@@ -230,9 +235,13 @@ final class HandGestures {
         return settled.map { HandGesture(kind: $0.kind, phase: .ended, hands: count) }
     }
 
-    private func start(at time: TimeInterval) -> Active? {
+    /// In action mode (Space held) only a fist starts, so closing a hand while talking never acts, and pinches (drag,
+    /// zoom) only start outside it, so pointing never moves anything. A fist goes on until the hand opens.
+    private func start(at time: TimeInterval, action: Bool) -> Active? {
         let hands = hands.sorted { $0.key < $1.key }
-        if let (id, _) = hands.first(where: { $0.value.fist && consumed[$0.key] != true }) { return .fist(id) }
+        if action {
+            return hands.first(where: { $0.value.fist && consumed[$0.key] != true }).map { .fist($0.key) }
+        }
         let pinching = hands.filter { $0.value.pinching && consumed[$0.key] != false }
         if pinching.count >= 2 {
             let (a, b) = (pinching[0], pinching[1])
@@ -240,6 +249,10 @@ final class HandGestures {
             return .pair(a.key, b.key, distance: max(p.distance(to: q), 1), center: p.midpoint(q), since: time)
         }
         return pinching.first.map { .drag($0.key, start: $0.value.pinch.value) }
+    }
+
+    private func isFist(_ active: Active) -> Bool {
+        if case .fist = active { true } else { false }
     }
 
     private func secondPinch(besides id: Int) -> Int? {

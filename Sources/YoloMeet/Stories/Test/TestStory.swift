@@ -7,10 +7,10 @@ extension Story {
         id: "test", title: "Test",
         steps: [
             Step(title: "Hand gestures", models: ["mediapipe-hand"]) {
-                [ManipulationEffect(), handSkeleton(), titleCard("Pinch to drag, pinch both hands to zoom, fist to grab; hold space, point at it and release")]
+                [ManipulationEffect(), handSkeleton(), titleCard("Pinch to drag, pinch both hands to zoom, space + fist to grab; hold space, point at it and release")]
             },
             Step(title: "Particles", models: ["mediapipe-hand"]) {
-                [ParticleMorphEffect(), handSkeleton(), titleCard("Fist on the particles, open to form a cube; pinch and pull to explode, two hands to zoom; hold space, point at the top and release")]
+                [ParticleMorphEffect(), handSkeleton(), titleCard("Space + fist on the particles, open to form a cube; pinch and pull to explode, two hands to zoom; hold space, point at the top and release")]
             },
         ])
 }

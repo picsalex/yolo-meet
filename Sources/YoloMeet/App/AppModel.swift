@@ -67,6 +67,7 @@ final class AppModel {
     var story: Story { Story.all.first { $0.id == storyID } ?? Story.all[0] }
 
     init() {
+        _ = keys  // ←/→ step the story while yolo-meet is active
         pipeline.onPendingChange = { [weak self] in
             Task { @MainActor in self.map { $0.pendingModels = $0.pipeline.pending } }
         }

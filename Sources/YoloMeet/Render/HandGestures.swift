@@ -10,12 +10,12 @@ struct HandGesture {
     enum Kind {
         /// One hand pinching thumb and middle finger: `location` is the pinch, `start` where it began. Or both hands
         /// pinching and moving together (`hands` 2): the point between the pinches. Drags and zooms only happen outside
-        /// action mode (Space up).
+        /// action mode and fist mode (Space and Command up).
         case drag(start: CGPoint, location: CGPoint)
         /// Both hands pinching and moving apart or closer: `scale` is the distance between the pinches over that when
         /// they started pinching (> 1: apart).
         case zoom(scale: CGFloat, center: CGPoint)
-        /// A closed fist, started while Space is held (action mode): `location` is the hand's center (mean of its points).
+        /// A closed fist, started while Command is held (fist mode): `location` is the hand's center (mean of its points).
         case fist(location: CGPoint)
     }
     var kind: Kind
@@ -33,16 +33,27 @@ struct HandGesture {
     }
 }
 
+/// A one-hand pinch getting ready to start a drag: its hand must stay still while it charges (`HandGestures.charge`),
+/// so a pinch made in passing never acts. `progress` goes from 0 to 1, when the drag begins.
+struct HandCharge {
+    /// The pinch, in stage points.
+    var location: CGPoint
+    var progress: CGFloat
+}
+
 /// Recognizes `HandGesture`s from a 21-point hand model (`mediapipe-hand`, else `vision-hand`), for every scene. The
 /// stage runs it once per frame and hands the result to effects as `frame.gesture`.
 ///
 /// One gesture at a time. A fist wins over pinches; one pinching hand drags; two pinching hands zoom when they move
 /// apart or closer and drag when they move together, decided once they have moved `pairDecision` and kept until they
 /// let go (a one-hand drag ends when the second hand pinches, and turns into a fist when its hand closes, since closing
-/// a fist passes through a pinch). A fist only starts while Space is held (action mode), and drags and zooms only
-/// outside it: an accidental fist never acts, and pointing at items never moves them. When a
+/// a fist passes through a pinch). A fist only starts while Command is held (fist mode), at once; with Space held (action
+/// mode) nothing starts, fingertips only point; drags and zooms start with neither: an accidental fist never acts, and
+/// pointing at items never moves them. When a
 /// gesture ends, hands still pinching (or in a fist) must let go before they start another pinch (or fist) gesture, so
-/// releasing one hand of a zoom doesn't start a drag. A hand at the frame's edge counts as open: the model's
+/// releasing one hand of a zoom doesn't start a drag. A one-hand pinch only starts once its hand has held it still for
+/// `charge` (`charging` tells how far along it is); two hands pinching start at once, since that is never an
+/// accident. A hand at the frame's edge counts as open: the model's
 /// points become unreliable as a hand leaves.
 final class HandGestures {
     static let models = ["mediapipe-hand", "vision-hand"]
@@ -52,8 +63,15 @@ final class HandGestures {
     /// `off`.
     static let pinch = (on: 0.3, off: 0.45)
     /// The least curled finger's tip-to-wrist over knuckle-to-wrist distance (index to little): about 1.8 extended,
-    /// under 1 curled into the palm.
-    static let fist = (on: 1.15, off: 1.35)
+    /// under 1 curled into the palm, about 1.1 for a relaxed half-closed hand (not a fist).
+    static let fist = (on: 1.0, off: 1.2)
+    /// A fist's thumb is folded over or beside the fingers: its tip within this much of the palm's size from the index or
+    /// middle finger's middle joints (about 0.3 in a fist, 0.8 with the thumb out).
+    static let thumbIn: CGFloat = 0.6
+    /// How long a one-hand pinch must be held still before its drag starts.
+    static let charge: TimeInterval = 0.25
+    /// Still: the hand's center moving slower than this (stage points per second at unit 1). Faster restarts the charge.
+    static let still: CGFloat = 150
     /// A hand the model loses this briefly keeps its last state (with smoothing on).
     static let grace: TimeInterval = 0.2
     /// A hand with a point this close to the frame's edge (fraction of its shorter side) counts as open.
@@ -73,6 +91,10 @@ final class HandGestures {
     struct Hand {
         var pinchRatio: CGFloat
         var curl: CGFloat
+        /// Thumb tip to the nearest middle joint of the index or middle finger, over the palm's size.
+        var thumb: CGFloat
+        /// How fast the hand's center moves (stage points per second at unit 1, filtered).
+        var speed: CGFloat
         var pinching: Bool
         var fist: Bool
         /// Some point is at the frame's edge or outside it: neither pinching nor a fist.
@@ -109,6 +131,10 @@ final class HandGestures {
     private var releasedAt: TimeInterval?
     /// Hands that must release their pinch (false) or fist (true) before starting another gesture of that kind.
     private var consumed: [Int: Bool] = [:]
+    /// The one-hand gesture charging, and since when its hand has been still.
+    private var pending: (active: Active, since: TimeInterval)?
+    /// The one-hand gesture charging now, nil when none. Call after `update(_:)`.
+    private(set) var charging: HandCharge?
 
     /// The index fingertips of the hands in view, but not of fists (the tip is in the palm) or hands at the frame's edge.
     /// Call after `update(_:)`.
@@ -126,15 +152,16 @@ final class HandGestures {
         hands = hands.filter { frame.time - $0.value.lastSeen <= (frame.smooth ? Self.grace : 0) }
         consumed = consumed.filter { id, fist in hands[id].map { fist ? $0.fist : $0.pinching } ?? false }
 
-        let action = frame.keys.held.contains("space")
+        let (action, fists) = (frame.keys.held.contains("space"), frame.keys.held.contains("cmd"))
+        charging = nil
         if active == nil {
-            guard let started = start(at: frame.time, action: action) else { return nil }
+            guard let started = charged(start(at: frame.time, action: action, fists: fists), frame) else { return nil }
             (active, pairMode, announced, history) = (started, nil, false, [])
         }
         guard let current = active else { return nil }
         let count = if case .pair = current { 2 } else { 1 }
-        // Action mode stops a drag or zoom at once (the hands must let go before pinching again).
-        if action, !isFist(current) { return end(at: frame.time, hands: count) }
+        // Action and fist mode stop a drag or zoom at once (the hands must let go before pinching again).
+        if action || fists, !isFist(current) { return end(at: frame.time, hands: count) }
         if holds(current) {
             releasedAt = nil
             decide(frame)
@@ -152,6 +179,27 @@ final class HandGestures {
         return end(at: released, hands: count)
     }
 
+    /// The gesture to start now: a pair or a fist at once; a one-hand drag once its hand has stayed still (and kept
+    /// pinching) for `charge`, meanwhile reported in `charging`.
+    private func charged(_ candidate: Active?, _ frame: StageFrame) -> Active? {
+        guard case let .drag(id, location) = candidate else {
+            pending = nil
+            return candidate
+        }
+        guard let hand = hands[id] else { return nil }
+        var since = frame.time
+        if let pending, case .drag(id, _) = pending.active { since = pending.since }
+        if hand.speed > Self.still { since = frame.time }
+        pending = (.drag(id, start: location), since)
+        let progress = CGFloat((frame.time - since) / Self.charge)
+        guard progress >= 1 else {
+            charging = HandCharge(location: location, progress: max(progress, 0))
+            return nil
+        }
+        pending = nil
+        return candidate
+    }
+
     private func measure(_ p: [CGPoint], in size: CGSize, previous: Hand?, frame: StageFrame) -> Hand {
         let margin = Self.edge * min(size.width, size.height)
         let inside = CGRect(origin: .zero, size: size).insetBy(dx: margin, dy: margin)
@@ -160,15 +208,18 @@ final class HandGestures {
         let pinchRatio = p[4].distance(to: p[12]) / palmSize
         let curl = [(8, 5), (12, 9), (16, 13), (20, 17)]
             .map { tip, knuckle in p[tip].distance(to: p[0]) / max(p[knuckle].distance(to: p[0]), 1) }.max()!
-        let fist = !atEdge && curl < (previous?.fist == true ? Self.fist.off : Self.fist.on)
+        let thumb = min(p[4].distance(to: p[6]), p[4].distance(to: p[10])) / palmSize
+        let fist = !atEdge && curl < (previous?.fist == true ? Self.fist.off : Self.fist.on) && thumb < Self.thumbIn
         let pinching = !atEdge && !fist && pinchRatio < (previous?.pinching == true ? Self.pinch.off : Self.pinch.on)
         let center = frame.stage.point(p.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x / 21, y: $0.y + $1.y / 21) })
         let pinch = frame.stage.point(p[4].midpoint(p[12]))
         let tip = frame.stage.point(p[8])
+        let centered = previous?.center.filtering(center, frame) ?? OneEuroFilter(center)
+        let speed = hypot(centered.velocity.x, centered.velocity.y) / frame.stage.unit
         return Hand(
-            pinchRatio: pinchRatio, curl: curl, pinching: pinching, fist: fist, atEdge: atEdge,
+            pinchRatio: pinchRatio, curl: curl, thumb: thumb, speed: speed, pinching: pinching, fist: fist, atEdge: atEdge,
             pinch: previous?.pinch.filtering(pinch, frame) ?? OneEuroFilter(pinch),
-            center: previous?.center.filtering(center, frame) ?? OneEuroFilter(center),
+            center: centered,
             tip: previous?.tip.filtering(tip, frame) ?? OneEuroFilter(tip), lastSeen: frame.time)
     }
 
@@ -235,13 +286,15 @@ final class HandGestures {
         return settled.map { HandGesture(kind: $0.kind, phase: .ended, hands: count) }
     }
 
-    /// In action mode (Space held) only a fist starts, so closing a hand while talking never acts, and pinches (drag,
-    /// zoom) only start outside it, so pointing never moves anything. A fist goes on until the hand opens.
-    private func start(at time: TimeInterval, action: Bool) -> Active? {
+    /// In fist mode (Command held) only a fist starts, so closing a hand while talking never acts; in action mode (Space
+    /// held) nothing starts, so pointing never moves anything; pinches (drag, zoom) only start with neither held. A fist
+    /// goes on until the hand opens.
+    private func start(at time: TimeInterval, action: Bool, fists: Bool) -> Active? {
         let hands = hands.sorted { $0.key < $1.key }
-        if action {
+        if fists {
             return hands.first(where: { $0.value.fist && consumed[$0.key] != true }).map { .fist($0.key) }
         }
+        if action { return nil }
         let pinching = hands.filter { $0.value.pinching && consumed[$0.key] != false }
         if pinching.count >= 2 {
             let (a, b) = (pinching[0], pinching[1])
@@ -286,7 +339,7 @@ final class GestureDebugEffect: Effect {
         var lines = [title(frame)]
         for (id, hand) in gestures.hands.sorted(by: { $0.key < $1.key }) {
             let state = hand.atEdge ? "edge" : hand.fist ? "fist" : hand.pinching ? "pinch" : "open"
-            let measures = String(format: "pinch %.2f  curl %.2f", hand.pinchRatio, hand.curl)
+            let measures = String(format: "pinch %.2f  curl %.2f  thumb %.2f  speed %3.0f", hand.pinchRatio, hand.curl, hand.thumb, hand.speed)
             lines.append("Hand \(id)".padding(toLength: 9, withPad: " ", startingAt: 0)
                 + state.padding(toLength: 7, withPad: " ", startingAt: 0) + measures)
         }
@@ -304,6 +357,9 @@ final class GestureDebugEffect: Effect {
 
     private func title(_ frame: StageFrame) -> String {
         guard let gesture = frame.gesture else {
+            if let charge = gestures.charging {
+                return String(format: "Grab charging  %.0f%%", charge.progress * 100)
+            }
             if let ended, frame.time - ended.time < 1 { return "\(ended.name) · ended" }
             return "No gesture"
         }
@@ -334,7 +390,8 @@ struct OneEuroFilter {
     /// Cutoff added per stage unit per second of speed: higher follows fast moves more closely.
     static let beta = 0.02
     private(set) var value: CGPoint
-    private var velocity = CGPoint.zero
+    /// Stage points per second (smoothed); zero with smoothing off.
+    private(set) var velocity = CGPoint.zero
 
     init(_ value: CGPoint) { self.value = value }
 

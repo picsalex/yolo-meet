@@ -2,7 +2,7 @@ import AppKit
 
 /// Keys for the stage's effects (`frame.keys`), while yolo-meet is the active app and no text field in the panel has
 /// focus. Keys are read by position, named as on an AZERTY keyboard (Z Q S D are W A S D on QWERTY; 0 is the top row's
-/// 0 without Shift, or the keypad's; "space" the space bar). Only these keys are taken (the others reach the panel as usual); unlike clicker
+/// 0 without Shift, or the keypad's; "space" the space bar; "cmd" either Command key, held on its own). Only these keys are taken (the others reach the panel as usual); unlike clicker
 /// keys they are never read from other apps, where they would fire while typing in Meet's chat.
 final class StageKeys {
     /// Key codes by position (ANSI key codes are the same on AZERTY Macs).
@@ -13,7 +13,7 @@ final class StageKeys {
     private var monitor: Any?
 
     init() {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp, .flagsChanged]) { [weak self] event in
             self?.handle(event) ?? event
         }
         // Keys released in another app never come back up here.
@@ -23,6 +23,14 @@ final class StageKeys {
     }
 
     private func handle(_ event: NSEvent) -> NSEvent? {
+        if event.type == .flagsChanged {
+            // Command alone: with another modifier it's a shortcut. The event goes on (menus and shortcuts still work).
+            let down = event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
+                && !(NSApp.keyWindow?.firstResponder is NSTextView)
+            if down, held.insert("cmd").inserted { pressed.insert("cmd") }
+            if !down, held.remove("cmd") != nil { released.insert("cmd") }
+            return event
+        }
         guard !(NSApp.keyWindow?.firstResponder is NSTextView),
             event.modifierFlags.intersection([.command, .control, .option]).isEmpty,
             let key = Self.names[event.keyCode]

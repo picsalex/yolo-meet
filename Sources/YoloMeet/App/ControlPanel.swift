@@ -105,7 +105,7 @@ struct ControlPanel: View {
             Button("Next", systemImage: "chevron.right") { model.next() }
                 .disabled(model.stepIndex == model.story.steps.count - 1)
         }
-        Toggle("Clicker keys (←/→, Page Up/Down) in any app", isOn: $model.clickerKeys)
+        Toggle("Clicker keys (←/→, Page Up/Down) in other apps too", isOn: $model.clickerKeys)
         if model.clickerKeys && !ClickerKeys.hasPermission {
             Text("Allow yolo-meet in System Settings › Privacy & Security › Accessibility, then toggle again.")
                 .foregroundStyle(.secondary)

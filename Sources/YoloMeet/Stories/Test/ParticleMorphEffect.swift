@@ -16,7 +16,7 @@ final class ParticleMorphEffect: Effect {
     private var home: CGPoint?
     private var formed = false
     /// Whether the current gesture started on the particles.
-    private var held = false
+    private let grip = Grip()
     /// Tilted toward the viewer at rest, so the top face shows.
     private var turning = KeyTurn()
     /// Explode and zoom the hands ask for, the shown ones (eased toward them), and their values (with the position) when
@@ -46,15 +46,11 @@ final class ParticleMorphEffect: Effect {
         let (cloud, gathered) = (220 * u, 70 * u)
         let size = 150 * u * zoom  // the cube's half-size on stage
 
-        if let gesture = frame.gesture {
-            if gesture.phase == .began {
-                // The cube's reach grows with its explosion.
-                let reach = formed ? (1.6 + 1.2 * explode) * size : 1.1 * cloud
-                held = home.distance(to: gesture.location) < reach
-                base = (explode, zoom, home)
-            }
+        // The cube's reach grows with its explosion.
+        let reach = formed ? (1.6 + 1.2 * explode) * size : 1.1 * cloud
+        if let gesture = grip.update(frame, isOn: { home.distance(to: $0) < reach }) {
+            if gesture.phase == .began { base = (explode, zoom, home) }
             switch gesture.kind {
-            case _ where !held: break
             case let .fist(location):
                 if gesture.phase == .began { system.scatter(kick: formed ? 1 : 0.4) }
                 home = location
@@ -73,7 +69,6 @@ final class ParticleMorphEffect: Effect {
                 zoom = min(max(base.zoom * scale, 0.4), 3)
             default: break
             }
-            if gesture.phase == .ended { held = false }
         }
         self.home = home
 
@@ -81,10 +76,10 @@ final class ParticleMorphEffect: Effect {
         if frame.keys.pressed.contains("0") { zoom = 1 }
         shown = (shown.explode.approaching(explode, frame.smoothing), shown.zoom.approaching(zoom, frame.smoothing))
         var gathering = false
-        if held, case .fist = frame.gesture?.kind { gathering = true }
+        if grip.held, case .fist = frame.gesture?.kind { gathering = true }
         system.center = home
         system.radius = gathering ? gathered : cloud
-        system.size = 150 * u * shown.zoom
+        system.size = 150 * u * shown.zoom * grip.scale
         system.explode = Float(shown.explode)
         system.rotation = turning.rotation
 

@@ -22,7 +22,7 @@ final class ManipulationEffect: Effect {
     private var shown: (position: CGPoint, zoom: CGFloat)?
     private var angle: Float = 0
     /// Whether the current gesture started on the shape.
-    private var held = false
+    private let grip = Grip()
     /// How far from the shape's center (stage points at zoom 1 and unit 1) a gesture takes hold of it: the shapes are
     /// about 100 in radius, plus a margin around them.
     private static let reach: CGFloat = 160
@@ -39,14 +39,10 @@ final class ManipulationEffect: Effect {
     override func update(_ frame: StageFrame) {
         let middle = CGPoint(x: frame.stage.viewSize.width / 2, y: frame.stage.viewSize.height / 2)
         var target = self.target ?? middle
-        if let gesture = frame.gesture {
-            if gesture.phase == .began {
-                base = (target, zoom)
-                let reach = Self.reach * (shown?.zoom ?? zoom) * frame.stage.unit
-                held = (shown?.position ?? target).distance(to: gesture.location) < reach
-            }
+        let reach = Self.reach * (shown?.zoom ?? zoom) * frame.stage.unit
+        if let gesture = grip.update(frame, isOn: { (self.shown?.position ?? target).distance(to: $0) < reach }) {
+            if gesture.phase == .began { base = (target, zoom) }
             switch gesture.kind {
-            case _ where !held: break
             case let .drag(start, location):
                 target = CGPoint(x: base.position.x + location.x - start.x, y: base.position.y + location.y - start.y)
             case let .zoom(scale, _):
@@ -64,7 +60,7 @@ final class ManipulationEffect: Effect {
         shown = now
         angle += Float(frame.dt) * 0.6
         shape.position = [Float(now.0.x), Float(now.0.y), 0]
-        shape.scale = .init(repeating: Float(now.1 * frame.stage.unit * pointing.scale))
+        shape.scale = .init(repeating: Float(now.1 * frame.stage.unit * pointing.scale * grip.scale))
         shape.orientation = simd_quatf(angle: angle, axis: simd_normalize([0.3, 1, 0.2]))
         let bounds = shape.stageBounds
         if pointing.update(frame, isOn: bounds.contains) { action.pop(above: bounds, unit: frame.stage.unit) }

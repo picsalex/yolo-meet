@@ -60,15 +60,16 @@ its 2D content.
   `ParticleShapes.cube(count)`), `scatter(kick:)` breaks it back into a swirling cloud, and `explode` (0...1) moves
   each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`. The
   particles spring to their points, so they trail the shape when it moves: 2D content drawn on them uses
-  `shownPoint(_:)` (after `follow(time:dt:)`), not `stagePoint(_:)`, to stay on them. See `BrainEffect`.
-- **Keys:** `frame.keys.pressed` (this frame, for toggles), `frame.keys.held` (hold to act) and
+  `shownPoint(_:)` (after `follow(time:dt:)`), not `stagePoint(_:)`, to stay on them. See `NetworkEffect`.
+- **Keys:** `frame.keys.pressed` (this frame, for toggles), `frame.keys.held` (hold to act; `"cmd"` while Command
+  alone is held) and
   `frame.keys.released` (this frame), while yolo-meet is
   the active app. Only `StageFrame.Keys.reserved` keys reach effects: R, Z, Q, S, D, 0 and `"space"`, read by position
   and named as on AZERTY (W, A, S, D on QWERTY); arrows and page keys step through the story. See `ParticleMorphEffect`
   (R spin on or off, Q/D turn, Z/S tilt, 0 reset, Space acts on the pointed face when released).
 - **Actionable items** (hold the space bar, point with an index fingertip, release to act): keep an `Actionable` per
   item and call `if item.update(frame, isOn: { … }) { act }` every frame, with a test of whether a stage point is on
-  the item (nil while it can't be pointed at). A fingertip touches with a small circle (`Pointer.reach`, 12 points),
+  the item (nil while it can't be pointed at). A fingertip touches with a small circle (`Pointer.reach`, 18 points),
   not a point. Holding Space is action mode: the item pointed at grows (`item.scale`:
   draw and hit-test the item at it) and so does the fingertip's joint in `handSkeleton()`. `update` returns true on
   the frame Space is released while it's pointed at (one item per release). Hit tests: a 3D entity's
@@ -92,10 +93,16 @@ them lists that model. Effects read `frame.gesture` (`Render/HandGestures.swift`
 | --- | --- | --- |
 | Drag | `.drag(start:location:)` | one hand pinches thumb and middle finger, then moves; or both hands pinch and move together (`hands` 2, the point between them) |
 | Zoom | `.zoom(scale:center:)` | both hands pinch and move apart or closer; `scale` > 1 apart (since they started pinching) |
-| Fist | `.fist(location:)` | a closed fist, started while Space is held (action mode) so a stray fist never acts; `location` is the hand's center, to follow it |
+| Fist | `.fist(location:)` | a closed fist, started while Command is held (fist mode) so a stray fist never acts; `location` is the hand's center, to follow it |
 
-Action mode (Space held) splits the gestures: in it, only fists start and fingertips point at actionable items;
-outside it, only drags and zooms. Pressing Space ends a drag or zoom at once.
+Keys split the gestures. Command held (fist mode): only fists start, at once. Space held (action mode): nothing
+starts, fingertips point at actionable items. Neither: only drags and zooms. Pressing either key ends a drag or zoom
+at once. A fist, once started, goes on until the hand opens, keys or not.
+
+A one-hand pinch only starts its drag once its hand has held it still for 0.25 s (`HandGestures.charge`, `still`);
+moving the hand restarts the wait, so pinching in passing never moves anything. Meanwhile `frame.charge` reports it
+(location, progress). Two hands pinching start at once. A fist needs every finger curled into the palm and the thumb
+folded in (`fist`, `thumbIn`), so a relaxed half-closed hand isn't one.
 
 `phase` is `.began` once, `.changed` every frame, then `.ended` once (e.g. act on a fist's release), with the
 values from 0.1 s before the end, since releasing a pinch or a hand leaving the frame moves them. A hand at the frame's
@@ -105,9 +112,11 @@ time: a fist wins; two pinching hands become a zoom or a two-hand drag once they
 when the second hand pinches and becomes a fist when its hand
 closes (closing a fist passes through a pinch). Positions are One Euro filtered
 (steady at rest, quick when moving fast); `gesture.location` is where the hand acts (pinch, between the pinches,
-hand's center): on `.began`, compare it with your object so gestures only act on the object the hand is on (see
-`ManipulationEffect`). Debug mode shows the gesture and each hand's
-measures; tune the thresholds in `HandGestures`.
+hand's center): keep a `Grip` per object and act on `grip.update(frame, isOn: { … })`, the gesture while it holds the
+object (it began on it), so gestures only act on the object the hand is on; draw the object at `grip.scale`, which
+swells while a pinch charges on it and stays slightly larger while held (see `ManipulationEffect`). Debug mode
+shows the gesture, the charge and each hand's measures (pinch, curl, thumb, speed); tune the thresholds in
+`HandGestures`.
 
 ## Kit
 
@@ -120,17 +129,31 @@ measures; tune the thresholds in `HandGestures`.
   `behind` objects and particles, to guide the gestures; the index fingertip's joint grows on an actionable item.
 - `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart) and their parts
   (cube: `CubeFace`, with each face's corners).
+- `Grip`: whether the gestures hold an object (they began on it), with its swell while a pinch charges and held (`scale`).
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
   hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`.
 - `KeyTurn`: turns an object with the keys (R spin, Q/D turn, Z/S tilt, 0 reset); apply its `rotation`. `spinning:`
-  false starts with the spin off.
+  false starts with the spin off; `restingTilt`/`restingTurn` set the view at rest (and on 0).
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
 
-`Callouts.setText(_:at:)` changes a description (e.g. a value of what's pointed at).
+`Callouts.setText(_:at:)` changes a description (e.g. a value of what's pointed at); `Callouts(_:font:size:line:)`
+sets its look, and `update(…, left:)` puts every label in one column (e.g. beside a whole layout, as `NetworkEffect` does).
 
-The `NNExplained` story is the first full scene: particles form a brain (`Brain.shape`) holding a network of 300
-neurons (balls of particles, each its own part) and their synapses (lines of particles); neurons are actionable (an
-activated one becomes a gold 2D disc, kept on its particles with `shownPoint`), and synapses are touched in action mode.
+An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
+its step.
+
+The `NNExplained` story is the first full scene: a cloud of particles (Cmd + fist gathers it; opening the hand moves on),
+then a brain (`Brain.shape`) holding a network of 300
+neurons (balls of particles, each its own part) and their synapses (lines of particles); in action mode, the touched
+neuron shows as a disc with its bias and the touched synapse with its weight, kept on the particles with `shownPoint`.
+Its next step lays 23 of those neurons out as a multilayer perceptron (10 → 5 → 8), and the last one shows YOLO's
+architecture: blocks of layers as boxes of particles (a layout's `Neuron.box`, described with `info` when touched),
+each holding its neurons as slices of dot grids (`Neuron.grid`: one slice per channel, one dot per cell), in
+backbone, neck and head columns (`headers`). In action mode a touched block is outlined in gold (2D, over its
+particles), and a touched header turns gold and outlines all its blocks. **Steps that continue each other**
+share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
+step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a
+part of the previous one (a neuron) flies into a chosen part of the new one.
 
 The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`), particles
 form and explode a cube (`ParticleMorphEffect`), and both are actionable.

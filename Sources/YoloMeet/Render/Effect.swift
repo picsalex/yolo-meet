@@ -43,17 +43,22 @@ struct StageFrame {
     let smooth: Bool
     /// The hand gesture in progress, recognized by the stage for every scene (`HandGestures`).
     var gesture: HandGesture? = nil
+    /// A one-hand pinch getting ready to start (`HandGestures.charging`): e.g. swell the object it's on.
+    var charge: HandCharge? = nil
     /// Keyboard keys for effects, while yolo-meet is the active app (`StageKeys`).
     var keys = Keys()
     /// Index fingertips of the hands in view (`HandGestures.pointers`).
     var pointers: [Pointer] = []
     /// Which hands point at an actionable item, for the hand skeletons to show it (`pointer(on:)`).
     var pointing = Pointing()
+    /// Moves the story to its next step, as the clicker's → does (e.g. when a gesture completes this one); nothing
+    /// outside a story or on its last step.
+    var nextStep: () -> Void = {}
 
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
         /// belong to the clicker (previous and next step).
-        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space"]
+        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space", "cmd"]
         /// Keys down now (hold to act every frame).
         var held: Set<String> = []
         /// Keys pressed since the last frame (toggles).
@@ -88,7 +93,7 @@ struct StageFrame {
 /// with a small circle around it, not a single point.
 struct Pointer {
     /// The touch circle's radius, in stage points at unit 1.
-    static let reach: CGFloat = 12
+    static let reach: CGFloat = 18
     /// The circle's center and 8 points around it, at radius 1.
     static let circle = [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
 

@@ -5,17 +5,18 @@ import simd
 struct KeyTurn {
     /// Radians per second with a key held.
     static let keySpeed: Float = 1.6
-    /// Tilt toward the viewer at rest (positive: the top comes forward).
-    let restingTilt: Float
+    /// Tilt toward the viewer and turn at rest (positive: the top comes forward, the front moves right).
+    let restingTilt, restingTurn: Float
     /// Radians per second of the automatic spin.
     let autoSpeed: Float
     /// Turn around the vertical axis (positive: the front moves right) and tilt.
-    private(set) var turn: Float = 0, tilt: Float
+    private(set) var turn: Float, tilt: Float
     private var autoSpin: Bool
 
     /// `spinning`: whether the slow spin is on at first.
-    init(restingTilt: Float = 0.45, autoSpeed: Float = 0.5, spinning: Bool = true) {
-        (self.restingTilt, self.autoSpeed, tilt, autoSpin) = (restingTilt, autoSpeed, restingTilt, spinning)
+    init(restingTilt: Float = 0.45, restingTurn: Float = 0, autoSpeed: Float = 0.5, spinning: Bool = true) {
+        (self.restingTilt, self.restingTurn, self.autoSpeed, autoSpin) = (restingTilt, restingTurn, autoSpeed, spinning)
+        (tilt, turn) = (restingTilt, restingTurn)
     }
 
     var rotation: simd_quatf { simd_quatf(angle: tilt, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0]) }
@@ -23,7 +24,7 @@ struct KeyTurn {
     mutating func update(_ frame: StageFrame) {
         let keys = frame.keys
         if keys.pressed.contains("r") { autoSpin.toggle() }
-        if keys.pressed.contains("0") { (turn, tilt) = (0, restingTilt) }
+        if keys.pressed.contains("0") { (turn, tilt) = (restingTurn, restingTilt) }
         let step = Float(frame.dt) * Self.keySpeed
         if keys.held.contains("d") { turn += step }
         if keys.held.contains("q") { turn -= step }

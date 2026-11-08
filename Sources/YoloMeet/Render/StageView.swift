@@ -116,11 +116,13 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         var stageFrame = StageFrame(
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
-        stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Space held
+        stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Command held
         stageFrame.gesture = gestures.update(stageFrame)
+        stageFrame.charge = gestures.charging
         stageFrame.pointers = gestures.pointers
         pointing.next()
         stageFrame.pointing = pointing
+        stageFrame.nextStep = { [model] in Task { model.next() } }  // after this frame
         for effect in effects { effect.update(stageFrame) }
         for debug in [stats, gestureDebug] as [Effect] {
             debug.node.isHidden = !model.debugMode

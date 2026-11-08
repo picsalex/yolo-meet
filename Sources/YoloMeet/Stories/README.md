@@ -43,7 +43,8 @@ Other tasks: boxes (`detect`), masks as `overlay` images (`segment`, `semantic`,
 ## Effects
 
 Subclass `Effect` and override `update(_ frame: StageFrame)`, called every rendered frame (60 fps). The stage draws
-the video, then every effect's 3D content, then its particles, then its 2D content.
+the video, then the 2D content of effects marked `behind`, then every effect's 3D content, then its particles, then
+its 2D content.
 
 - **2D (SpriteKit):** add nodes to `node`. Positions in stage points (bottom-left origin): `frame.stage.point(_:)`
   converts a frame pixel.
@@ -95,7 +96,8 @@ measures; tune the thresholds in `HandGestures`.
 ## Kit
 
 - `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
-- `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand`, see-through (50%), to guide the gestures.
+- `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand` (light gray, white joints, 15%), drawn
+  `behind` objects and particles, to guide the gestures.
 - `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart).
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
 

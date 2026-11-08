@@ -75,6 +75,9 @@ class Effect {
     let entity = Entity()
     /// Glowing particles simulated on the GPU, drawn over the 3D layer and under the 2D layer.
     var particles: ParticleSystem?
+    /// Draws `node` just over the video, under the 3D layer and the particles, instead of on top of them (e.g. hand
+    /// skeletons that objects should hide). Set it before the stage shows the effect (in `init`).
+    var behind = false
     func update(_ frame: StageFrame) {}
 }
 

@@ -3,8 +3,8 @@ import MetalKit
 import SpriteKit
 import SwiftUI
 
-/// The shareable output, rendered into one Metal drawable: camera frame (Core Image), then the effects' 3D content
-/// (RealityKit), then their particles (Metal), then their 2D content (SpriteKit).
+/// The shareable output, rendered into one Metal drawable: camera frame (Core Image), the 2D content of effects drawn
+/// `behind`, then the effects' 3D content (RealityKit), their particles (Metal), and their 2D content (SpriteKit).
 struct StageView: NSViewRepresentable {
     let model: AppModel
 
@@ -43,6 +43,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let context: CIContext
     private let renderer: SKRenderer
     private let scene = SKScene()
+    /// 2D content of effects drawn `behind`: over the video, under the 3D layer and the particles.
+    private let backRenderer: SKRenderer
+    private let backScene = SKScene()
     /// Nil when RealityKit can't start.
     private let reality: RealityLayer?
     /// Nil if its shaders fail to compile.
@@ -60,9 +63,12 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         queue = device.makeCommandQueue()!
         context = CIContext(mtlCommandQueue: queue, options: [.cacheIntermediates: false])
         renderer = SKRenderer(device: device)
-        scene.backgroundColor = .clear
-        scene.scaleMode = .fill  // scene size tracks the drawable, so this is 1:1
-        renderer.scene = scene
+        backRenderer = SKRenderer(device: device)
+        for (scene, renderer) in [(scene, renderer), (backScene, backRenderer)] {
+            scene.backgroundColor = .clear
+            scene.scaleMode = .fill  // scene size tracks the drawable, so this is 1:1
+            renderer.scene = scene
+        }
         reality = RealityLayer(queue: queue)
         super.init()
         scene.addChild(stats.node)
@@ -105,7 +111,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
 
         // Effects: rebuild on scene change, then update every frame.
         if model.sceneVersion != sceneVersion { swapEffects() }
-        if scene.size != size { scene.size = size }
+        for scene in [scene, backScene] where scene.size != size { scene.size = size }
         var stageFrame = StageFrame(
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
@@ -116,6 +122,14 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             debug.node.isHidden = !model.debugMode
             if model.debugMode { debug.update(stageFrame) }
         }
+        let overlay = MTLRenderPassDescriptor()
+        overlay.colorAttachments[0].texture = drawable.texture
+        overlay.colorAttachments[0].loadAction = .load
+        overlay.colorAttachments[0].storeAction = .store
+        if !backScene.children.isEmpty {
+            backRenderer.update(atTime: now)
+            backRenderer.render(withViewport: bounds, commandBuffer: commandBuffer, renderPassDescriptor: overlay)
+        }
         if let reality, effects.contains(where: { !$0.entity.children.isEmpty }) {
             commandBuffer = reality.render(over: drawable.texture, size: size, dt: dt, after: commandBuffer)
         }
@@ -125,10 +139,6 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         }
 
         renderer.update(atTime: now)
-        let overlay = MTLRenderPassDescriptor()
-        overlay.colorAttachments[0].texture = drawable.texture
-        overlay.colorAttachments[0].loadAction = .load
-        overlay.colorAttachments[0].storeAction = .store
         renderer.render(withViewport: bounds, commandBuffer: commandBuffer, renderPassDescriptor: overlay)
 
         commandBuffer.present(drawable)
@@ -144,7 +154,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         sceneVersion = model.sceneVersion
         for effect in effects {
             effect.node.alpha = 0
-            scene.addChild(effect.node)
+            (effect.behind ? backScene : scene).addChild(effect.node)
             effect.node.run(.fadeIn(withDuration: 0.4))
             reality?.entities.append(effect.entity)
         }

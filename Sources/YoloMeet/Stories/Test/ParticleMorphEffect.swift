@@ -1,11 +1,12 @@
-import CoreGraphics
+import SpriteKit
 import simd
 
 /// A swirling cloud of particles in the middle of the stage. A fist closed on it gathers the particles into a ball that
 /// follows the fist; opening the hand forms a cube there, spinning slowly. On the cube, a pinch pulled away from its
 /// center explodes it into its faces (pushed back toward it, reassembles it); both hands pinching resize it when they
 /// move apart or closer, and move it when they move together. A fist on the cube breaks it again. Keys: R turns the slow spin on or off, Q/D turn and Z/S tilt while held, 0 resets the
-/// turn, tilt and zoom.
+/// turn, tilt and zoom. The cube's top face is actionable: an index fingertip on it grows it, and the space bar then
+/// shows "Action".
 final class ParticleMorphEffect: Effect {
     /// Released below this, the cube springs back together; above, it stays exploded.
     static let keepExploded: CGFloat = 0.33
@@ -28,10 +29,13 @@ final class ParticleMorphEffect: Effect {
     private var explode: CGFloat = 0, zoom: CGFloat = 1
     private var shown: (explode: CGFloat, zoom: CGFloat) = (0, 1)
     private var base: (explode: CGFloat, zoom: CGFloat, home: CGPoint) = (0, 1, .zero)
+    private let topFace = Actionable()
+    private let action = PopLabel("Action")
 
     override init() {
         super.init()
         particles = system
+        node.addChild(action)
     }
 
     override func update(_ frame: StageFrame) {
@@ -81,6 +85,15 @@ final class ParticleMorphEffect: Effect {
         system.size = 150 * u * shown.zoom
         system.explode = Float(shown.explode)
         system.rotation = simd_quatf(angle: tilt, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0])
+
+        // The top face, once formed, facing the viewer and not being gathered by a fist.
+        let top = ParticleShapes.CubeFace.top
+        let face = formed && !gathering && system.faces(top.center)
+            ? top.corners(grownBy: Float(topFace.scale), exploded: system.explode).map(system.stagePoint) : nil
+        if topFace.update(frame, isOn: face.map { face in { $0.isInside(face) } }), let face {
+            action.pop(above: CGRect(enclosing: face), unit: u)
+        }
+        system.highlight = topFace.scale > 1.001 ? (top.rawValue, top.center, Float(topFace.scale)) : nil
     }
 
     private func rotate(_ frame: StageFrame) {

@@ -80,6 +80,8 @@ final class HandGestures {
         /// Mean of the 21 points, in stage points (filtered): the fist's center, where the wrist alone would pull it
         /// below the visible fist.
         var center: OneEuroFilter
+        /// The index fingertip, in stage points (filtered): where the hand points.
+        var tip: OneEuroFilter
         var lastSeen: TimeInterval
     }
 
@@ -105,6 +107,13 @@ final class HandGestures {
     private var releasedAt: TimeInterval?
     /// Hands that must release their pinch (false) or fist (true) before starting another gesture of that kind.
     private var consumed: [Int: Bool] = [:]
+
+    /// The index fingertips of the hands in view, but not of fists (the tip is in the palm) or hands at the frame's edge.
+    /// Call after `update(_:)`.
+    var pointers: [Pointer] {
+        hands.filter { !$0.value.fist && !$0.value.atEdge }.map { Pointer(hand: $0.key, location: $0.value.tip.value) }
+            .sorted { $0.hand < $1.hand }
+    }
 
     func update(_ frame: StageFrame) -> HandGesture? {
         let output = Self.models.lazy.compactMap { frame.outputs[$0] }.first
@@ -150,10 +159,12 @@ final class HandGestures {
         let pinching = !atEdge && !fist && pinchRatio < (previous?.pinching == true ? Self.pinch.off : Self.pinch.on)
         let center = frame.stage.point(p.reduce(CGPoint.zero) { CGPoint(x: $0.x + $1.x / 21, y: $0.y + $1.y / 21) })
         let pinch = frame.stage.point(p[4].midpoint(p[12]))
+        let tip = frame.stage.point(p[8])
         return Hand(
             pinchRatio: pinchRatio, curl: curl, pinching: pinching, fist: fist, atEdge: atEdge,
             pinch: previous?.pinch.filtering(pinch, frame) ?? OneEuroFilter(pinch),
-            center: previous?.center.filtering(center, frame) ?? OneEuroFilter(center), lastSeen: frame.time)
+            center: previous?.center.filtering(center, frame) ?? OneEuroFilter(center),
+            tip: previous?.tip.filtering(tip, frame) ?? OneEuroFilter(tip), lastSeen: frame.time)
     }
 
     /// Whether the gesture's hands still pinch (or make a fist).

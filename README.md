@@ -105,11 +105,12 @@ Toggle it in the panel's Status section. It draws on the stage (so it is visible
 
 ## Keys
 
-While YOLO-meet is the active app (not typing in the panel), scenes can use R, Z, Q, S, D and 0, read by position
+While YOLO-meet is the active app (not typing in the panel), scenes can use R, Z, Q, S, D, 0 and the space bar, read by position
 (AZERTY letters; the same keys are W, A, S, D on QWERTY, and 0 works without Shift). In the Test story's Particles
 scene: **R** turns the slow spin on or off, **Q**/**D** turn the shape left or right and **Z**/**S** tilt it while held,
-**0** resets the turn, tilt and zoom. With Clicker keys on, arrows and Page Up/Down step through the story from any
-app; the letter keys never work from other apps, so typing in Meet's chat can't trigger them.
+**0** resets the turn, tilt and zoom, and **Space** acts on the item your index fingertip points at (in the Test story, the
+3D shape or the cube's top face: it shows "Action"). With Clicker keys on, arrows and Page Up/Down step through the story from any
+app; these keys never work from other apps, so typing in Meet's chat can't trigger them.
 
 ## Extending
 

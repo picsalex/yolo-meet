@@ -28,6 +28,9 @@ final class ParticleSystem {
     var explode: Float = 0
     /// Turns the shape (x right, y up, z toward the viewer).
     var rotation = simd_quatf(angle: 0, axis: [0, 1, 0])
+    /// Grows one part of the shape (`ParticleShape.parts`) by `scale` around `center` (in the shape's -1...1 units, e.g.
+    /// a cube face's center: the face grows in its plane). Its particles spring to their new points.
+    var highlight: (part: Int, center: SIMD3<Float>, scale: Float)?
     /// Point diameter in stage points at stage unit 1.
     var pointSize: Float = 3
     var color = SIMD3<Float>(0.3, 0.75, 1)
@@ -42,10 +45,22 @@ final class ParticleSystem {
 
     init(count: Int = 60_000) { self.count = count }
 
+    /// Where a point of the shape (in its -1...1 units, exploded points included) is on stage, as the shape is set now
+    /// (its particles spring there): for hit-testing parts of it.
+    func stagePoint(_ point: SIMD3<Float>) -> CGPoint {
+        let p = rotation.act(point) * Float(size)
+        return CGPoint(x: center.x + CGFloat(p.x), y: center.y + CGFloat(p.y))
+    }
+
+    /// Whether a direction of the shape (e.g. a face's normal) turns toward the viewer.
+    func faces(_ direction: SIMD3<Float>) -> Bool { rotation.act(direction).z > 0.05 }
+
     /// Flies the particles into `shape` (one point per particle), staggered.
     func form(_ shape: ParticleShape) {
         precondition(shape.points.count == count && shape.offsets.count == count, "one point per particle")
-        self.shape = (shape.points.map { SIMD4($0, 0) }, shape.offsets.map { SIMD4($0, 0) })
+        let parts = shape.parts.isEmpty ? Array(repeating: 0, count: count) : shape.parts
+        precondition(parts.count == count, "one part per point")
+        self.shape = (zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) })
         shapeChanged = true
         formStart = nil  // set on the next frame
         mode = .form
@@ -91,7 +106,8 @@ final class ParticleSystem {
             time: [Float(min(dt, 0.1)), Float(time.truncatingRemainder(dividingBy: 1000)), Float(time - (formStart ?? time)), mode.rawValue],
             center: [Float(center.x) / world, Float(center.y) / world, 0, Float(radius) / world],
             shape: [Float(size) / world, kick, pointSize * Float(stage.unit), world],
-            view: [Float(stage.viewSize.width), Float(stage.viewSize.height), explode, 0],
+            view: [Float(stage.viewSize.width), Float(stage.viewSize.height), explode, Float(highlight?.part ?? -1)],
+            highlight: highlight.map { SIMD4($0.center, $0.scale) } ?? [0, 0, 0, 1],
             color: SIMD4(color, brightness),
             // Rows of the rotation matrix (simd matrices are column-major).
             rot0: [r[0][0], r[1][0], r[2][0], 0], rot1: [r[0][1], r[1][1], r[2][1], 0], rot2: [r[0][2], r[1][2], r[2][2], 0])
@@ -111,7 +127,8 @@ struct ParticleUniforms {
     var time: SIMD4<Float>  // dt, time, seconds since forming began, mode
     var center: SIMD4<Float>  // center (world), cloud radius (world)
     var shape: SIMD4<Float>  // shape half-size (world), kick, point size (pixels), pixels per world unit
-    var view: SIMD4<Float>  // stage size (pixels), explode
+    var view: SIMD4<Float>  // stage size (pixels), explode, highlighted part (-1 none)
+    var highlight: SIMD4<Float>  // highlighted part's center (shape units), scale
     var color: SIMD4<Float>  // rgb, brightness
     var rot0, rot1, rot2: SIMD4<Float>  // rotation rows
 }
@@ -181,7 +198,8 @@ final class ParticleRenderer {
             float4 time;    // dt, time, seconds since forming began, mode (0 cloud, 1 form)
             float4 center;  // center (world), cloud radius (world)
             float4 shape;   // shape half-size (world), kick, point size (pixels), pixels per world unit
-            float4 view;    // stage size (pixels), explode
+            float4 view;    // stage size (pixels), explode, highlighted part (-1 none)
+            float4 highlight;  // highlighted part's center (shape units), scale
             float4 color;   // rgb, brightness
             float4 rot0, rot1, rot2;
         };
@@ -210,7 +228,9 @@ final class ParticleRenderer {
             float h = u.time.x / float(steps);
             // A second random per particle for the cloud's depth, so the cloud is a ball, not a shell.
             float depth = 0.35 + 0.65 * fract(seed.w * 7.31 + 0.17);
-            float3 target = (targets[id].xyz + offsets[id].xyz * u.view.z) * u.shape.x;
+            float4 point = targets[id];  // w: the point's part
+            float3 local = point.w == u.view.w ? u.highlight.xyz + (point.xyz - u.highlight.xyz) * u.highlight.w : point.xyz;
+            float3 target = (local + offsets[id].xyz * u.view.z) * u.shape.x;
             float3 goal = float3(dot(u.rot0.xyz, target), dot(u.rot1.xyz, target), dot(u.rot2.xyz, target));
             for (int i = 0; i < steps; i++) {
                 float t = u.time.y + float(i) * h;

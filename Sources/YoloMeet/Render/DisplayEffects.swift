@@ -93,6 +93,8 @@ final class PoseEffect: Effect {
     let skeleton: Bool
     let theme: Theme?
     let minConfidence: Float = 0.5
+    /// Joints to draw bigger, by keypoint index (scale), per track ID; they grow and shrink smoothly.
+    var grownJoints: ((StageFrame, Int) -> [Int: CGFloat])?
     private let layer = SKNode()
     private lazy var tracks = TrackedNodes(in: layer) { PoseNode() }
 
@@ -114,7 +116,7 @@ final class PoseEffect: Effect {
             let points = detection.keypoints.map { $0.confidence >= minConfidence ? frame.stage.point($0.point) : nil }
             node.update(
                 to: points, skeleton: skeleton ? output?.skeleton ?? [] : [], theme: theme, unit: frame.stage.unit,
-                smoothing: frame.smoothing(gap:))
+                grown: grownJoints?(frame, detection.trackID!) ?? [:], k: frame.smoothing, smoothing: frame.smoothing(gap:))
         }
     }
 }
@@ -128,6 +130,8 @@ final class PoseNode: SKNode {
     private let joints = SKShapeNode()
     /// Smoothed keypoints in stage space; nil while not visible.
     private(set) var points: [CGPoint?] = []
+    /// Shown joint scales (1 normal), eased toward the asked ones.
+    private var scales: [CGFloat] = []
 
     override init() {
         super.init()
@@ -138,7 +142,8 @@ final class PoseNode: SKNode {
     required init?(coder: NSCoder) { fatalError() }
 
     func update(
-        to targets: [CGPoint?], skeleton: [(Int, Int)], theme: Theme, unit: CGFloat, smoothing: (CGFloat) -> CGFloat
+        to targets: [CGPoint?], skeleton: [(Int, Int)], theme: Theme, unit: CGFloat, grown: [Int: CGFloat] = [:],
+        k: CGFloat = 1, smoothing: (CGFloat) -> CGFloat
     ) {
         // A dense mesh (MediaPipe's 478-point face) is drawn as thin lines without joints.
         let mesh = targets.count > 100
@@ -164,7 +169,15 @@ final class PoseNode: SKNode {
 
         let jointPath = CGMutablePath()
         let r = theme.jointRadius * unit
-        for case let p? in mesh ? [] : points { jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)) }
+        if scales.count != points.count { scales = Array(repeating: 1, count: points.count) }
+        // Growing takes about a tenth of a second at any frame rate (k is per frame, for a 1/30 s time constant).
+        let ease = 1 - pow(1 - k, 0.33)
+        for i in scales.indices { scales[i] = scales[i].approaching(grown[i] ?? 1, k >= 1 ? 1 : ease) }
+        for (i, p) in (mesh ? [] : points).enumerated() {
+            guard let p else { continue }
+            let r = r * scales[i]
+            jointPath.addEllipse(in: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r))
+        }
         joints.path = jointPath
         joints.set(\.fillColor, theme.joint)
         joints.set(\.strokeColor, theme.jointOutline)

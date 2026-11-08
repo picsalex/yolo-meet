@@ -53,6 +53,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private let gestures = HandGestures()
+    private let pointing = Pointing()
     private lazy var gestureDebug = GestureDebugEffect(gestures: gestures)
     private var sceneVersion = -1
     private var lastTime = CACurrentMediaTime()
@@ -116,6 +117,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
         stageFrame.gesture = gestures.update(stageFrame)
+        stageFrame.pointers = gestures.pointers
+        pointing.next()
+        stageFrame.pointing = pointing
         stageFrame.keys = model.stageKeys.take()
         for effect in effects { effect.update(stageFrame) }
         for debug in [stats, gestureDebug] as [Effect] {

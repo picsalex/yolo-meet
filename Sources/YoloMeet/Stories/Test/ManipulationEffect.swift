@@ -3,7 +3,7 @@ import RealityKit
 
 /// A slowly spinning 3D shape in the middle of the stage, moved and resized by hand gestures (`frame.gesture`) that
 /// start on it: drag moves it, zoom (hands on either side) resizes it, a fist carries it and releasing the fist turns it
-/// into the next shape.
+/// into the next shape. It's actionable: an index fingertip on it grows it, and the space bar then shows "Action".
 final class ManipulationEffect: Effect {
     private static let shapes: [(mesh: MeshResource, color: NSColor)] = [
         (.generateBox(size: 180, cornerRadius: 24), NSColor(red: 0.25, green: 0.85, blue: 1, alpha: 1)),
@@ -25,10 +25,13 @@ final class ManipulationEffect: Effect {
     /// How far from the shape's center (stage points at zoom 1 and unit 1) a gesture takes hold of it: the shapes are
     /// about 100 in radius, plus a margin around them.
     private static let reach: CGFloat = 160
+    private let pointing = Actionable(grown: 1.1)
+    private let action = PopLabel("Action")
 
     override init() {
         super.init()
         entity.addChild(shape)
+        node.addChild(action)
         show(0)
     }
 
@@ -60,8 +63,10 @@ final class ManipulationEffect: Effect {
         shown = now
         angle += Float(frame.dt) * 0.6
         shape.position = [Float(now.0.x), Float(now.0.y), 0]
-        shape.scale = .init(repeating: Float(now.1 * frame.stage.unit))
+        shape.scale = .init(repeating: Float(now.1 * frame.stage.unit * pointing.scale))
         shape.orientation = simd_quatf(angle: angle, axis: simd_normalize([0.3, 1, 0.2]))
+        let bounds = shape.stageBounds
+        if pointing.update(frame, isOn: bounds.contains) { action.pop(above: bounds, unit: frame.stage.unit) }
     }
 
     private func show(_ index: Int) {

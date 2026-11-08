@@ -45,15 +45,27 @@ struct StageFrame {
     var gesture: HandGesture? = nil
     /// Keyboard keys for effects, while YOLO-meet is the active app (`StageKeys`).
     var keys = Keys()
+    /// Index fingertips of the hands in view (`HandGestures.pointers`).
+    var pointers: [Pointer] = []
+    /// Which hands point at an actionable item, for the hand skeletons to show it (`pointer(on:)`).
+    var pointing = Pointing()
 
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
         /// belong to the clicker (previous and next step).
-        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0"]
+        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space"]
         /// Keys down now (hold to act every frame).
         var held: Set<String> = []
         /// Keys pressed since the last frame (toggles).
         var pressed: Set<String> = []
+    }
+
+    /// The first fingertip on an actionable item (`isOn` tells whether a stage point is on it), marked as pointing at
+    /// it, or nil. Call it every frame for each actionable item; the hand skeletons grow that fingertip's joint.
+    func pointer(on isOn: (CGPoint) -> Bool) -> Pointer? {
+        guard let pointer = pointers.first(where: { isOn($0.location) }) else { return nil }
+        pointing.mark(pointer.hand)
+        return pointer
     }
 
     /// Per-frame blend factor for exponential smoothing toward model results, independent of frame rate. Results are
@@ -63,6 +75,31 @@ struct StageFrame {
     /// Blend factor that adapts to how far a point is from its target (stage points), like a One Euro filter: small
     /// gaps (jitter) are smoothed, large ones (fast motion) are caught up within a frame or two.
     func smoothing(gap: CGFloat) -> CGFloat { smooth ? CGFloat(1 - exp(-dt * (30 + 4 * Double(gap / stage.unit)))) : 1 }
+}
+
+/// An index fingertip, in stage points: what a hand points at (e.g. to act on an item with the space bar).
+struct Pointer {
+    /// The hand's track ID.
+    let hand: Int
+    let location: CGPoint
+}
+
+/// The hands pointing at an actionable item, shared by the effects of a frame: effects that hold items mark them
+/// (`StageFrame.pointer(on:)`) and the hand skeletons read them, in either order.
+final class Pointing {
+    private var marked: Set<Int> = [], previous: Set<Int> = []
+    private var acted = false
+
+    func mark(_ hand: Int) { marked.insert(hand) }
+    /// Whether the hand points at an item this frame (or last frame, for effects updated before the one that marks it).
+    func isPointing(_ hand: Int) -> Bool { marked.contains(hand) || previous.contains(hand) }
+    /// True for the first item that acts this frame, so one space bar press acts on one item (`Actionable`).
+    func claimAction() -> Bool {
+        defer { acted = true }
+        return !acted
+    }
+    /// Starts a frame.
+    func next() { (previous, marked, acted) = (marked, [], false) }
 }
 
 /// Something drawn on the stage. Subclasses add children to `node` (2D, SpriteKit) and/or `entity` (3D and particles,

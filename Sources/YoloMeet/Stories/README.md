@@ -60,9 +60,18 @@ its 2D content.
   `ParticleShapes.cube(count)`), `scatter(kick:)` breaks it back into a swirling cloud, and `explode` (0...1) moves
   each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`.
 - **Keys:** `frame.keys.pressed` (this frame, for toggles) and `frame.keys.held` (hold to act), while YOLO-meet is
-  the active app. Only `StageFrame.Keys.reserved` keys reach effects: R, Z, Q, S, D, 0, read by position and named as
-  on AZERTY (W, A, S, D on QWERTY); arrows and page keys step through the story. See `ParticleMorphEffect` (R spin on
-  or off, Q/D turn, Z/S tilt, 0 reset).
+  the active app. Only `StageFrame.Keys.reserved` keys reach effects: R, Z, Q, S, D, 0 and `"space"`, read by position
+  and named as on AZERTY (W, A, S, D on QWERTY); arrows and page keys step through the story. See `ParticleMorphEffect`
+  (R spin on or off, Q/D turn, Z/S tilt, 0 reset, Space acts on the pointed face).
+- **Actionable items** (point with an index fingertip, act with the space bar): keep an `Actionable` per item and
+  call `if item.update(frame, isOn: { … }) { act }` every frame, with a test of whether a stage point is on the item
+  (nil while it can't be pointed at). It grows the item (`item.scale`: draw and hit-test the item at it) and the
+  fingertip's joint in `handSkeleton()`, and returns true on the frame Space is pressed while it's pointed at (one item
+  per press). Hit tests: a 3D entity's `stageBounds.contains`; a particle shape's part with
+  `ParticleSystem.stagePoint` (e.g. `CubeFace.corners` mapped through it) and `point.isInside(polygon)`, grown with
+  `ParticleSystem.highlight` (its `parts`). `PopLabel` confirms an action. See `ManipulationEffect` (the 3D shape) and
+  `ParticleMorphEffect` (the cube's top face). Lower level: `frame.pointers` (the index fingertips of the hands in
+  view, not fists) and `frame.pointer(on:)`.
 - **Sizes:** multiply by `frame.stage.unit` (1 at a 720-point-high stage) so effects look the same at any stage size.
   RealityKit particle sizes and speeds don't follow an entity's scale: set them from the unit (see `GlowingDot.resize`).
 - **Per object:** `TrackedNodes(in: node)` or `TrackedNodes(in: entity)` keeps one node or entity per track ID, created
@@ -97,8 +106,12 @@ measures; tune the thresholds in `HandGestures`.
 
 - `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
 - `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand` (light gray, white joints, 15%), drawn
-  `behind` objects and particles, to guide the gestures.
-- `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart).
+  `behind` objects and particles, to guide the gestures; the index fingertip's joint grows on an actionable item.
+- `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart) and their parts
+  (cube: `CubeFace`, with each face's corners).
+- `Actionable`, `PopLabel`: items to point at and act on with the space bar, and a word that pops to confirm; with
+  hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`.
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
 
-The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`).
+The `Test` story is the reference: hand gestures move, resize and change a 3D shape (`ManipulationEffect`), particles
+form and explode a cube (`ParticleMorphEffect`), and both are actionable.

@@ -107,9 +107,12 @@ struct ControlPanel: View {
         }
         Toggle("Clicker keys (←/→, Page Up/Down) in other apps too", isOn: $model.clickerKeys)
         if model.clickerKeys && !ClickerKeys.hasPermission {
-            Text("Allow yolo-meet in System Settings › Privacy & Security › Accessibility, then toggle again.")
-                .foregroundStyle(.secondary)
+            Text(
+                "To step the story while Meet is in front, macOS needs yolo-meet allowed in System Settings › Privacy & Security › Accessibility (again after a rebuild). Then turn this off and on."
+            )
+            .foregroundStyle(.secondary)
         }
+        Toggle("Hide the camera (H on stage)", isOn: $model.cameraHidden)
     }
 }
 

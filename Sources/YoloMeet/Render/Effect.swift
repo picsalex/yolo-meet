@@ -52,6 +52,8 @@ struct StageFrame {
     var pointers: [Pointer] = []
     /// Which hands point at an actionable item, for the hand skeletons to show it (`pointer(on:)`).
     var pointing = Pointing()
+    /// The camera image is hidden (H): the stage is black behind the effects, e.g. to center an object on it.
+    var cameraHidden = false
     /// Moves the story to its next step, as the clicker's → does (e.g. when a gesture completes this one); nothing
     /// outside a story or on its last step.
     var nextStep: () -> Void = {}
@@ -59,7 +61,7 @@ struct StageFrame {
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
         /// belong to the clicker (previous and next step).
-        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space", "cmd"]
+        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space", "cmd", "h"]
         /// Keys down now (hold to act every frame).
         var held: Set<String> = []
         /// Keys pressed since the last frame (toggles).

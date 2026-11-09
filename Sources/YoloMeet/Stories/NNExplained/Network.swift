@@ -8,6 +8,8 @@ final class NeuralNetwork {
     nonisolated static let scale = 2
     static let particles = 60_000 * scale
     let system = ParticleSystem(count: particles)
+    /// The layout the particles formed last: a variant of it (`NetworkLayout.base`) forms without restarting their flight.
+    var formed: NetworkLayout?
     /// Where the particles are centered (stage points), kept from step to step so the next layout forms there; nil
     /// until the first step places it on the right third of the stage (0 brings it back there).
     var home: CGPoint?
@@ -17,12 +19,15 @@ final class NeuralNetwork {
     let perceptron: NetworkLayout
     /// YOLO's convolutional architecture: backbone, neck and head.
     let architecture: NetworkLayout
+    /// The same, its dust gathered into two yellow arrows: into the input, out of the output.
+    let inputOutput: NetworkLayout
 
     init() {
         system.brightness = 0.45 / Float(Self.scale).squareRoot()  // points add light: about the same look, denser
         brain = .brain()
         perceptron = .perceptron(layers: [10, 5, 8], from: brain)
         architecture = .architecture()
+        inputOutput = .inputOutput(of: architecture)
     }
 }
 
@@ -64,6 +69,8 @@ final class NetworkLayout {
     private(set) var shape: ParticleShape?
     /// Some points around the layout, to place its title.
     private(set) var outline: [SIMD3<Float>] = []
+    /// The layout this one is a variant of (same blocks, some particles moved), if any.
+    private(set) weak var base: NetworkLayout?
     /// Done once `shape` is set.
     private var ready: Task<Void, Never>?
 
@@ -185,7 +192,9 @@ final class NetworkLayout {
         let outlines = lengths.map { Int(Float(10_000 * NeuralNetwork.scale) * $0 / lengths.reduce(0, +)) }
         let dots = neurons.map { n in n.grid!.cells * n.grid!.cells * n.grid!.slices }
         let dust = dust(8_000 * NeuralNetwork.scale, core: [1.3, 0.9, 0.3])
-        layout.shape = layout.particles(around: dust, perNeuron: zip(outlines, dots).map { $0 + 12 * NeuralNetwork.scale * $1 }) { i, k in
+        layout.shape = layout.particles(
+            around: dust, part: dustPart, perNeuron: zip(outlines, dots).map { $0 + 12 * NeuralNetwork.scale * $1 }
+        ) { i, k in
             let (box, grid) = (neurons[i].box!, neurons[i].grid!)
             guard k >= outlines[i] else { return layout.boxPoint(box, onEdge: true) }
             // Neuron d of the grids: its slice along the depth, its cell in the slice, a little jitter.
@@ -198,14 +207,14 @@ final class NetworkLayout {
         return layout
     }
 
-    /// `others` (parts 0) plus each neuron as a ball of its `perNeuron` particles (or at `point(neuron, k)` from its
-    /// center) and the synapses as lines of the rest, spread by length; in random order, so each particle flies to a
-    /// random point.
+    /// `others` (as `part`) plus each neuron as a ball of its `perNeuron` particles (or at `point(neuron, k)` from its
+    /// center) and the synapses as lines of the rest (part 0), spread by length; in random order, so each particle flies
+    /// to a random point.
     private func particles(
-        around others: [SIMD3<Float>], perNeuron: [Int], point: ((Int, Int) -> SIMD3<Float>)? = nil
+        around others: [SIMD3<Float>], part: Int = 0, perNeuron: [Int], point: ((Int, Int) -> SIMD3<Float>)? = nil
     ) -> ParticleShape {
         var points = others
-        var parts = [Int](repeating: 0, count: points.count)
+        var parts = [Int](repeating: part, count: points.count)
         for (i, neuron) in neurons.enumerated() {
             for k in 0..<perNeuron[i] {
                 points.append(neuron.point + (point?(i, k) ?? randomDirection() * neuronSize))
@@ -226,6 +235,61 @@ final class NetworkLayout {
         let order = points.indices.shuffled()
         return ParticleShape(
             points: order.map { points[$0] }, offsets: Array(repeating: .zero, count: points.count), parts: order.map { parts[$0] })
+    }
+
+    /// The part of the architecture's dust, so the next step can gather it (no neuron has it).
+    private static let dustPart = 1_000_000
+
+    /// `architecture` with its dust gathered into two yellow arrows, into its input (the image) and out of its output
+    /// (the middle Detect block), labelled; every other particle stays where it is.
+    static func inputOutput(of architecture: NetworkLayout) -> NetworkLayout {
+        let n = architecture.neurons
+        let layout = NetworkLayout(
+            title: architecture.title, subtitle: architecture.subtitle, neurons: n, synapses: architecture.synapses,
+            neuronSize: architecture.neuronSize, restingTilt: architecture.restingTilt)
+        (layout.restingTurn, layout.grown, layout.base) = (architecture.restingTurn, architecture.grown, architecture)
+        // Into the image's left face, out of the middle Detect block's right face, both along x.
+        let inTip = n[0].point - [n[0].box!.x + 0.05, 0, 0]
+        let outStart = n[11].point + [n[11].box!.x + 0.05, 0, 0]
+        let arrows: [(tail: SIMD3<Float>, tip: SIMD3<Float>)] = [(inTip - [0.7, 0, 0], inTip), (outStart, outStart + [0.7, 0, 0])]
+        layout.headers = architecture.headers + [
+            ("Input", (arrows[0].tail + arrows[0].tip) / 2 + [0, 0.3, 0], [0]),
+            ("Output", (arrows[1].tail + arrows[1].tip) / 2 + [0, 0.3, 0], [10, 11, 12]),
+        ]
+        layout.outline = architecture.outline + arrows.flatMap { [$0.tail, $0.tip] }
+        guard var shape = architecture.shape else { return layout }
+        let dust = shape.parts.indices.filter { shape.parts[$0] == dustPart }.shuffled()
+        let yellow = SIMD3<Float>(0.8, 0.55, 0.08)  // deep: dense points add up to yellow, not white
+        shape.colors = Array(repeating: nil, count: shape.points.count)
+        for (k, i) in dust.enumerated() {
+            let arrow = arrows[k % 2]
+            shape.points[i] = arrowPoint(from: arrow.tail, to: arrow.tip)
+            shape.colors[i] = yellow
+        }
+        layout.shape = shape
+        return layout
+    }
+
+    /// A random point in an arrow from `tail` to `tip`: a round shaft, then a cone (the head), both filled, a little
+    /// denser on their surface so they read.
+    private static func arrowPoint(from tail: SIMD3<Float>, to tip: SIMD3<Float>) -> SIMD3<Float> {
+        let length = simd_distance(tail, tip)
+        let along = (tip - tail) / length
+        let side = simd_normalize(simd_cross(along, abs(along.z) < 0.9 ? [0, 0, 1] : [0, 1, 0]))
+        let up = simd_cross(along, side)
+        let (shaft, shaftRadius, headRadius): (Float, Float, Float) = (length * 0.72, 0.025, 0.07)
+        let angle = Float.random(in: 0..<(2 * .pi))
+        let surface = Bool.random()
+        var (t, radius): (Float, Float)
+        if Float.random(in: 0...1) < 0.6 {
+            (t, radius) = (.random(in: 0...shaft), shaftRadius)
+        } else {
+            // The cone: more points near its base, where it's wider.
+            let f = 1 - Float.random(in: 0...1).squareRoot()
+            (t, radius) = (shaft + f * (length - shaft), headRadius * (1 - f))
+        }
+        if !surface { radius *= Float.random(in: 0...1).squareRoot() }
+        return tail + along * t + (side * cos(angle) + up * sin(angle)) * radius
     }
 
     /// Faint particles around a layout: even within `core` (half sizes), thinning out gradually beyond it (Gaussian,
@@ -255,6 +319,9 @@ final class NetworkLayout {
 
     /// Where a neuron or block reaches from its center (its radius, or the larger side of its box face), in the shape's
     /// units.
+    /// Whether one of the two is a variant of the other (or they're the same).
+    func isVariant(of other: NetworkLayout) -> Bool { (base ?? self) === (other.base ?? other) }
+
     func reach(_ neuron: Neuron) -> Float { neuron.box.map { max($0.x, $0.y) } ?? neuronSize }
 
     private func randomDirection() -> SIMD3<Float> {
@@ -277,6 +344,8 @@ extension ParticleShape {
         }
         var rest = pools.values.flatMap { $0 }.shuffled()
         let indices = order.map { $0 ?? rest.popLast()! }
-        return ParticleShape(points: indices.map { points[$0] }, offsets: indices.map { offsets[$0] }, parts: indices.map { parts[$0] })
+        return ParticleShape(
+            points: indices.map { points[$0] }, offsets: indices.map { offsets[$0] }, parts: indices.map { parts[$0] },
+            colors: colors.isEmpty ? [] : indices.map { colors[$0] })
     }
 }

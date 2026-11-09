@@ -44,11 +44,11 @@ final class ParticleSystem {
     /// center, in stage points, with their speeds; and the frame it was last advanced to.
     private var shown: (matrix: simd_float3x3, center: SIMD3<Float>, speed: simd_float3x3, centerSpeed: SIMD3<Float>)?
     private var shownTime: TimeInterval?
-    private var shape: (points: [SIMD4<Float>], offsets: [SIMD4<Float>])?
+    private var shape: (points: [SIMD4<Float>], offsets: [SIMD4<Float>], colors: [SIMD4<Float>])?
     private var shapeChanged = false
     private var formStart: TimeInterval?
     private var kick: Float = 0
-    fileprivate var buffers: [any MTLBuffer] = []  // position, velocity, seed, target, offset
+    fileprivate var buffers: [any MTLBuffer] = []  // position, velocity, seed, target, offset, color
 
     init(count: Int = 60_000) { self.count = count }
 
@@ -94,15 +94,22 @@ final class ParticleSystem {
     /// Whether a direction of the shape (e.g. a face's normal) turns toward the viewer.
     func faces(_ direction: SIMD3<Float>) -> Bool { rotation.act(direction).z > 0.05 }
 
-    /// Flies the particles into `shape` (one point per particle), staggered.
-    func form(_ shape: ParticleShape) {
+    /// Flies the particles into `shape` (one point per particle), staggered; without `staggered`, every particle springs
+    /// at once, so those whose point hasn't moved stay still (e.g. a variant of the shape already formed).
+    func form(_ shape: ParticleShape, staggered: Bool = true) {
         precondition(shape.points.count == count && shape.offsets.count == count, "one point per particle")
         let parts = shape.parts.isEmpty ? Array(repeating: 0, count: count) : shape.parts
         precondition(parts.count == count, "one part per point")
-        self.shape = (zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) })
+        // A point's own color has alpha 1; 0 draws it in the system's `color`.
+        let colors = shape.colors.isEmpty ? Array(repeating: nil, count: count) : shape.colors
+        precondition(colors.count == count, "one color per point")
+        self.shape = (
+            zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) },
+            colors.map { $0.map { SIMD4($0, 1) } ?? .zero }
+        )
         shapeChanged = true
-        formStart = nil  // set on the next frame
-        shown = nil  // starts where the shape is
+        formStart = staggered ? nil : -1e6  // nil: set on the next frame; long ago: every particle springs at once
+        if staggered { shown = nil }  // starts where the shape is
         mode = .form
     }
 
@@ -124,14 +131,16 @@ final class ParticleSystem {
             let length = count * MemoryLayout<SIMD4<Float>>.stride
             guard let position = device.makeBuffer(bytes: positions, length: length),
                 let velocity = device.makeBuffer(length: length), let seed = device.makeBuffer(bytes: seeds, length: length),
-                let target = device.makeBuffer(length: length), let offset = device.makeBuffer(length: length)
+                let target = device.makeBuffer(length: length), let offset = device.makeBuffer(length: length),
+                let color = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length)
             else { return false }
-            buffers = [position, velocity, seed, target, offset]
+            buffers = [position, velocity, seed, target, offset, color]
         }
         if shapeChanged, let shape {
             let length = count * MemoryLayout<SIMD4<Float>>.stride
             buffers[3].contents().copyMemory(from: shape.points, byteCount: length)
             buffers[4].contents().copyMemory(from: shape.offsets, byteCount: length)
+            buffers[5].contents().copyMemory(from: shape.colors, byteCount: length)
             shapeChanged = false
         }
         return true
@@ -224,6 +233,7 @@ final class ParticleRenderer {
         for (system, var u) in zip(systems, uniforms) {
             encoder.setVertexBuffer(system.buffers[0], offset: 0, index: 0)
             encoder.setVertexBuffer(system.buffers[1], offset: 0, index: 1)
+            encoder.setVertexBuffer(system.buffers[5], offset: 0, index: 2)
             encoder.setVertexBytes(&u, length: MemoryLayout<ParticleUniforms>.stride, index: 4)
             encoder.setFragmentBytes(&u, length: MemoryLayout<ParticleUniforms>.stride, index: 4)
             encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: system.count)
@@ -308,7 +318,8 @@ final class ParticleRenderer {
 
         vertex Point particleVertex(
             uint id [[vertex_id]], const device float4 *positions [[buffer(0)]],
-            const device float4 *velocities [[buffer(1)]], constant Uniforms &u [[buffer(4)]]
+            const device float4 *velocities [[buffer(1)]], const device float4 *colors [[buffer(2)]],
+            constant Uniforms &u [[buffer(4)]]
         ) {
             float3 p = positions[id].xyz;
             float2 pixel = p.xy * u.shape.w;
@@ -318,7 +329,8 @@ final class ParticleRenderer {
             Point out;
             out.position = float4(pixel / u.view.xy * 2.0 - 1.0, 0.0, 1.0);
             out.size = max(u.shape.z * (1.0 + 0.3 * near), 1.0);
-            out.color = mix(u.color.rgb, float3(1.0), clamp(speed * 0.18, 0.0, 0.75)) * u.color.w * (0.75 + 0.25 * near);
+            float3 base = colors[id].w > 0.5 ? colors[id].rgb : u.color.rgb;  // the point's own color, if any
+            out.color = mix(base, float3(1.0), clamp(speed * 0.18, 0.0, 0.75)) * u.color.w * (0.75 + 0.25 * near);
             return out;
         }
 

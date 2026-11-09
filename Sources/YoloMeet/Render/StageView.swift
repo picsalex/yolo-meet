@@ -98,6 +98,10 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let pointing = Pointing()
     private lazy var gestureDebug = GestureDebugEffect(gestures: gestures)
     private var sceneVersion = -1
+    /// How far the camera image has faded to black (0 shown, 1 hidden), toward `model.cameraHidden`.
+    private var cameraFade: CGFloat = 0
+    /// Seconds to fade the camera image out or in.
+    private static let cameraFadeTime: CGFloat = 0.6
     private var lastTime = CACurrentMediaTime()
     private var frameRate = RateCounter()
 
@@ -150,7 +154,16 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commandBuffer)
         destination.isFlipped = true
         destination.colorSpace = CGColorSpace(name: CGColorSpace.sRGB)
-        _ = try? context.startTask(toRender: placed, from: bounds, to: destination, at: .zero)
+        // Hiding the camera (H) fades it to black, and back, at a steady pace eased at both ends. Core Image blends in
+        // linear light, which the eye sees as a curve (gamma about 2.2): the black's opacity follows that curve so the
+        // image darkens and brightens evenly, the same both ways.
+        let step = CGFloat(dt) / Self.cameraFadeTime
+        cameraFade = model.cameraHidden ? min(cameraFade + step, 1) : max(cameraFade - step, 0)
+        let eased = cameraFade * cameraFade * (3 - 2 * cameraFade)
+        let black = 1 - pow(1 - eased, 2.2)
+        let video = black == 0 ? placed
+            : CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: black)).cropped(to: bounds).composited(over: placed)
+        _ = try? context.startTask(toRender: video, from: bounds, to: destination, at: .zero)
 
         // Effects: rebuild on scene change, then update every frame.
         if model.sceneVersion != sceneVersion { swapEffects() }
@@ -159,6 +172,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
         stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Command held
+        if stageFrame.keys.pressed.contains("h") { model.cameraHidden.toggle() }  // shown from the next frame
+        stageFrame.cameraHidden = model.cameraHidden
         let handGesture = gestures.update(stageFrame)  // every frame, to keep following the hands
         let mouseGesture = mouse.update(time: now)
         stageFrame.gesture = mouseGesture ?? handGesture  // the mouse wins while it acts

@@ -45,6 +45,8 @@ final class AppModel {
             pipeline.setSettings(inference)
         }
     }
+    /// The stage shows black instead of the camera (H on stage); the camera keeps running for the models.
+    var cameraHidden = false
     var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
     /// Debug mode: stats and the recognized hand gesture on the stage.
     var debugMode = UserDefaults.standard.bool(forKey: "debugMode") {

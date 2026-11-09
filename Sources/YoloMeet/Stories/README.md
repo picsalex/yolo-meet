@@ -126,7 +126,8 @@ and wins over the hands' while it acts.
 ## Kit
 
 - `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
-- `ObjectTitle(_:subtitle:)`: an object's title and subtitle beside it; `Callouts([...])`: descriptions with a line to
+- `ObjectTitle(_:subtitle:)`: an object's title and subtitle beside it (`update(above:)` puts them at the stage's top,
+  centered over it, instead); `Callouts([...])`: descriptions with a line to
   points of an object (its parts), in a column on each side. Both follow the object, fade with `visible`, and take the
   object's stage rectangle (`CGRect(enclosing:)`, `Entity.stageBounds`). See `ParticleMorphEffect` (the cube's title,
   its faces described once exploded).
@@ -144,6 +145,9 @@ and wins over the hands' while it acts.
 `Callouts.setText(_:at:)` changes a description (e.g. a value of what's pointed at); `Callouts(_:font:size:line:)`
 sets its look, and `update(…, left:)` puts every label in one column (e.g. beside a whole layout, as `NetworkEffect` does).
 
+H on stage (or the panel's switch) hides the camera image: the stage is black behind the effects, and
+`frame.cameraHidden` tells them (NN explained centers its object meanwhile, then puts it back).
+
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
 
@@ -155,7 +159,10 @@ Its next step lays 23 of those neurons out as a multilayer perceptron (10 → 5 
 architecture: blocks of layers as boxes of particles (a layout's `Neuron.box`, described with `info` when touched),
 each holding its neurons as slices of dot grids (`Neuron.grid`: one slice per channel, one dot per cell), in
 backbone, neck and head columns (`headers`). In action mode a touched block is outlined in gold (2D, over its
-particles), and a touched header turns gold and outlines all its blocks. **Steps that continue each other**
+particles), and a touched header turns gold and outlines all its blocks. The last step gathers the architecture's dust into two yellow
+particle arrows, into its input and out of its output (`NetworkLayout.inputOutput`: the same shape with only those
+particles moved, formed with `form(_:staggered: false)` so the others stay still; a shape can color its own points with
+`ParticleShape.colors`). **Steps that continue each other**
 share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
 step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a
 part of the previous one (a neuron) flies into a chosen part of the new one.

@@ -33,6 +33,23 @@ final class ObjectTitle: SKNode {
         for label in [title, subtitle] { label.horizontalAlignmentMode = right ? .left : .right }
         // Kept on stage: with no room on either side, it moves in over the object's top.
         let target = CGPoint(x: right ? rect.maxX + 24 * u : max(rect.minX - 24 * u, 24 * u + width), y: rect.maxY + 30 * u)
+        place(at: target, visible: visible, frame: frame)
+    }
+
+    /// At the top of the stage, centered over the object (`rect`, stage points), kept on stage.
+    func update(above rect: CGRect, visible: Bool, frame: StageFrame) {
+        let u = frame.stage.unit
+        title.set(\.fontSize, 44 * u)
+        subtitle.set(\.fontSize, 15 * u)
+        for label in [title, subtitle] { label.horizontalAlignmentMode = .center }
+        let (size, half) = (frame.stage.viewSize, max(title.frame.width, subtitle.frame.width) / 2 + 24 * u)
+        let x = min(max(rect.midX, half), size.width - half)
+        place(at: CGPoint(x: x, y: size.height - 30 * u), visible: visible, frame: frame)
+    }
+
+    /// Eases the title (its top) toward `target`, the subtitle under it.
+    private func place(at target: CGPoint, visible: Bool, frame: StageFrame) {
+        let u = frame.stage.unit
         shown = shown?.approaching(target, frame.smoothing) ?? target
         titleNode.position = shown!
         subtitleNode.position = CGPoint(x: shown!.x, y: shown!.y - 52 * u)

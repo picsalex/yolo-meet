@@ -7,7 +7,8 @@ import simd
 /// into a ball that follows the fist; opening the hand forms the layout there, or, on the cloud alone, moves the story to
 /// its next step (`frame.nextStep`), which forms there. Both hands pinching zoom (around the point between them, to look inside) when they move apart or closer, and move it
 /// when they move together; one hand pinching moves it too. A fist on it breaks it again (fists need Command held). Keys:
-/// R turns a slow spin on or off (off at first), Q/D turn and Z/S tilt while held, 0 resets the view.
+/// R turns a slow spin on or off (off at first), Q/D turn and Z/S tilt while held, 0 resets the view. With the camera
+/// hidden (H), it moves to the middle of the stage, and back to its last position with the camera when it shows again.
 ///
 /// Action mode (Space held): the neuron a fingertip touches grows its particles and shows as a neuron, a disc with a
 /// ring and its bias inside, described beside it ("neuron - bias …"); a synapse a fingertip touches lights up with its
@@ -30,6 +31,9 @@ final class NetworkEffect: Effect {
 
     /// Where the cloud or network is, in stage points; nil until the first frame places it where the previous step left it.
     private var home: CGPoint?
+    /// Where it is while the camera is hidden (H): in the middle of the stage at first, moved by the gestures meanwhile;
+    /// dropped when the camera comes back, and `home` (the last position with the camera) takes over again.
+    private var centered: CGPoint?
     private var zoom: CGFloat = 1
     private var shown: (home: CGPoint, zoom: CGFloat)?
     private var base: (home: CGPoint, zoom: CGFloat) = (.zero, 1)
@@ -103,7 +107,10 @@ final class NetworkEffect: Effect {
         let start = CGPoint(x: frame.stage.viewSize.width * 2 / 3, y: frame.stage.viewSize.height / 2)
         // Where the previous step left the particles, back on stage (a zoomed-in center can be off it).
         let stage = CGRect(origin: .zero, size: frame.stage.viewSize).insetBy(dx: 80 * u, dy: 80 * u)
-        var home = self.home ?? network.home.map { CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY)) } ?? start
+        let middle = CGPoint(x: frame.stage.viewSize.width / 2, y: frame.stage.viewSize.height / 2)
+        var home = frame.cameraHidden
+            ? centered ?? middle
+            : self.home ?? network.home.map { CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY)) } ?? start
         let cloud = 220 * u
 
         if formNow, let shape = layout?.shape { form(shape, frame) }
@@ -133,8 +140,12 @@ final class NetworkEffect: Effect {
             }
         }
         turning.update(frame)
-        if frame.keys.pressed.contains("0") { (home, zoom) = (start, 1) }
-        (self.home, network.home) = (home, home)
+        if frame.keys.pressed.contains("0") { (home, zoom) = (frame.cameraHidden ? middle : start, 1) }
+        if frame.cameraHidden {
+            centered = home
+        } else {
+            (self.home, network.home, centered) = (home, home, nil)
+        }
 
         let k = frame.smoothing
         let now: (home: CGPoint, zoom: CGFloat) = shown.map { ($0.home.approaching(home, k), $0.zoom.approaching(zoom, k)) } ?? (home, zoom)
@@ -153,12 +164,12 @@ final class NetworkEffect: Effect {
         labels.alpha = labels.alpha.approaching(lit ? 1 : 0, CGFloat(1 - exp(-frame.dt * (lit ? 3 : 14))))
         labels.isHidden = labels.alpha < 0.01
         guard let layout, !labels.isHidden else {
-            title.update(beside: .zero, visible: false, frame: frame)
+            title.update(above: .zero, visible: false, frame: frame)
             system.highlight = nil
             return
         }
         let bounds = CGRect(enclosing: layout.outline.map { system.shownPoint($0).point })
-        title.update(beside: bounds, visible: now.zoom < 1.6, frame: frame)
+        title.update(above: bounds, visible: true, frame: frame)  // at the top, out of the way: it stays when zoomed in
         for (label, header) in zip(headers, layout.headers) {
             label.label.set(\.fontSize, 24 * u)
             label.label.verticalAlignmentMode = .top
@@ -169,7 +180,10 @@ final class NetworkEffect: Effect {
     }
 
     private func form(_ shape: ParticleShape, _ frame: StageFrame) {
-        system.form(shape)
+        // A variant of the layout already there (some particles moved) forms without restarting the others' flight.
+        let variant = layout.flatMap { layout in network.formed.map { layout.isVariant(of: $0) } } ?? false
+        system.form(shape, staggered: !(variant && system.mode == .form))
+        network.formed = layout
         (formed, formNow) = (frame.time, false)
     }
 

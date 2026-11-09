@@ -9,6 +9,8 @@ nonisolated struct ParticleShape {
     var offsets: [SIMD3<Float>]
     /// The part each point belongs to (e.g. a cube's face), for `ParticleSystem.highlight`; empty: all part 0.
     var parts: [Int] = []
+    /// Each point's color (rgb 0...1), nil for the system's `color`; empty: all the system's.
+    var colors: [SIMD3<Float>?] = []
 }
 
 enum ParticleShapes {

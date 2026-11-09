@@ -1,6 +1,6 @@
 extension Story {
     /// How a neural network works: a cloud of particles becomes a brain, with the neurons and weights inside it, then
-    /// some of them are laid out as a multilayer perceptron, then YOLO's architecture (backbone, neck, head). The steps share one network, so its particles fly from one to the next.
+    /// some of them are laid out as a multilayer perceptron, then YOLO's architecture (backbone, neck, head) and its input and output. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
         let network = NeuralNetwork()
         return Story(
@@ -17,6 +17,12 @@ extension Story {
                 },
                 Step(title: "YOLO architecture", models: ["mediapipe-hand"]) {
                     [NetworkEffect(network, network.architecture), handSkeleton(), titleCard("Backbone, neck, head: hold space and point at a block")]
+                },
+                Step(title: "Input and output", models: ["mediapipe-hand"]) {
+                    [
+                        NetworkEffect(network, network.inputOutput), handSkeleton(),
+                        titleCard("An image in, boxes and classes out"),
+                    ]
                 },
             ])
     }()

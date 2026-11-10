@@ -41,6 +41,10 @@ final class NetworkEffect: Effect {
     private var formed: TimeInterval?
     /// Forms the layout on the first frame it's ready.
     private var formNow = true
+    /// How lit each block of a flow is (0...1), and as last painted.
+    private var glow: [Float] = [], painted: [Float] = []
+    /// Whether the particles are forming the layout's `prelude` (it forms itself when that's done).
+    private var staging = false
     /// Whether the current gesture started on the particles.
     private let grip = Grip()
     private var turning: KeyTurn
@@ -51,6 +55,10 @@ final class NetworkEffect: Effect {
     private let neuronInfo = Callouts([""], font: "Archivo-SemiBold", size: 20, line: NetworkEffect.gold.withAlphaComponent(0.85))
     /// The layout's headers (e.g. under its columns).
     private let headers: [ShadowedLabel]
+    /// The layout's arrows (e.g. into its input).
+    private let arrows: [Arrow]
+    /// Arrows of the previous step that this one no longer has, fading out (with their ends in the layout).
+    private var leaving: [(arrow: Arrow, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
     /// Gold outlines of the touched blocks (a block, or all of a touched header's).
     private let outlines = SKShapeNode()
     /// The touched neuron, drawn as one: a disc with a ring, its bias inside.
@@ -83,6 +91,7 @@ final class NetworkEffect: Effect {
         turning = KeyTurn(
             restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25, spinning: false)
         headers = layout?.headers.map { ShadowedLabel($0.text, font: Theme.titleFont) } ?? []
+        arrows = layout?.arrows.map { Arrow($0.text, color: NetworkEffect.gold) } ?? []
         title = ObjectTitle(layout?.title ?? "", subtitle: layout?.subtitle ?? "")
         super.init()
         particles = network.system
@@ -96,7 +105,7 @@ final class NetworkEffect: Effect {
         outlines.strokeColor = Self.gold
         weight.label.verticalAlignmentMode = .bottom
         weight.alpha = 0
-        for child in [line, focus, outlines, neuronInfo, weight] + headers { labels.addChild(child) }
+        for child in [line, focus, outlines, neuronInfo, weight] + headers + arrows { labels.addChild(child) }
         labels.alpha = 0
         node.addChild(labels)
         node.addChild(title)
@@ -115,8 +124,12 @@ final class NetworkEffect: Effect {
 
         if formNow, let shape = layout?.shape { form(shape, frame) }
         if layout == nil, system.mode == .form { system.scatter(kick: 0.6) }  // back from a layout
+        // A gesture takes hold anywhere on the formed layout as it shows on stage (with a margin), e.g. its picture or
+        // a far block; on the cloud, within its radius.
+        let onLayout = formed != nil && !(layout?.outline.isEmpty ?? true)
+            ? CGRect(enclosing: layout!.outline.map { system.shownPoint($0).point }).insetBy(dx: -40 * u, dy: -40 * u) : nil
         let reach = formed != nil ? 1.2 * Self.size * u * zoom : 1.1 * cloud
-        if let gesture = grip.update(frame, isOn: { home.distance(to: $0) < reach }) {
+        if let gesture = grip.update(frame, isOn: { onLayout?.contains($0) ?? (home.distance(to: $0) < reach) }) {
             if gesture.phase == .began { base = (home, zoom) }
             switch gesture.kind {
             case let .fist(location):
@@ -155,12 +168,39 @@ final class NetworkEffect: Effect {
         system.center = now.home
         system.radius = gathering ? 70 * u : cloud
         system.size = Self.size * u * now.zoom * grip.scale
-        system.rotation = turning.rotation
+        // The view turns smoothly to a new step's (e.g. to show layers side by side) and with the keys.
+        let turn = CGFloat(1 - exp(-frame.dt * 4))
+        let rotation = network.rotation.map { simd_slerp($0, turning.rotation, Float(turn)) } ?? turning.rotation
+        (system.rotation, network.rotation) = (rotation, rotation)
         system.pointSize = 3 * Float(max(now.zoom, 1)).squareRoot()  // so the network still reads, zoomed in
         system.follow(time: frame.time, dt: frame.dt)
 
-        // Labels once the particles have mostly landed; they go at once with a fist.
-        let lit = formed.map { frame.time - $0 > 0.8 } ?? false
+        // Particles flowing through the layout, on the step's timeline.
+        if let flow = layout?.flow, network.formed === layout, system.mode == .form {
+            let (points, colors, inside) = flow.frame(at: Float(frame.stepTime), again: frame.loopCount > 0)
+            system.place(flow.particles, at: points, colors: colors)
+            // Blocks light up gold as the pixels go through them (quickly), and cool down after (slowly).
+            if glow.count != flow.blocks.count { (glow, painted) = (Array(repeating: 0, count: flow.blocks.count), Array(repeating: -1, count: flow.blocks.count)) }
+            let gold = SIMD3<Float>(1, 0.78, 0.22) * 1.4
+            for b in flow.blocks.indices {
+                let target = 1 - exp(-Float(inside[b]) / 120)
+                glow[b] += (target - glow[b]) * Float(1 - exp(-frame.dt * (target > glow[b] ? 10 : 2)))
+                if abs(glow[b] - painted[b]) > 0.01 {
+                    painted[b] = glow[b]
+                    system.paint(flow.blocks[b], color: system.color + (gold - system.color) * glow[b])
+                }
+            }
+        }
+        // A splitting layout's parts come apart once it has formed (and back together for any other), eased.
+        let splitting = formed != nil && layout?.splits == true
+        let pace = Float(frame.dt) / 1.5
+        network.split = splitting ? min(network.split + pace, 1) : max(network.split - 2 * pace, 0)
+        if staging, network.split >= 1, let shape = layout?.shape { form(shape, frame) }  // the prelude done: on to the layout
+        let e = network.split
+        system.explode = e * e * (3 - 2 * e)
+
+        // Labels once the particles have mostly landed (and split); they go at once with a fist.
+        let lit = formed.map { frame.time - $0 > 0.8 && !staging && (!splitting || network.split > 0.9) } ?? false
         labels.alpha = labels.alpha.approaching(lit ? 1 : 0, CGFloat(1 - exp(-frame.dt * (lit ? 3 : 14))))
         labels.isHidden = labels.alpha < 0.01
         guard let layout, !labels.isHidden else {
@@ -170,6 +210,18 @@ final class NetworkEffect: Effect {
         }
         let bounds = CGRect(enclosing: layout.outline.map { system.shownPoint($0).point })
         title.update(above: bounds, visible: true, frame: frame)  // at the top, out of the way: it stays when zoomed in
+        // Arrows new to this step fade in (they start hidden only when continuing the previous step), old ones out.
+        let fading = CGFloat(1 - exp(-frame.dt * 6))
+        for (arrow, ends) in zip(arrows, layout.arrows) {
+            arrow.update(from: system.shownPoint(ends.tail).point, to: system.shownPoint(ends.tip).point, frame: frame)
+            arrow.alpha = arrow.alpha.approaching(1, fading)
+        }
+        for old in leaving {
+            old.arrow.update(from: system.shownPoint(old.tail).point, to: system.shownPoint(old.tip).point, frame: frame)
+            old.arrow.alpha = old.arrow.alpha.approaching(0, fading)
+            if old.arrow.alpha < 0.01 { old.arrow.removeFromParent() }
+        }
+        leaving.removeAll { $0.arrow.parent == nil }
         for (label, header) in zip(headers, layout.headers) {
             label.label.set(\.fontSize, 24 * u)
             label.label.verticalAlignmentMode = .top
@@ -180,11 +232,38 @@ final class NetworkEffect: Effect {
     }
 
     private func form(_ shape: ParticleShape, _ frame: StageFrame) {
-        // A variant of the layout already there (some particles moved) forms without restarting the others' flight.
-        let variant = layout.flatMap { layout in network.formed.map { layout.isVariant(of: $0) } } ?? false
-        system.form(shape, staggered: !(variant && system.mode == .form))
+        let previous = network.formed
+        // From the layout its prelude follows, the prelude first (e.g. some neurons moving out of the brain); the
+        // layout itself forms from it once it's done (`update`).
+        if let prelude = layout?.prelude, let first = prelude.shape, system.mode == .form, previous != nil, previous === prelude.splitsFrom {
+            system.form(first, staggered: false)
+            (network.formed, network.split, staging) = (prelude, 0, true)
+            (formed, formNow) = (frame.time, false)
+            return
+        }
+        staging = false
+        // A variant of the layout already there (some particles moved), or a layout gliding on from it, forms without
+        // restarting the particles' flight.
+        let variant = layout.flatMap { layout in previous.map { layout.isVariant(of: $0) } } ?? false
+        let follows = previous != nil && previous === layout?.splitsFrom
+        system.form(shape, staggered: !((variant || follows) && system.mode == .form))
         network.formed = layout
         (formed, formNow) = (frame.time, false)
+        // A layout that moves on after forming starts from where the one it follows left the particles, else at its end.
+        if let layout, layout.splits { network.split = previous != nil && previous === layout.splitsFrom ? 0 : 1 }
+        if continuing, variant, let layout {
+            // No transition from the same object: its title and labels are already there and stay; only what this
+            // step adds or drops fades (its arrows here).
+            formed = frame.time - 1
+            (labels.alpha, title.alpha) = (1, 1)
+            let before = Set(previous?.arrows.map(\.text) ?? []), now = Set(layout.arrows.map(\.text))
+            for (arrow, ends) in zip(arrows, layout.arrows) where !before.contains(ends.text) { arrow.alpha = 0 }
+            for ends in previous?.arrows ?? [] where !now.contains(ends.text) {
+                let arrow = Arrow(ends.text, color: Self.gold)
+                labels.addChild(arrow)
+                leaving.append((arrow, ends.tail, ends.tip))
+            }
+        }
     }
 
     /// `bounds`: the whole layout on stage.
@@ -239,8 +318,8 @@ final class NetworkEffect: Effect {
             _ = item.update(frame, isOn: pointedNeurons.contains(i) ? { touches(i, $0) } : nil)
         }
         // The neuron grown most (one at a time) grows its particles.
-        let grown = items.indices.max { items[$0].scale < items[$1].scale }!
-        system.highlight = items[grown].scale > 1.001 ? (grown + 1, layout.neurons[grown].point, Float(items[grown].scale)) : nil
+        let grown = items.indices.max { items[$0].scale < items[$1].scale }  // nil: no neurons (e.g. a picture)
+        system.highlight = grown.flatMap { items[$0].scale > 1.001 ? ($0 + 1, layout.neurons[$0].point, Float(items[$0].scale)) : nil }
 
         // The touched neuron as a disc with its bias, popping in as it grows (and out as it shrinks back), at least
         // `focusRadius`; its description on the right, the line ending at the disc's edge. A block shows what it is.

@@ -28,7 +28,13 @@ final class AppModel {
     /// Models drawn in Display mode, in drawing order.
     var displayModels: [String] = [] { didSet { applyScene() } }
     var storyID = Story.all[0].id { didSet { stepIndex = 0 } }
-    var stepIndex = 0 { didSet { applyScene() } }
+    var stepIndex = 0 {
+        didSet {
+            // Between neighbouring steps of the story on stage: the later step's transition, both ways.
+            let neighbours = sceneStory == storyID && abs(stepIndex - oldValue) == 1
+            applyScene(transition: neighbours ? story.steps[max(stepIndex, oldValue)].transition : .fade)
+        }
+    }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
     /// Media runs in Display mode: stories are for the camera.
     var source = Source.camera {
@@ -59,6 +65,10 @@ final class AppModel {
 
     /// Bumped whenever the effects on stage must be rebuilt.
     private(set) var sceneVersion = 0
+    /// How the stage swaps to the new scene.
+    private(set) var transition = Story.Transition.fade
+    /// The story on stage, to tell a step change within it from a new story.
+    private var sceneStory: String?
     /// Models the current scene needs that are not downloaded.
     private(set) var missingModels: [String] = []
     /// Active models still loading or waiting for their first result.
@@ -101,13 +111,17 @@ final class AppModel {
     func next() { if mode == .story, stepIndex < story.steps.count - 1 { stepIndex += 1 } }
     func previous() { if mode == .story, stepIndex > 0 { stepIndex -= 1 } }
 
-    /// Recomputes the active models and asks the stage to rebuild its effects.
-    func applyScene() {
+    /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
+    func applyScene(transition: Story.Transition = .fade) {
+        (self.transition, sceneStory) = (transition, mode == .story ? storyID : nil)
         let models = mode == .display ? displayModels : story.steps[stepIndex].models
         missingModels = models.filter { !isAvailable($0) }
         pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
         sceneVersion += 1
     }
+
+    /// How long the step on stage plays before starting over (`Story.Step.loop`), if it loops.
+    var stepLoop: TimeInterval? { mode == .story ? story.steps[stepIndex].loop : nil }
 
     /// Called by the stage renderer when `sceneVersion` changes.
     func makeEffects() -> [Effect] {

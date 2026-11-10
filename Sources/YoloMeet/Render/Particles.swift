@@ -39,6 +39,8 @@ final class ParticleSystem {
     var color = SIMD3<Float>(0.3, 0.75, 1)
     /// Light per particle: lower it for more particles or brighter colors.
     var brightness: Float = 0.5
+    /// Seconds over which the particles' colors fade from the previous shape's to a new shape's.
+    static let colorFade: TimeInterval = 0.8
 
     /// The shape's placement as the particles show it (`shownPoint`): its rotation and size as one matrix and its
     /// center, in stage points, with their speeds; and the frame it was last advanced to.
@@ -47,8 +49,10 @@ final class ParticleSystem {
     private var shape: (points: [SIMD4<Float>], offsets: [SIMD4<Float>], colors: [SIMD4<Float>])?
     private var shapeChanged = false
     private var formStart: TimeInterval?
+    /// When the colors started fading to the shape's; nil: on the next frame.
+    private var colorStart: TimeInterval?
     private var kick: Float = 0
-    fileprivate var buffers: [any MTLBuffer] = []  // position, velocity, seed, target, offset, color
+    fileprivate var buffers: [any MTLBuffer] = []  // position, velocity, seed, target, offset, color, previous color
 
     init(count: Int = 60_000) { self.count = count }
 
@@ -113,6 +117,35 @@ final class ParticleSystem {
         mode = .form
     }
 
+    /// Moves some particles' points (in the shape's units) and sets their colors at once, without forming again or
+    /// fading the colors: to animate part of the formed shape every frame (e.g. data flowing through it). The others
+    /// keep theirs. The particles spring to their new points as usual.
+    func place(_ indices: [Int], at points: [SIMD3<Float>], colors: [SIMD3<Float>]) {
+        guard shape != nil else { return }
+        let direct = !shapeChanged && buffers.count == 7  // else the next frame copies the shape, these included
+        let targets = direct ? buffers[3].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
+        let now = direct ? buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
+        let before = direct ? buffers[6].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
+        for (k, i) in indices.enumerated() {
+            let point = SIMD4(points[k], shape!.points[i].w), color = SIMD4(colors[k], 1)
+            (shape!.points[i], shape!.colors[i]) = (point, color)
+            if direct { (targets![i], now![i], before![i]) = (point, color, color) }
+        }
+    }
+
+    /// Colors some particles at once (no fade), without forming again: e.g. a part of the formed shape lighting up.
+    func paint(_ indices: [Int], color: SIMD3<Float>) {
+        guard shape != nil else { return }
+        let direct = !shapeChanged && buffers.count == 7
+        let now = direct ? buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
+        let before = direct ? buffers[6].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
+        let color = SIMD4(color, 1)
+        for i in indices {
+            shape!.colors[i] = color
+            if direct { (now![i], before![i]) = (color, color) }
+        }
+    }
+
     /// Breaks the shape back into a cloud, with an outward burst (`kick`, 0 for none).
     func scatter(kick: Float = 1) {
         mode = .cloud
@@ -132,22 +165,27 @@ final class ParticleSystem {
             guard let position = device.makeBuffer(bytes: positions, length: length),
                 let velocity = device.makeBuffer(length: length), let seed = device.makeBuffer(bytes: seeds, length: length),
                 let target = device.makeBuffer(length: length), let offset = device.makeBuffer(length: length),
-                let color = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length)
+                let color = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length),
+                let previous = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length)
             else { return false }
-            buffers = [position, velocity, seed, target, offset, color]
+            buffers = [position, velocity, seed, target, offset, color, previous]
         }
         if shapeChanged, let shape {
             let length = count * MemoryLayout<SIMD4<Float>>.stride
             buffers[3].contents().copyMemory(from: shape.points, byteCount: length)
             buffers[4].contents().copyMemory(from: shape.offsets, byteCount: length)
+            // The colors shown so far fade out as the new ones fade in (from where a fade under way had got to, roughly).
+            buffers[6].contents().copyMemory(from: buffers[5].contents(), byteCount: length)
             buffers[5].contents().copyMemory(from: shape.colors, byteCount: length)
-            shapeChanged = false
+            (shapeChanged, colorStart) = (false, nil)
         }
         return true
     }
 
     fileprivate func uniforms(stage: Stage, time: TimeInterval, dt: TimeInterval) -> ParticleUniforms {
         if mode == .form, formStart == nil { formStart = time }
+        if colorStart == nil { colorStart = time }
+        let colorMix = Float(min(max((time - colorStart!) / Self.colorFade, 0), 1))
         follow(time: time, dt: dt)
         let world = Float(Self.worldUnit * stage.unit)
         let r = simd_matrix3x3(rotation)
@@ -160,7 +198,7 @@ final class ParticleSystem {
             highlight: highlight.map { SIMD4($0.center, $0.scale) } ?? [0, 0, 0, 1],
             color: SIMD4(color, brightness),
             // Rows of the rotation matrix (simd matrices are column-major).
-            rot0: [r[0][0], r[1][0], r[2][0], 0], rot1: [r[0][1], r[1][1], r[2][1], 0], rot2: [r[0][2], r[1][2], r[2][2], 0])
+            rot0: [r[0][0], r[1][0], r[2][0], colorMix], rot1: [r[0][1], r[1][1], r[2][1], 0], rot2: [r[0][2], r[1][2], r[2][2], 0])
     }
 }
 
@@ -180,7 +218,7 @@ struct ParticleUniforms {
     var view: SIMD4<Float>  // stage size (pixels), explode, highlighted part (-1 none)
     var highlight: SIMD4<Float>  // highlighted part's center (shape units), scale
     var color: SIMD4<Float>  // rgb, brightness
-    var rot0, rot1, rot2: SIMD4<Float>  // rotation rows
+    var rot0, rot1, rot2: SIMD4<Float>  // rotation rows; rot0.w: how far the colors have faded to the shape's (0...1)
 }
 
 /// Simulates and draws the effects' particle systems: a compute pass, then one additive point pass over `texture`.
@@ -234,6 +272,7 @@ final class ParticleRenderer {
             encoder.setVertexBuffer(system.buffers[0], offset: 0, index: 0)
             encoder.setVertexBuffer(system.buffers[1], offset: 0, index: 1)
             encoder.setVertexBuffer(system.buffers[5], offset: 0, index: 2)
+            encoder.setVertexBuffer(system.buffers[6], offset: 0, index: 3)
             encoder.setVertexBytes(&u, length: MemoryLayout<ParticleUniforms>.stride, index: 4)
             encoder.setFragmentBytes(&u, length: MemoryLayout<ParticleUniforms>.stride, index: 4)
             encoder.drawPrimitives(type: .point, vertexStart: 0, vertexCount: system.count)
@@ -319,7 +358,7 @@ final class ParticleRenderer {
         vertex Point particleVertex(
             uint id [[vertex_id]], const device float4 *positions [[buffer(0)]],
             const device float4 *velocities [[buffer(1)]], const device float4 *colors [[buffer(2)]],
-            constant Uniforms &u [[buffer(4)]]
+            const device float4 *previousColors [[buffer(3)]], constant Uniforms &u [[buffer(4)]]
         ) {
             float3 p = positions[id].xyz;
             float2 pixel = p.xy * u.shape.w;
@@ -329,8 +368,13 @@ final class ParticleRenderer {
             Point out;
             out.position = float4(pixel / u.view.xy * 2.0 - 1.0, 0.0, 1.0);
             out.size = max(u.shape.z * (1.0 + 0.3 * near), 1.0);
-            float3 base = colors[id].w > 0.5 ? colors[id].rgb : u.color.rgb;  // the point's own color, if any
-            out.color = mix(base, float3(1.0), clamp(speed * 0.18, 0.0, 0.75)) * u.color.w * (0.75 + 0.25 * near);
+            // The point's own color, if any, faded in from its previous one (rot0.w: 0 previous, 1 new).
+            float3 now = colors[id].w > 0.5 ? colors[id].rgb : u.color.rgb;
+            float3 before = previousColors[id].w > 0.5 ? previousColors[id].rgb : u.color.rgb;
+            float3 base = mix(before, now, u.rot0.w);
+            // Fast points run hotter, unless dark: a black point (no light) stays unseen as it moves.
+            float hot = clamp(speed * 0.18, 0.0, 0.75) * clamp(max(base.r, max(base.g, base.b)) * 2.0, 0.0, 1.0);
+            out.color = mix(base, float3(1.0), hot) * u.color.w * (0.75 + 0.25 * near);
             return out;
         }
 

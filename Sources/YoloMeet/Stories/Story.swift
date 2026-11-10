@@ -11,7 +11,20 @@ struct Story: Identifiable {
     struct Step {
         let title: String
         let models: [String]
+        /// How the stage moves between this step and the previous one, both ways.
+        var transition = Transition.fade
+        /// Seconds after which the step starts over, again and again (`StageFrame.stepTime`, `loopCount`): its effects
+        /// play their timeline from the start, fading back in; nil: it plays once.
+        var loop: TimeInterval? = nil
         let effects: () -> [Effect]
+    }
+
+    enum Transition {
+        /// The previous step's 2D content fades out and this one's fades in.
+        case fade
+        /// None, as in a slide deck: the swap is instant, and effects that continue the previous step's
+        /// (`Effect.continuing`) show at once, so only what's new appears (e.g. an arrow added to the same object).
+        case none
     }
 
     static let all: [Story] = [.nnExplained, .test]

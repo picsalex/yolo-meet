@@ -9,6 +9,9 @@ final class ObjectTitle: SKNode {
     private var title: SKLabelNode { titleNode.label }
     private var subtitle: SKLabelNode { subtitleNode.label }
     private var shown: CGPoint?
+    /// The last title shown, with its text, so a step that continues the previous one picks it up.
+    private static var last: (text: String, at: CGPoint)?
+    private var key: String { "\(title.text ?? "")\n\(subtitle.text ?? "")" }
 
     init(_ title: String, subtitle: String = "") {
         titleNode = ShadowedLabel(title, font: Theme.titleFont)
@@ -36,21 +39,31 @@ final class ObjectTitle: SKNode {
         place(at: target, visible: visible, frame: frame)
     }
 
-    /// At the top of the stage, centered over the object (`rect`, stage points), kept on stage.
+    /// At the top of the stage, centered over the object (`rect`, stage points), kept on stage; with the camera hidden (H),
+    /// centered on the stage whatever the object's place.
     func update(above rect: CGRect, visible: Bool, frame: StageFrame) {
         let u = frame.stage.unit
         title.set(\.fontSize, 44 * u)
         subtitle.set(\.fontSize, 15 * u)
         for label in [title, subtitle] { label.horizontalAlignmentMode = .center }
         let (size, half) = (frame.stage.viewSize, max(title.frame.width, subtitle.frame.width) / 2 + 24 * u)
-        let x = min(max(rect.midX, half), size.width - half)
+        let x = frame.cameraHidden ? size.width / 2 : min(max(rect.midX, half), size.width - half)
         place(at: CGPoint(x: x, y: size.height - 30 * u), visible: visible, frame: frame)
     }
 
-    /// Eases the title (its top) toward `target`, the subtitle under it.
+    /// Eases the title (its top) toward `target`, the subtitle under it. It fades in and out in place: hidden, it
+    /// stays where it was, and it shows up again right at its target; when it changes place while showing, it moves.
     private func place(at target: CGPoint, visible: Bool, frame: StageFrame) {
         let u = frame.stage.unit
-        shown = shown?.approaching(target, frame.smoothing) ?? target
+        if visible {
+            // A new title already showing (a step continuing the previous one, with no transition) with the same
+            // text starts where the previous one stood, then eases to its own place.
+            let previous = Self.last.flatMap { $0.text == key ? $0.at : nil }
+            let ease = CGFloat(1 - exp(-frame.dt * 7))  // about half a second, calmer than following a hand
+            shown = alpha < 0.01 ? target : (shown ?? previous)?.approaching(target, ease) ?? target
+            Self.last = (key, shown!)
+        }
+        guard shown != nil else { return }
         titleNode.position = shown!
         subtitleNode.position = CGPoint(x: shown!.x, y: shown!.y - 52 * u)
         for node in [titleNode, subtitleNode] { node.sync(unit: u) }
@@ -112,6 +125,7 @@ final class Callouts: SKNode {
     /// or on the other side when it wouldn't fit on stage there.
     func update(anchors: [CGPoint?], around rect: CGRect, left forced: Bool? = nil, visible: Bool, frame: StageFrame) {
         let u = frame.stage.unit
+        let appearing = alpha < 0.01
         alpha = alpha.approaching(visible ? 1 : 0, fade(frame))
         let margin = 16 * u  // kept from the stage's edges
         let onLeft = items.indices.map { i in
@@ -140,7 +154,10 @@ final class Callouts: SKNode {
             // Kept on stage: a long label that fits on neither side moves in over the object.
             let width = item.label.frame.width
             let x = left ? max(target.x, margin + width) : min(target.x, frame.stage.viewSize.width - margin - width)
-            let shown = items[i].shown?.approaching(CGPoint(x: x, y: target.y), frame.smoothing) ?? CGPoint(x: x, y: target.y)
+            // Fading in, a label starts right at its place rather than sliding there from where it last was.
+            let shown = appearing || item.text.isHidden
+                ? CGPoint(x: x, y: target.y)
+                : items[i].shown?.approaching(CGPoint(x: x, y: target.y), frame.smoothing) ?? CGPoint(x: x, y: target.y)
             items[i].shown = shown
             (item.text.isHidden, item.line.isHidden) = (false, false)
             item.label.horizontalAlignmentMode = left ? .right : .left

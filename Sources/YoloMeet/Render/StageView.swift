@@ -171,6 +171,14 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         var stageFrame = StageFrame(
             outputs: snapshot.outputs, stage: Stage(frameSize: frame.extent.size, viewSize: size), time: now, dt: dt,
             smooth: model.smoothing)
+        // The step's own clock, starting over every `loop` seconds for a looping step.
+        if stepStart == nil { stepStart = now }
+        let elapsed = now - stepStart!
+        if let loop = model.stepLoop, loop > 0 {
+            (stageFrame.stepTime, stageFrame.loopCount) = (elapsed.truncatingRemainder(dividingBy: loop), Int(elapsed / loop))
+        } else {
+            stageFrame.stepTime = elapsed
+        }
         stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Command held
         if stageFrame.keys.pressed.contains("h") { model.cameraHidden.toggle() }  // shown from the next frame
         stageFrame.cameraHidden = model.cameraHidden
@@ -210,17 +218,24 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
     }
 
+    /// When the step on stage started (its first frame), for `StageFrame.stepTime`.
+    private var stepStart: TimeInterval?
+
     private func swapEffects() {
+        let fade = model.transition == .fade  // else none: an instant swap, the new effects continuing the old
         for effect in effects {
-            effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+            if fade { effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()])) } else { effect.node.removeFromParent() }
             reality?.entities.remove(effect.entity)
         }
         effects = model.makeEffects()
-        sceneVersion = model.sceneVersion
+        (sceneVersion, stepStart) = (model.sceneVersion, nil)
         for effect in effects {
-            effect.node.alpha = 0
+            effect.continuing = !fade
             (effect.behind ? backScene : scene).addChild(effect.node)
-            effect.node.run(.fadeIn(withDuration: 0.4))
+            if fade {
+                effect.node.alpha = 0
+                effect.node.run(.fadeIn(withDuration: 0.4))
+            }
             reality?.entities.append(effect.entity)
         }
     }

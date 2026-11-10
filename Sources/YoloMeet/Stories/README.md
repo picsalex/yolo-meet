@@ -148,6 +148,15 @@ sets its look, and `update(…, left:)` puts every label in one column (e.g. bes
 H on stage (or the panel's switch) hides the camera image: the stage is black behind the effects, and
 `frame.cameraHidden` tells them (NN explained centers its object meanwhile, then puts it back).
 
+A step can loop: `Step(…, loop: 7)` starts it over every 7 seconds. Effects read the step's clock from the frame
+(`StageFrame.stepTime`, since the step or its loop started, and `loopCount`, 0 the first time through) and play their
+timeline from it, fading back in when it starts over (`loopCount > 0`).
+
+A step can follow the previous one with no transition, as in a slide deck: `Step(…, transition: .none)`. Moving
+between the two (either way) swaps instantly instead of fading the 2D content out and in, and each new effect has
+`continuing` set: what both steps share (e.g. the title and subtitle) shows at once and stays still, while what the
+step adds or drops still fades in or out (NN explained: the arrows on the same object).
+
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
 
@@ -155,14 +164,28 @@ The `NNExplained` story is the first full scene: a cloud of particles (Cmd + fis
 then a brain (`Brain.shape`) holding a network of 300
 neurons (balls of particles, each its own part) and their synapses (lines of particles); in action mode, the touched
 neuron shows as a disc with its bias and the touched synapse with its weight, kept on the particles with `shownPoint`.
-Its next step lays 23 of those neurons out as a multilayer perceptron (10 → 5 → 8), and the last one shows YOLO's
+Its next step lays 23 of those neurons out as a multilayer perceptron (10 → 5 → 8): first only those neurons glide out of the brain to their place (a layout's `prelude`, formed first when coming from the layout it `splitsFrom`), then the rest of the brain glides on into the connections; and the last one shows YOLO's
 architecture: blocks of layers as boxes of particles (a layout's `Neuron.box`, described with `info` when touched),
 each holding its neurons as slices of dot grids (`Neuron.grid`: one slice per channel, one dot per cell), in
 backbone, neck and head columns (`headers`). In action mode a touched block is outlined in gold (2D, over its
-particles), and a touched header turns gold and outlines all its blocks. The last step gathers the architecture's dust into two yellow
-particle arrows, into its input and out of its output (`NetworkLayout.inputOutput`: the same shape with only those
-particles moved, formed with `form(_:staggered: false)` so the others stay still; a shape can color its own points with
-`ParticleShape.colors`). **Steps that continue each other**
+particles), and a touched header turns gold and outlines all its blocks. Then drawn arrows (`Arrow`, a layout's `arrows`) go into the
+model's input and out of its output, and the last step gathers the architecture's dust into a colored picture of a cat
+at the input (`NetworkLayout.picture`: the same shape with only those particles moved, formed with
+`form(_:staggered: false)` so the others stay still; a shape colors its own points with `ParticleShape.colors`). Zoomed in, all the particles become that picture's
+pixels (`pixels`: 32 × 32 solid squares, every particle gliding there from where the previous step left it, so the
+picture grows instead of forming anew), which then split into red, green and blue layers back to back (`channels`:
+each pixel's particles a third per channel, adding up to its color from the front; a layout that `splits` starts where
+the one it follows (`splitsFrom`) left the particles and moves on through `ParticleSystem.explode` and the shape's `offsets`, eased, while the view turns to
+its resting angle: the view always turns smoothly from the previous step's). Then only one layer stays, gray
+(`grayscale`: the red layer turns gray in place, the green and blue ones fade to black, which adds no light), and it
+fans out into five multispectral bands (`multispectral`: blue, green, red, red edge, near-infrared). Particles' colors
+always fade from the previous shape's to the new one's (`ParticleSystem.colorFade`). Back at the picture, the last
+step loops (`loop: 7`): its pixels flow through the model as pulses of gold light, from the input arrow down the
+backbone, through the neck to a Detect block of the head (`NetworkLayout.flow`: a random path of the blocks'
+connections per pixel), while the architecture stands still, its blocks lighting up gold as the pixels go through them
+(`ParticleSystem.paint(_:color:)`, from how many are in each block); before, the bands merge back into the RGB pixels
+and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude); `ParticleSystem.place(_:at:colors:)` moves and colors
+some particles every frame without forming again, and black particles stay unseen as they move. **Steps that continue each other**
 share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
 step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a
 part of the previous one (a neuron) flies into a chosen part of the new one.

@@ -57,6 +57,10 @@ struct StageFrame {
     /// Moves the story to its next step, as the clicker's → does (e.g. when a gesture completes this one); nothing
     /// outside a story or on its last step.
     var nextStep: () -> Void = {}
+    /// Seconds since the step started, or since its loop last started over (`Story.Step.loop`).
+    var stepTime: TimeInterval = 0
+    /// How many times a looping step has started over (0 the first time through).
+    var loopCount = 0
 
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
@@ -138,6 +142,9 @@ class Effect {
     /// Draws `node` just over the video, under the 3D layer and the particles, instead of on top of them (e.g. hand
     /// skeletons that objects should hide). Set it before the stage shows the effect (in `init`).
     var behind = false
+    /// Set by the stage when its step follows the previous one with no transition (`Story.Transition.none`): the
+    /// effect shows its content at once instead of fading or animating it in (it continues what was there).
+    var continuing = false
     func update(_ frame: StageFrame) {}
 }
 

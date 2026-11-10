@@ -154,7 +154,8 @@ timeline from it, fading back in when it starts over (`loopCount > 0`).
 
 A step can follow the previous one with no transition, as in a slide deck: `Step(…, transition: .none)`. Moving
 between the two (either way) swaps instantly instead of fading the 2D content out and in, and each new effect has
-`continuing` set: what both steps share (e.g. the title and subtitle) shows at once and stays still, while what the
+`continuing` set: what both steps share (e.g. the title and subtitle) shows at once and stays still (a title that changes cross-fades in
+place), while what the
 step adds or drops still fades in or out (NN explained: the arrows on the same object).
 
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes

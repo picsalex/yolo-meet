@@ -90,6 +90,8 @@ final class NetworkLayout {
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name
     /// (outlined when a header is touched in action mode).
     private(set) var headers: [(text: String, point: SIMD3<Float>, members: [Int])] = []
+    /// Measurements along the layout's sides (`Dimension`: its size, from, to), e.g. a picture's width and height.
+    private(set) var dimensions: [(text: String, from: SIMD3<Float>, to: SIMD3<Float>)] = []
     /// Drawn arrows, labelled, between points of the layout (e.g. into its input).
     private(set) var arrows: [(text: String, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
     /// Whether its particles move on after it forms, eased (`ParticleShape.offsets`, `ParticleSystem.explode`), when
@@ -101,6 +103,18 @@ final class NetworkLayout {
     /// A layout formed first when coming from the one it `splitsFrom`, this one then gliding on from it: e.g. the
     /// perceptron's neurons leaving the brain before the rest of the brain becomes its connections.
     private(set) var prelude: NetworkLayout?
+    /// `shape` once it has fully moved on (`splits`): each point where its offset takes it, no offsets left, so a
+    /// part grown around its center (`ParticleSystem.highlight`) grows where it is.
+    var settled: ParticleShape? {
+        if settledShape == nil, let shape {
+            var settled = shape
+            settled.points = zip(shape.points, shape.offsets).map { $0 + $1 }
+            settled.offsets = Array(repeating: .zero, count: shape.points.count)
+            settledShape = settled
+        }
+        return settledShape
+    }
+    private var settledShape: ParticleShape?
     /// Particles moving through the layout over time, animated by the effect every frame; nil: it stands still.
     private(set) var flow: Flow?
     /// The particles' points; nil until ready (the brain's surface is built in the background).
@@ -348,6 +362,9 @@ final class NetworkLayout {
             neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
         (layout.base, layout.splits, layout.splitsFrom) = (picture.base ?? picture, true, picture)
         layout.outline = [[-side / 2, -side / 2, 0], [side / 2, side / 2, 0], [-side / 2, side / 2, 0], [side / 2, -side / 2, 0]]
+        // Its width under it, its height on its left.
+        let (h, g) = (side / 2, Float(0.08))
+        layout.dimensions = [("\(cells) px", [-h, -h - g, 0], [h, -h - g, 0]), ("\(cells) px", [-h - g, h, 0], [-h - g, -h, 0])]
         guard let previous = picture.shape else { return layout }
         let n = previous.points.count
         let (lo, hi) = (picture.outline[picture.outline.count - 2], picture.outline[picture.outline.count - 1])
@@ -489,7 +506,7 @@ final class NetworkLayout {
     /// along the input arrow, then through the blocks along a random path of their connections, from the backbone to
     /// a Detect block of the head and out of it. They leave in pulses, the column nearest the arrow first.
     static func flow(of picture: NetworkLayout, through architecture: NetworkLayout) -> NetworkLayout {
-        let layout = variant(of: picture)
+        let layout = variant(of: picture, title: "Inference", subtitle: "also called prediction or forward propagation")
         (layout.arrows, layout.outline, layout.shape) = (picture.arrows, picture.outline, picture.shape)
         guard let shape = picture.shape else { return layout }
         let blocks = architecture.neurons
@@ -601,10 +618,10 @@ final class NetworkLayout {
         }
     }
 
-    /// A new layout with `base`'s blocks, synapses, title, view and headers (its particles to set).
-    private static func variant(of base: NetworkLayout) -> NetworkLayout {
+    /// A new layout with `base`'s blocks, synapses, title (or its own), view and headers (its particles to set).
+    private static func variant(of base: NetworkLayout, title: String? = nil, subtitle: String? = nil) -> NetworkLayout {
         let layout = NetworkLayout(
-            title: base.title, subtitle: base.subtitle, neurons: base.neurons, synapses: base.synapses,
+            title: title ?? base.title, subtitle: subtitle ?? base.subtitle, neurons: base.neurons, synapses: base.synapses,
             neuronSize: base.neuronSize, restingTilt: base.restingTilt)
         (layout.restingTurn, layout.grown, layout.base, layout.headers) = (base.restingTurn, base.grown, base.base ?? base, base.headers)
         return layout

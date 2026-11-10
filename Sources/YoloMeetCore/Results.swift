@@ -103,6 +103,8 @@ public nonisolated struct ModelOutput: Sendable {
     public var detections: [Detection] = []
     /// Full-frame overlay: instance masks (segment), class map (semantic) or colormap (depth).
     public var overlay: CGImage?
+    /// Normalized depth (depth), to color with other colors than `overlay`'s.
+    public var depth: DepthSteps?
     /// Top-5 `(classIndex, probability)` for classify.
     public var topClasses: [(index: Int, confidence: Float)] = []
     /// Model run time in seconds, preprocessing and decoding included.
@@ -150,5 +152,22 @@ public nonisolated extension [ModelOutput] {
             return moved
         }
         return output
+    }
+}
+
+/// A depth map as gradient steps per pixel, row by row: 0 for the farthest, 255 for the nearest.
+public nonisolated struct DepthSteps: Sendable {
+    public let width: Int
+    public let height: Int
+    public let values: [UInt8]
+
+    /// The map in `gradient` (256 colors, far to near).
+    public func image(_ gradient: [(UInt8, UInt8, UInt8)]) -> CGImage? {
+        var rgba = [UInt8](repeating: 255, count: width * height * 4)
+        for (i, step) in values.enumerated() {
+            let (r, g, b) = gradient[Int(step)]
+            (rgba[i * 4], rgba[i * 4 + 1], rgba[i * 4 + 2]) = (r, g, b)
+        }
+        return makeImage(rgba: rgba, width: width, height: height)
     }
 }

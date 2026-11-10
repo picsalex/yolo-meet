@@ -1,3 +1,5 @@
+import YoloMeetCore
+
 extension Story {
     /// How a neural network works: a cloud of particles becomes a brain, with the neurons and weights inside it, then
     /// some of them are laid out as a multilayer perceptron, then YOLO's architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, their red, green and blue channels, and the same picture in grayscale (one channel) or multispectral (five). The steps share one network, so its particles fly from one to the next.
@@ -45,6 +47,32 @@ extension Story {
                 Step(title: "Inference", models: ["mediapipe-hand"], transition: .none, loop: 7) {
                     [NetworkEffect(network, network.inference), handSkeleton(), titleCard("The pixels flow through backbone, neck and head")]
                 },
-            ])
+            ] + taskSteps(network))
     }()
+
+    /// Each YOLO task's output: drawn on the cat picture, then live from YOLO26n on the camera.
+    private static func taskSteps(_ network: NeuralNetwork) -> [Step] {
+        let t = network.tasks
+        let tasks: [(name: String, layout: NetworkLayout, output: TaskOutputEffect.Output, caption: String, model: String, live: () -> [Effect])] = [
+            ("Detect", t.detect, .box, "Detection: where each object is, what it is, how sure", "yolo26n", { [BoxesEffect(model: "yolo26n", color: Theme.ultralyticsYellow)] }),
+            ("Segment", t.segment, .mask, "Segmentation: each object's exact pixels", "yolo26n-seg",
+             { [OverlayEffect(model: "yolo26n-seg"), BoxesEffect(model: "yolo26n-seg", color: Theme.ultralyticsYellow)] }),
+            ("Semantic", t.semantic, .semantic, "Semantic segmentation: a class for every pixel", "yolo26n-sem",
+             { [OverlayEffect(model: "yolo26n-sem")] }),
+            ("Classify", t.classify, .classes, "Classification: what the whole image is", "yolo26n-cls", { [ClassifyEffect(model: "yolo26n-cls")] }),
+            ("Pose", t.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose", { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose", color: Theme.ultralyticsYellow)] }),
+            ("OBB", t.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb", { [OrientedBoxesEffect(model: "yolo26n-obb", color: Theme.ultralyticsYellow)] }),
+            ("Depth", t.depth, .depth, "Depth: how far every pixel is", "yolo26n-depth", { [OverlayEffect(model: "yolo26n-depth", alpha: 0.7, depthColors: Palette.infernoGradient)] }),
+        ]
+        return tasks.flatMap { task in
+            [
+                Step(title: task.name, models: ["mediapipe-hand"]) {
+                    [NetworkEffect(network, task.layout), TaskOutputEffect(network, task.layout, task.output), handSkeleton(), titleCard(task.caption)]
+                },
+                Step(title: "\(task.name) · live", models: [task.model, "mediapipe-hand"], showsCamera: true) {
+                    task.live() + [handSkeleton(), titleCard("Live: \(task.model) on the camera")]
+                },
+            ]
+        }
+    }
 }

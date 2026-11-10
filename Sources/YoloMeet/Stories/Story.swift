@@ -16,6 +16,9 @@ struct Story: Identifiable {
         /// Seconds after which the step starts over, again and again (`StageFrame.stepTime`, `loopCount`): its effects
         /// play their timeline from the start, fading back in; nil: it plays once.
         var loop: TimeInterval? = nil
+        /// A live demo on the camera: shown even when the camera is hidden (H), which comes back on the next step
+        /// that doesn't show it.
+        var showsCamera = false
         let effects: () -> [Effect]
     }
 

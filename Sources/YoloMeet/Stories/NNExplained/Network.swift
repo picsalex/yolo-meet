@@ -37,6 +37,9 @@ final class NeuralNetwork {
     let pictureAgain: NetworkLayout
     /// The same, its pixels flowing through the model as pulses of light (`NetworkLayout.flow`), over and over.
     let inference: NetworkLayout
+    /// The inference's output on its input: a large picture, then each task's output on it.
+    let results: NetworkLayout
+    let tasks: TaskLayouts
     /// The rotation the particles last showed, so the next step's view turns from it instead of jumping.
     var rotation: simd_quatf?
 
@@ -53,6 +56,8 @@ final class NeuralNetwork {
         multispectral = .multispectral(of: pixels, after: grayscale)
         pictureAgain = .returning(to: picture, from: multispectral, through: pixels)
         inference = .flow(of: picture, through: architecture)
+        results = .results(after: inference, picture: picture)
+        tasks = NetworkLayout.tasks(results)
     }
 }
 
@@ -84,7 +89,7 @@ final class NetworkLayout {
     let neuronSize: Float
     /// Tilt toward the viewer and turn at rest (`KeyTurn`).
     let restingTilt: Float
-    private(set) var restingTurn: Float = 0
+    var restingTurn: Float = 0
     /// How much a touched neuron or block grows.
     private(set) var grown: CGFloat = 1.8
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name
@@ -93,13 +98,13 @@ final class NetworkLayout {
     /// Measurements along the layout's sides (`Dimension`: its size, from, to), e.g. a picture's width and height.
     private(set) var dimensions: [(text: String, from: SIMD3<Float>, to: SIMD3<Float>)] = []
     /// Drawn arrows, labelled, between points of the layout (e.g. into its input).
-    private(set) var arrows: [(text: String, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
+    var arrows: [(text: String, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
     /// Whether its particles move on after it forms, eased (`ParticleShape.offsets`, `ParticleSystem.explode`), when
     /// it follows `splitsFrom`: they start where that layout has them and glide to their place, e.g. a picture
     /// growing or coming apart in layers. From any other layout they go straight to their place. Its headers and
     /// outline are where they end up.
-    private(set) var splits = false
-    private(set) weak var splitsFrom: NetworkLayout?
+    var splits = false
+    weak var splitsFrom: NetworkLayout?
     /// A layout formed first when coming from the one it `splitsFrom`, this one then gliding on from it: e.g. the
     /// perceptron's neurons leaving the brain before the rest of the brain becomes its connections.
     private(set) var prelude: NetworkLayout?
@@ -118,15 +123,15 @@ final class NetworkLayout {
     /// Particles moving through the layout over time, animated by the effect every frame; nil: it stands still.
     private(set) var flow: Flow?
     /// The particles' points; nil until ready (the brain's surface is built in the background).
-    private(set) var shape: ParticleShape?
+    var shape: ParticleShape?
     /// Some points around the layout, to place its title.
-    private(set) var outline: [SIMD3<Float>] = []
+    var outline: [SIMD3<Float>] = []
     /// The layout this one is a variant of (same blocks, some particles moved), if any.
-    private(set) weak var base: NetworkLayout?
+    weak var base: NetworkLayout?
     /// Done once `shape` is set.
     private var ready: Task<Void, Never>?
 
-    private init(title: String, subtitle: String, neurons: [Neuron], synapses: [Synapse], neuronSize: Float, restingTilt: Float) {
+    init(title: String, subtitle: String, neurons: [Neuron], synapses: [Synapse], neuronSize: Float, restingTilt: Float) {
         (self.title, self.subtitle, self.neurons, self.synapses) = (title, subtitle, neurons, synapses)
         (self.neuronSize, self.restingTilt) = (neuronSize, restingTilt)
     }
@@ -306,7 +311,7 @@ final class NetworkLayout {
     }
 
     /// The part of the architecture's dust, so the next step can gather it (no neuron has it).
-    private static let dustPart = 1_000_000
+    static let dustPart = 1_000_000
 
     /// `architecture` with two drawn arrows, into its input (the image) and out of its output (the middle Detect block);
     /// its particles are the same.
@@ -619,7 +624,7 @@ final class NetworkLayout {
     }
 
     /// A new layout with `base`'s blocks, synapses, title (or its own), view and headers (its particles to set).
-    private static func variant(of base: NetworkLayout, title: String? = nil, subtitle: String? = nil) -> NetworkLayout {
+    static func variant(of base: NetworkLayout, title: String? = nil, subtitle: String? = nil) -> NetworkLayout {
         let layout = NetworkLayout(
             title: title ?? base.title, subtitle: subtitle ?? base.subtitle, neurons: base.neurons, synapses: base.synapses,
             neuronSize: base.neuronSize, restingTilt: base.restingTilt)
@@ -628,39 +633,65 @@ final class NetworkLayout {
     }
 
     /// A cat's face on a sky over grass, `size` pixels square, row by row from the top (rgb 0...1).
-    private static func catPicture(_ size: Int) -> [SIMD3<Float>] {
+    static func catPicture(_ size: Int) -> [SIMD3<Float>] { catDrawing(size) }
+
+    /// What each pixel of the cat picture shows (`size` square, row by row from the top), as `Scene` raw values.
+    static func catClasses(_ size: Int, tilt: CGFloat = 0) -> [Int] {
+        catDrawing(size, classes: true, tilt: tilt).map { Int(($0.x * 255 / 60).rounded()) }
+    }
+
+    /// The parts of the cat picture, for its class map.
+    enum Scene: Int { case sky, sun, grass, cat }
+
+    /// The cat's center on the 100 × 100 canvas, which it tilts around.
+    static let catCenter = CGPoint(x: 50, y: 45)
+
+    /// The cat picture (rgb 0...1), or its class map (`classes`: each part a flat red of 60 × its `Scene`, no
+    /// antialiasing, no whiskers), the cat tilted by `tilt` radians (counterclockwise) around `catCenter`.
+    static func catDrawing(_ size: Int, classes: Bool = false, tilt: CGFloat = 0) -> [SIMD3<Float>] {
         let context = CGContext(
             data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setShouldAntialias(!classes)
         context.scaleBy(x: CGFloat(size) / 100, y: CGFloat(size) / 100)  // drawn on a 100 × 100 canvas, y up
-        func fill(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ path: () -> Void) {
-            context.setFillColor(red: r, green: g, blue: b, alpha: 1)
+        func fill(_ part: Scene, _ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ path: () -> Void) {
+            if classes {
+                context.setFillColor(red: CGFloat(part.rawValue * 60) / 255, green: 0, blue: 0, alpha: 1)
+            } else {
+                context.setFillColor(red: r, green: g, blue: b, alpha: 1)
+            }
             path()
             context.fillPath()
         }
-        fill(0.45, 0.75, 1) { context.addRect(CGRect(x: 0, y: 0, width: 100, height: 100)) }  // sky
-        fill(1, 0.9, 0.35) { context.addEllipse(in: CGRect(x: 76, y: 76, width: 16, height: 16)) }  // sun
-        fill(0.3, 0.8, 0.3) { context.addRect(CGRect(x: 0, y: 0, width: 100, height: 22)) }  // grass
+        fill(.sky, 0.45, 0.75, 1) { context.addRect(CGRect(x: 0, y: 0, width: 100, height: 100)) }
+        fill(.sun, 1, 0.9, 0.35) { context.addEllipse(in: CGRect(x: 76, y: 76, width: 16, height: 16)) }
+        fill(.grass, 0.3, 0.8, 0.3) { context.addRect(CGRect(x: 0, y: 0, width: 100, height: 22)) }
+        // The cat, tilted around its center.
+        context.translateBy(x: catCenter.x, y: catCenter.y)
+        context.rotate(by: tilt)
+        context.translateBy(x: -catCenter.x, y: -catCenter.y)
         // Ears, then the head over them.
         for (x, flip) in [(28.0, 1.0), (72.0, -1.0)] {
-            fill(1, 0.55, 0.15) { context.addLines(between: [CGPoint(x: x - 12 * flip, y: 62), CGPoint(x: x - 4 * flip, y: 88), CGPoint(x: x + 12 * flip, y: 66)]) }
-            fill(1, 0.6, 0.7) { context.addLines(between: [CGPoint(x: x - 7 * flip, y: 64), CGPoint(x: x - 3 * flip, y: 80), CGPoint(x: x + 6 * flip, y: 66)]) }
+            fill(.cat, 1, 0.55, 0.15) { context.addLines(between: [CGPoint(x: x - 12 * flip, y: 62), CGPoint(x: x - 4 * flip, y: 88), CGPoint(x: x + 12 * flip, y: 66)]) }
+            fill(.cat, 1, 0.6, 0.7) { context.addLines(between: [CGPoint(x: x - 7 * flip, y: 64), CGPoint(x: x - 3 * flip, y: 80), CGPoint(x: x + 6 * flip, y: 66)]) }
         }
-        fill(1, 0.55, 0.15) { context.addEllipse(in: CGRect(x: 20, y: 14, width: 60, height: 56)) }  // head
-        fill(1, 0.85, 0.6) { context.addEllipse(in: CGRect(x: 36, y: 16, width: 28, height: 24)) }  // muzzle
+        fill(.cat, 1, 0.55, 0.15) { context.addEllipse(in: CGRect(x: 20, y: 14, width: 60, height: 56)) }  // head
+        fill(.cat, 1, 0.85, 0.6) { context.addEllipse(in: CGRect(x: 36, y: 16, width: 28, height: 24)) }  // muzzle
         for x in [33.0, 55.0] {
-            fill(0.4, 1, 0.35) { context.addEllipse(in: CGRect(x: x, y: 42, width: 12, height: 13)) }  // eyes
-            fill(0, 0, 0) { context.addEllipse(in: CGRect(x: x + 4.5, y: 43, width: 3, height: 11)) }  // pupils
+            fill(.cat, 0.4, 1, 0.35) { context.addEllipse(in: CGRect(x: x, y: 42, width: 12, height: 13)) }  // eyes
+            fill(.cat, 0, 0, 0) { context.addEllipse(in: CGRect(x: x + 4.5, y: 43, width: 3, height: 11)) }  // pupils
         }
-        fill(1, 0.45, 0.6) { context.addLines(between: [CGPoint(x: 45, y: 36), CGPoint(x: 55, y: 36), CGPoint(x: 50, y: 30)]) }  // nose
-        // Whiskers.
-        context.setStrokeColor(red: 1, green: 1, blue: 1, alpha: 1)
-        context.setLineWidth(1.2)
-        for (side, y) in [(-1.0, 30.0), (-1.0, 26.0), (1.0, 30.0), (1.0, 26.0)] {
-            context.move(to: CGPoint(x: 50 + side * 10, y: 29))
-            context.addLine(to: CGPoint(x: 50 + side * 34, y: y + (y - 28) * 2))
+        fill(.cat, 1, 0.45, 0.6) { context.addLines(between: [CGPoint(x: 45, y: 36), CGPoint(x: 55, y: 36), CGPoint(x: 50, y: 30)]) }  // nose
+        if !classes {
+            // Whiskers.
+            context.setStrokeColor(red: 1, green: 1, blue: 1, alpha: 1)
+            context.setLineWidth(1.2)
+            for (side, y) in [(-1.0, 30.0), (-1.0, 26.0), (1.0, 30.0), (1.0, 26.0)] {
+                context.move(to: CGPoint(x: 50 + side * 10, y: 29))
+                context.addLine(to: CGPoint(x: 50 + side * 34, y: y + (y - 28) * 2))
+            }
+            context.strokePath()
         }
-        context.strokePath()
         let bytes = context.data!.assumingMemoryBound(to: UInt8.self)
         return (0..<size * size).map { i in
             SIMD3(Float(bytes[i * 4]), Float(bytes[i * 4 + 1]), Float(bytes[i * 4 + 2])) / 255

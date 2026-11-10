@@ -37,26 +37,24 @@ struct ControlPanel: View {
                 Section("Background") { LibraryStrip(library: model.backgrounds, types: [.image], none: true) }
             }
 
-            if model.source == .camera {
-                Section {
-                    Picker("Mode", selection: $model.mode) {
-                        ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    switch model.mode {
-                    case .display:
-                        Text(model.store.downloaded.isEmpty
-                            ? "Download a model below to start."
-                            : "Click a downloaded model below to show or hide it on stage.")
-                            .foregroundStyle(.secondary)
-                    case .story: storyControls
-                    }
-                    if !model.missingModels.isEmpty {
-                        HStack {
-                            Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
-                            Spacer()
-                            Button("Download") { model.downloadMissing() }
-                        }
+            Section {
+                Picker("Mode", selection: $model.mode) {
+                    ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+                switch model.mode {
+                case .display:
+                    Text(model.store.downloaded.isEmpty
+                        ? "Download a model below to start."
+                        : "Click a downloaded model below to show or hide it on stage.")
+                        .foregroundStyle(.secondary)
+                case .story: storyControls
+                }
+                if !model.missingModels.isEmpty {
+                    HStack {
+                        Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
+                        Spacer()
+                        Button("Download") { model.downloadMissing() }
                     }
                 }
             }
@@ -79,7 +77,7 @@ struct ControlPanel: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: model.store.downloaded) { model.applyScene() }
+        .onChange(of: model.store.downloaded) { model.modelsChanged() }
     }
 
     @ViewBuilder private var storyControls: some View {

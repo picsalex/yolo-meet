@@ -185,7 +185,12 @@ step loops (`loop: 7`): its pixels flow through the model as pulses of gold ligh
 backbone, through the neck to a Detect block of the head (`NetworkLayout.flow`: a random path of the blocks'
 connections per pixel), while the architecture stands still, its blocks lighting up gold as the pixels go through them
 (`ParticleSystem.paint(_:color:)`, from how many are in each block); before, the bands merge back into the RGB pixels
-and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude); `ParticleSystem.place(_:at:colors:)` moves and colors
+and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude); Then each YOLO task gets two
+steps (`Tasks.swift`): its output on the cat picture (the particles glide into one large picture, recolored per task:
+the cat's mask, class colors, an inferno depth map in relief; `TaskOutputEffect` draws the box, polygon, legend, top
+classes, keypoints or oriented box over it), then the real YOLO26n model of that task on the camera, with the app's
+live overlays (`BoxesEffect`, `OverlayEffect`, `ClassifyEffect`, `PoseEffect`, `OrientedBoxesEffect`); only this story
+turns every box Ultralytics yellow (their `color:`) and the depth map inferno (`OverlayEffect(depthColors:)`). `ParticleSystem.place(_:at:colors:)` moves and colors
 some particles every frame without forming again, and black particles stay unseen as they move. **Steps that continue each other**
 share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
 step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a

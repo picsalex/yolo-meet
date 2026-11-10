@@ -21,11 +21,20 @@ struct Theme {
     /// Skeleton line width and joint radius at 720 px of stage height.
     var limbWidth: CGFloat = 4
     var jointRadius: CGFloat = 4.5
+    /// Label text size at 720 px of stage height.
+    var labelSize: CGFloat = 15
+    /// Confidences as decimals ("cat 0.94", as Ultralytics' annotator writes them), else percents ("cat 94%").
+    var decimalConfidence = false
+
+    /// A box's label: its class and confidence.
+    func label(_ name: String, _ confidence: Float) -> String {
+        decimalConfidence ? "\(name) \(String(format: "%.2f", confidence))" : "\(name) \(Int(confidence * 100))%"
+    }
 
     static let ultralytics = Theme(
         classes: Palette.ultralytics.map { NSColor($0) }, labelFont: "ArialMT", lineWidth: 3, darkText: .hex("111F68"),
         leftLimb: .hex("00FFFF"), rightLimb: .hex("FF64DA"), centerLimb: .hex("ACF9FF"),
-        joint: .hex("E1FF25"), jointOutline: .hex("111F68"))
+        joint: .hex("E1FF25"), jointOutline: .hex("111F68"), labelSize: 20, decimalConfidence: true)
 
     static let roboflow = Theme(
         classes: Palette.roboflow.map { NSColor($0) }, labelFont: "GeistMono-Medium", lineWidth: 2, darkText: .hex("161026"),
@@ -58,6 +67,8 @@ struct Theme {
     }
 
     func color(_ classIndex: Int) -> NSColor { classes[abs(classIndex) % classes.count] }
+    /// Ultralytics yellow, the NN explained story's color for every box.
+    static let ultralyticsYellow = NSColor.hex("E1FF25")
 
     /// White text, or the brand's dark text when the chip is light.
     func textColor(on chip: NSColor) -> NSColor {

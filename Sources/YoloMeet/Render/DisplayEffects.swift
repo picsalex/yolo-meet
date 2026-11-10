@@ -20,15 +20,17 @@ final class BoxesEffect: Effect {
     let model: String
     let filter: (Detection, ModelOutput) -> Bool
     let label: (Detection, ModelOutput) -> String
+    /// Every box's color, whatever its class; nil: by class.
+    let color: NSColor?
     private lazy var tracks = TrackedNodes(in: node) { BoxNode() }
 
     init(
         model: String, filter: @escaping (Detection, ModelOutput) -> Bool = { _, _ in true },
-        label: @escaping (Detection, ModelOutput) -> String = { d, o in
-            "\(o.name(of: d.classIndex)) \(Int(d.confidence * 100))%"
-        }
+        label: @escaping (Detection, ModelOutput) -> String = { d, o in Theme.of(o).label(o.name(of: d.classIndex), d.confidence) },
+        color: NSColor? = nil
     ) {
         self.model = model
+        self.color = color
         self.filter = filter
         self.label = label
     }
@@ -41,7 +43,7 @@ final class BoxesEffect: Effect {
         for (node, detection) in zip(nodes, detections) {
             node.update(
                 to: frame.stage.rect(detection.box), text: label(detection, output!),
-                color: theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
+                color: color ?? theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
@@ -71,10 +73,10 @@ final class BoxNode: SKNode {
         shape.set(\.strokeColor, color)
         shape.set(\.lineWidth, line)
 
-        let pad = 5 * unit
+        let pad = theme.labelSize / 3 * unit
         label.set(\.fontName, theme.labelFont)
         label.set(\.text, text)
-        label.set(\.fontSize, 15 * unit)
+        label.set(\.fontSize, theme.labelSize * unit)
         label.set(\.fontColor, theme.textColor(on: color))
         label.position = CGPoint(x: rect.minX - line / 2 + pad, y: rect.maxY + line / 2 + pad / 2)
         let size = label.frame.size
@@ -190,7 +192,10 @@ final class OrientedBoxesEffect: Effect {
     let model: String
     private lazy var tracks = TrackedNodes(in: node) { OrientedBoxNode() }
 
-    init(model: String) { self.model = model }
+    /// Every box's color, whatever its class; nil: by class.
+    private let color: NSColor?
+
+    init(model: String, color: NSColor? = nil) { (self.model, self.color) = (model, color) }
 
     override func update(_ frame: StageFrame) {
         guard let output = frame.outputs[model] else { _ = tracks.sync([], in: frame); return }
@@ -199,38 +204,46 @@ final class OrientedBoxesEffect: Effect {
         let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(
-                to: corners(of: detection).map(frame.stage.point), text: output.name(of: detection.classIndex),
-                color: theme.color(detection.classIndex), font: theme.labelFont, unit: frame.stage.unit, k: frame.smoothing)
+                to: corners(of: detection).map(frame.stage.point), text: theme.label(output.name(of: detection.classIndex), detection.confidence),
+                color: color ?? theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
 
 final class OrientedBoxNode: SKNode {
     private let shape = SKShapeNode()
+    private let chip = SKShapeNode()
     private let label = SKLabelNode()
     private var points: [CGPoint] = []
 
     override init() {
         super.init()
-        label.verticalAlignmentMode = .bottom
-        [shape, label].forEach(addChild)
+        (label.horizontalAlignmentMode, label.verticalAlignmentMode) = (.left, .bottom)
+        chip.lineWidth = 0
+        [shape, chip, label].forEach(addChild)
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    func update(to targets: [CGPoint], text: String, color: NSColor, font: String, unit: CGFloat, k: CGFloat) {
+    /// The rotated box, its label chip (as on axis-aligned boxes) on its top corner.
+    func update(to targets: [CGPoint], text: String, color: NSColor, theme: Theme, unit: CGFloat, k: CGFloat) {
         points = points.count == targets.count ? zip(points, targets).map { $0.approaching($1, k) } : targets
         let path = CGMutablePath()
         path.addLines(between: points)
         path.closeSubpath()
         shape.path = path
         shape.set(\.strokeColor, color)
-        shape.set(\.lineWidth, 2.5 * unit)
-        label.set(\.fontName, font)
+        shape.set(\.lineWidth, theme.lineWidth * unit)
+        let pad = theme.labelSize / 3 * unit
+        label.set(\.fontName, theme.labelFont)
         label.set(\.text, text)
-        label.set(\.fontSize, 13 * unit)
-        label.set(\.fontColor, color)
-        label.position = points.max { $0.y < $1.y }.map { CGPoint(x: $0.x, y: $0.y + 4 * unit) } ?? .zero
+        label.set(\.fontSize, theme.labelSize * unit)
+        label.set(\.fontColor, theme.textColor(on: color))
+        let top = points.max { $0.y < $1.y } ?? .zero
+        label.position = CGPoint(x: top.x + pad, y: top.y + pad / 2)
+        let size = label.frame.size
+        chip.path = CGPath(rect: CGRect(x: top.x, y: top.y, width: size.width + 2 * pad, height: size.height + pad), transform: nil)
+        chip.set(\.fillColor, color)
     }
 }
 
@@ -239,9 +252,13 @@ final class OverlayEffect: Effect {
     let model: String
     private let sprite = SKSpriteNode()
     private var shown: CGImage?
+    /// Depth recolored in these 256 colors (far to near) instead of the decoder's; the last frame's image, cached.
+    private let depthColors: [(UInt8, UInt8, UInt8)]?
+    private var recolored: (time: Double, image: CGImage?)?
 
-    init(model: String, alpha: CGFloat = 1) {
+    init(model: String, alpha: CGFloat = 1, depthColors: [(UInt8, UInt8, UInt8)]? = nil) {
         self.model = model
+        self.depthColors = depthColors
         super.init()
         sprite.anchorPoint = .zero
         sprite.alpha = alpha
@@ -249,7 +266,12 @@ final class OverlayEffect: Effect {
     }
 
     override func update(_ frame: StageFrame) {
-        let image = frame.outputs[model]?.overlay
+        let output = frame.outputs[model]
+        var image = output?.overlay
+        if let colors = depthColors, let output, let depth = output.depth {
+            if recolored?.time != output.time { recolored = (output.time, depth.image(colors)) }
+            image = recolored?.image
+        }
         if image !== shown {
             shown = image
             sprite.texture = image.map { SKTexture(cgImage: $0) }

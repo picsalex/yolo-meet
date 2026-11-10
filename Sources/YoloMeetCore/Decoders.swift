@@ -38,7 +38,7 @@ nonisolated extension YOLOModel {
         case .semantic:
             output.overlay = classMap(head, geometry: geometry)
         case .depth:
-            output.overlay = depthMap(head)
+            if let (image, steps) = depthMap(head) { (output.overlay, output.depth) = (image, steps) }
         case .hand, .face:
             break  // MediaPipe and Apple Vision tasks, decoded by their own models
         }
@@ -243,21 +243,17 @@ nonisolated extension YOLOModel {
     }
 
     /// Depth in the Ultralytics gradient, near is Neon Pink. The depth input is stretched, so the map covers the frame.
-    private func depthMap(_ depth: Tensor) -> CGImage? {
+    /// The normalized depth is kept too (`output.depth`), to color it otherwise.
+    private func depthMap(_ depth: Tensor) -> (CGImage, DepthSteps)? {
         let (mh, mw) = (depth.shape[depth.shape.count - 2], depth.shape[depth.shape.count - 1])
         let (low, high) = (vDSP.minimum(depth.values), vDSP.maximum(depth.values))
         guard high > low, low.isFinite, high.isFinite else { return nil }
         // Gradient step per pixel: 0 for the farthest, 255 for the nearest.
-        let steps = vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values))
-        let gradient = Palette.ultralyticsGradient
-        var rgba = [UInt8](repeating: 255, count: mw * mh * 4)
-        for (i, step) in steps.enumerated() {
-            let (r, g, b) = gradient[255 - Int(step.rounded())]
-            rgba[i * 4] = r
-            rgba[i * 4 + 1] = g
-            rgba[i * 4 + 2] = b
-        }
-        return makeImage(rgba: rgba, width: mw, height: mh)
+        let steps = DepthSteps(
+            width: mw, height: mh,
+            values: vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values)).map { UInt8(min(max($0.rounded(), 0), 255)) })
+        guard let image = steps.image(Array(Palette.ultralyticsGradient.reversed())) else { return nil }
+        return (image, steps)
     }
 }
 

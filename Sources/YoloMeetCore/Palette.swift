@@ -32,6 +32,20 @@ public nonisolated enum Palette {
         return (UInt8(a.0 + (b.0 - a.0) * f), UInt8(a.1 + (b.1 - a.1) * f), UInt8(a.2 + (b.2 - a.2) * f))
     }
 
+    /// Inferno, the depth colormap: dark purple (far, 0) through red and orange to pale yellow (near, 1), rgb 0...1.
+    public static func inferno(_ t: Float) -> SIMD3<Float> {
+        let stops: [SIMD3<Float>] = [[0.08, 0.03, 0.22], [0.34, 0.06, 0.42], [0.73, 0.21, 0.33], [0.98, 0.55, 0.04], [0.99, 1, 0.64]]
+        let x = min(max(t, 0), 1) * Float(stops.count - 1)
+        let i = min(Int(x), stops.count - 2)
+        return stops[i] + (stops[i + 1] - stops[i]) * (x - Float(i))
+    }
+
+    /// Inferno in 256 steps (far to near), as bytes.
+    public static let infernoGradient: [(UInt8, UInt8, UInt8)] = (0..<256).map { step in
+        let c = inferno(Float(step) / 255) * 255
+        return (UInt8(c.x.rounded()), UInt8(c.y.rounded()), UInt8(c.z.rounded()))
+    }
+
     public static func rgb(_ hex: String) -> (UInt8, UInt8, UInt8) {
         let v = UInt32(hex, radix: 16)!
         return (UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF))

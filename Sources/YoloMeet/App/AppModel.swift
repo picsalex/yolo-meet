@@ -36,13 +36,8 @@ final class AppModel {
         }
     }
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
-    /// Media runs in Display mode: stories are for the camera.
-    var source = Source.camera {
-        didSet {
-            if source == .media { mode = .display }
-            applyInput()
-        }
-    }
+    /// The stage's input, in either mode: a story keeps its step when it changes.
+    var source = Source.camera { didSet { applyInput() } }
     /// Off: no capture; the stage shows the background, or black.
     var cameraOn = true { didSet { applyInput() } }
     var inference = InferenceSettings.saved {
@@ -52,7 +47,9 @@ final class AppModel {
         }
     }
     /// The stage shows black instead of the camera (H on stage); the camera keeps running for the models.
-    var cameraHidden = false
+    var cameraHidden = false { didSet { restoreHidden = false } }  // set by hand: no longer ours to restore
+    /// The camera was hidden when a live step showed it: hide it again on the next step that doesn't.
+    private var restoreHidden = false
     var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
     /// Debug mode: stats and the recognized hand gesture on the stage.
     var debugMode = UserDefaults.standard.bool(forKey: "debugMode") {
@@ -114,8 +111,21 @@ final class AppModel {
     /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
     func applyScene(transition: Story.Transition = .fade) {
         (self.transition, sceneStory) = (transition, mode == .story ? storyID : nil)
+        // A live step shows the camera even when it's hidden (H); the next step that doesn't hides it again.
+        let live = mode == .story && story.steps[stepIndex].showsCamera
+        if live, cameraHidden {
+            cameraHidden = false
+            restoreHidden = true
+        } else if !live, restoreHidden {
+            cameraHidden = true
+        }
         let models = mode == .display ? displayModels : story.steps[stepIndex].models
         missingModels = models.filter { !isAvailable($0) }
+        if mode == .story {
+            // A story's models download on their own: this step's, and the next one's so it's ready when it comes.
+            let next = stepIndex + 1 < story.steps.count ? story.steps[stepIndex + 1].models : []
+            for id in missingModels + next where !isAvailable(id) { ModelCatalog.entry(id).map(store.download) }
+        }
         pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
         sceneVersion += 1
     }
@@ -174,6 +184,12 @@ final class AppModel {
         store.downloaded.contains(id) || custom.model(id) != nil || ModelCatalog.entry(id)?.family.isBuiltIn == true
     }
     func url(for id: String) -> URL { custom.model(id) != nil ? custom.url(for: id) : store.url(for: id) }
+
+    /// After a download or deletion: the scene again when it shows downloaded models (Display mode) or was waiting for
+    /// one, not when a story's next step's model arrives meanwhile.
+    func modelsChanged() {
+        if mode == .display || !missingModels.isEmpty { applyScene() }
+    }
 
     func downloadMissing() {
         for id in missingModels { ModelCatalog.entry(id).map(store.download) }

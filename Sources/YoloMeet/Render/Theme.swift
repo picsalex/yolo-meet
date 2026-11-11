@@ -67,7 +67,7 @@ struct Theme {
     }
 
     func color(_ classIndex: Int) -> NSColor { classes[abs(classIndex) % classes.count] }
-    /// Ultralytics yellow, the NN explained story's color for every box.
+    /// Ultralytics yellow, the NN explained story's color for the boxes on its cat picture.
     static let ultralyticsYellow = NSColor.hex("E1FF25")
 
     /// White text, or the brand's dark text when the chip is light.

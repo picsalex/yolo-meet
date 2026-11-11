@@ -54,14 +54,14 @@ extension Story {
     private static func taskSteps(_ network: NeuralNetwork) -> [Step] {
         let t = network.tasks
         let tasks: [(name: String, layout: NetworkLayout, output: TaskOutputEffect.Output, caption: String, model: String, live: () -> [Effect])] = [
-            ("Detect", t.detect, .box, "Detection: where each object is, what it is, how sure", "yolo26n", { [BoxesEffect(model: "yolo26n", color: Theme.ultralyticsYellow)] }),
+            ("Detect", t.detect, .box, "Detection: where each object is, what it is, how sure", "yolo26n", { [BoxesEffect(model: "yolo26n")] }),
             ("Segment", t.segment, .mask, "Segmentation: each object's exact pixels", "yolo26n-seg",
-             { [OverlayEffect(model: "yolo26n-seg"), BoxesEffect(model: "yolo26n-seg", color: Theme.ultralyticsYellow)] }),
+             { [OverlayEffect(model: "yolo26n-seg"), BoxesEffect(model: "yolo26n-seg")] }),
             ("Semantic", t.semantic, .semantic, "Semantic segmentation: a class for every pixel", "yolo26n-sem",
              { [OverlayEffect(model: "yolo26n-sem")] }),
             ("Classify", t.classify, .classes, "Classification: what the whole image is", "yolo26n-cls", { [ClassifyEffect(model: "yolo26n-cls")] }),
-            ("Pose", t.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose", { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose", color: Theme.ultralyticsYellow)] }),
-            ("OBB", t.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb", { [OrientedBoxesEffect(model: "yolo26n-obb", color: Theme.ultralyticsYellow)] }),
+            ("Pose", t.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose", { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose")] }),
+            ("OBB", t.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb", { [OrientedBoxesEffect(model: "yolo26n-obb")] }),
             ("Depth", t.depth, .depth, "Depth: how far every pixel is", "yolo26n-depth", { [OverlayEffect(model: "yolo26n-depth", alpha: 0.7, depthColors: Palette.infernoGradient)] }),
         ]
         return tasks.flatMap { task in
@@ -69,6 +69,15 @@ extension Story {
                 Step(title: task.name, models: ["mediapipe-hand"]) {
                     [NetworkEffect(network, task.layout), TaskOutputEffect(network, task.layout, task.output), handSkeleton(), titleCard(task.caption)]
                 },
+            ] + (task.output != .semantic ? [] : [
+                // Zoomed in: the class of each pixel, its ID on it.
+                Step(title: "Semantic · pixels", models: ["mediapipe-hand"]) {
+                    [
+                        NetworkEffect(network, t.semanticZoom), TaskOutputEffect(network, t.semanticZoom, .pixelClasses), handSkeleton(),
+                        titleCard("Every pixel gets a class: hold space and point at one"),
+                    ]
+                },
+            ]) + [
                 Step(title: "\(task.name) · live", models: [task.model, "mediapipe-hand"], showsCamera: true) {
                     task.live() + [handSkeleton(), titleCard("Live: \(task.model) on the camera")]
                 },

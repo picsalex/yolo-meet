@@ -248,11 +248,11 @@ nonisolated extension YOLOModel {
         let (mh, mw) = (depth.shape[depth.shape.count - 2], depth.shape[depth.shape.count - 1])
         let (low, high) = (vDSP.minimum(depth.values), vDSP.maximum(depth.values))
         guard high > low, low.isFinite, high.isFinite else { return nil }
-        // Gradient step per pixel: 0 for the farthest, 255 for the nearest.
+        // The model outputs distance (larger is farther); gradient step per pixel: 0 for the farthest, 255 for the nearest.
         let steps = DepthSteps(
             width: mw, height: mh,
-            values: vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values)).map { UInt8(min(max($0.rounded(), 0), 255)) })
-        guard let image = steps.image(Array(Palette.ultralyticsGradient.reversed())) else { return nil }
+            values: vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values)).map { 255 - UInt8(min(max($0.rounded(), 0), 255)) })
+        guard let image = steps.image(Palette.ultralyticsGradient) else { return nil }
         return (image, steps)
     }
 }

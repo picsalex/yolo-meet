@@ -20,17 +20,13 @@ final class BoxesEffect: Effect {
     let model: String
     let filter: (Detection, ModelOutput) -> Bool
     let label: (Detection, ModelOutput) -> String
-    /// Every box's color, whatever its class; nil: by class.
-    let color: NSColor?
     private lazy var tracks = TrackedNodes(in: node) { BoxNode() }
 
     init(
         model: String, filter: @escaping (Detection, ModelOutput) -> Bool = { _, _ in true },
-        label: @escaping (Detection, ModelOutput) -> String = { d, o in Theme.of(o).label(o.name(of: d.classIndex), d.confidence) },
-        color: NSColor? = nil
+        label: @escaping (Detection, ModelOutput) -> String = { d, o in Theme.of(o).label(o.name(of: d.classIndex), d.confidence) }
     ) {
         self.model = model
-        self.color = color
         self.filter = filter
         self.label = label
     }
@@ -43,7 +39,7 @@ final class BoxesEffect: Effect {
         for (node, detection) in zip(nodes, detections) {
             node.update(
                 to: frame.stage.rect(detection.box), text: label(detection, output!),
-                color: color ?? theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
+                color: theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }
@@ -192,10 +188,7 @@ final class OrientedBoxesEffect: Effect {
     let model: String
     private lazy var tracks = TrackedNodes(in: node) { OrientedBoxNode() }
 
-    /// Every box's color, whatever its class; nil: by class.
-    private let color: NSColor?
-
-    init(model: String, color: NSColor? = nil) { (self.model, self.color) = (model, color) }
+    init(model: String) { self.model = model }
 
     override func update(_ frame: StageFrame) {
         guard let output = frame.outputs[model] else { _ = tracks.sync([], in: frame); return }
@@ -205,7 +198,7 @@ final class OrientedBoxesEffect: Effect {
         for (node, detection) in zip(nodes, detections) {
             node.update(
                 to: corners(of: detection).map(frame.stage.point), text: theme.label(output.name(of: detection.classIndex), detection.confidence),
-                color: color ?? theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
+                color: theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
 }

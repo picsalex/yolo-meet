@@ -115,11 +115,15 @@ final class NetworkLayout {
             var settled = shape
             settled.points = zip(shape.points, shape.offsets).map { $0 + $1 }
             settled.offsets = Array(repeating: .zero, count: shape.points.count)
+            if let arrivedColors { settled.colors = arrivedColors }
             settledShape = settled
         }
         return settledShape
     }
     private var settledShape: ParticleShape?
+    /// The particles' colors once `settled`, faded to as they arrive, if not their colors on the way (e.g. particles
+    /// that glide black, unseen, and light up once there).
+    var arrivedColors: [SIMD3<Float>?]?
     /// Particles moving through the layout over time, animated by the effect every frame; nil: it stands still.
     private(set) var flow: Flow?
     /// The particles' points; nil until ready (the brain's surface is built in the background).

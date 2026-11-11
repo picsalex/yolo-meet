@@ -77,6 +77,108 @@ extension NetworkLayout {
         return layout
     }
 
+    /// The part of the cat picture `semanticZoom` zooms into (its canvas, y up): the cat's cheek against the sky, above
+    /// the grass, so the three classes meet. `zoomCells` pixels on a side, `zoomSide` in the shape's units.
+    static let zoomWindow = CGRect(x: 13, y: 11, width: 24, height: 24)
+    static let zoomCells = 12
+    static let zoomSide: Float = 2.4
+
+    /// A zoom pixel's center in the shape (column, row from the top).
+    static func zoomPoint(_ column: Int, _ row: Int) -> SIMD3<Float> {
+        let n = Float(zoomCells)
+        return [((Float(column) + 0.5) / n - 0.5) * zoomSide, (0.5 - (Float(row) + 0.5) / n) * zoomSide, 0]
+    }
+
+    /// Each zoom pixel's class (`TaskOutputEffect.semanticClasses`), row by row from the top: the cat picture's class
+    /// at its center.
+    static let zoomClasses: [Int] = {
+        let (n, big) = (zoomCells, 200)
+        let classes = catClasses(big)
+        let w = zoomWindow
+        return (0..<n * n).map { cell in
+            let cx = w.minX + (CGFloat(cell % n) + 0.5) / CGFloat(n) * w.width
+            let cy = w.maxY - (CGFloat(cell / n) + 0.5) / CGFloat(n) * w.height
+            let (x, y) = (min(Int(cx / 100 * CGFloat(big)), big - 1), min(Int((100 - cy) / 100 * CGFloat(big)), big - 1))
+            return TaskOutputEffect.semanticClass(classes[y * big + x])
+        }
+    }()
+
+    /// `semantic` zoomed into `zoomWindow`: its pixels become large squares in their class's color (the window's
+    /// particles grow into them, the others fly in), so each pixel's class reads; `TaskOutputEffect` writes its ID on it.
+    static func semanticZoom(of semantic: NetworkLayout) -> NetworkLayout {
+        let (cells, side) = (zoomCells, zoomSide)
+        let layout = NetworkLayout(
+            title: "A class per pixel", subtitle: "zoomed in · each pixel's class ID, 0 sky, 1 grass, 2 cat",
+            neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
+        (layout.base, layout.splits, layout.splitsFrom) = (semantic.base ?? semantic, true, semantic)
+        let h = side / 2
+        layout.outline = [[-h, -h, 0], [h, h, 0], [-h, h, 0], [h, -h, 0]]
+        guard let previous = semantic.settled ?? semantic.shape else { return layout }
+        // The window's particles grow into its pixels (a few dozen each), each moving the least it can; the rest of
+        // the picture turns black (unseen), moves the little it needs to fill the grid evenly, and lights up once
+        // there, so each pixel ends up a solid square (the gaps between them showing the grid).
+        let n = previous.points.count
+        let w = zoomWindow
+        var members = [[Int]](repeating: [], count: cells * cells)
+        var cellOf = [Int](repeating: -1, count: n)
+        for i in 0..<n {
+            let p = previous.points[i]
+            let (cx, cy) = (CGFloat(p.x / resultSide + 0.5) * 100, CGFloat(p.y / resultSide + 0.5) * 100)
+            guard w.contains(CGPoint(x: cx, y: cy)) else { continue }
+            let column = min(Int((cx - w.minX) / w.width * CGFloat(cells)), cells - 1)
+            let row = min(Int((w.maxY - cy) / w.height * CGFloat(cells)), cells - 1)
+            cellOf[i] = row * cells + column
+            members[row * cells + column].append(i)
+        }
+        let inWindow = cellOf.map { $0 >= 0 }
+        let fill: Float = 0.9
+        // A point of pixel `c` at (fx, fy) in its square (0...1 each, from its top left), toward the viewer by `z`.
+        let place = { (c: Int, fx: Float, fy: Float, z: Float) -> SIMD3<Float> in
+            let x = (Float(c % cells) + 0.5 + (fx - 0.5) * fill) / Float(cells), y = (Float(c / cells) + 0.5 + (fy - 0.5) * fill) / Float(cells)
+            return [(x - 0.5) * side, (0.5 - y) * side, z + .random(in: -0.004...0.004)]
+        }
+        var points = previous.points
+        for (c, ids) in members.enumerated() where !ids.isEmpty {
+            // On an even grid of their own, top to bottom in rows, each row left to right: as they sit.
+            let slots = Int(Float(ids.count).squareRoot().rounded(.up)), rows = (ids.count + slots - 1) / slots
+            let byHeight = ids.sorted { previous.points[$0].y > previous.points[$1].y }
+            let sorted = stride(from: 0, to: byHeight.count, by: slots).flatMap {
+                byHeight[$0..<min($0 + slots, byHeight.count)].sorted { previous.points[$0].x < previous.points[$1].x }
+            }
+            for (k, i) in sorted.enumerated() {
+                points[i] = place(c, (Float(k % slots) + 0.5) / Float(slots), (Float(k / slots) + 0.5) / Float(rows), 0.01)
+            }
+        }
+        // The rest: into the pixel of the grid (as large as the picture) they're over once the picture closes the
+        // window's hole, each particle moving straight away from the window's center by as much as keeps them evenly
+        // spread (in a square ring around the window, the area out to it shrinks by the window's): close to it, a few
+        // pixels; far from it, barely.
+        let center = resultPoint(CGPoint(x: w.midX, y: w.midY))
+        let (hole, edge) = (Float(w.width / 200) * resultSide, resultSide / 2)
+        for i in 0..<n where !inWindow[i] {
+            let d = SIMD2(previous.points[i].x - center.x, previous.points[i].y - center.y)
+            let r = max(abs(d.x), abs(d.y))  // square rings: the window's edge is one
+            let u = d / max(r, 1e-6)
+            let reach = [u.x > 0 ? (edge - center.x) / u.x : u.x < 0 ? (-edge - center.x) / u.x : .infinity,
+                         u.y > 0 ? (edge - center.y) / u.y : u.y < 0 ? (-edge - center.y) / u.y : .infinity].min()!
+            let closed = reach * ((r * r - hole * hole) / max(reach * reach - hole * hole, 1e-6)).squareRoot()
+            let q = SIMD2(center.x, center.y) + u * min(max(closed, 0), reach)
+            let (fx, fy) = (min(max(q.x / side + 0.5, 0), 0.9999) * Float(cells), min(max(0.5 - q.y / side, 0), 0.9999) * Float(cells))
+            cellOf[i] = Int(fy) * cells + Int(fx)
+            points[i] = place(cellOf[i], fx - fx.rounded(.down), fy - fy.rounded(.down), 0)
+        }
+        let classColor = TaskOutputEffect.semanticClasses.map { $0.color.rgb }
+        layout.shape = ParticleShape(
+            points: previous.points, offsets: zip(points, previous.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            colors: (0..<n).map { inWindow[$0] ? classColor[zoomClasses[cellOf[$0]]] * zoomGlide : .zero })
+        layout.arrivedColors = cellOf.map { classColor[zoomClasses[$0]] * zoomBrightness }
+        return layout
+    }
+
+    /// Particle colors in the zoom's squares, all there (hundreds each), and of the few gliding into them first.
+    static let zoomBrightness: Float = 1.2
+    static let zoomGlide: Float = 6
+
     /// The seven tasks' layouts on the results picture (detection is `results` itself).
     static func tasks(_ results: NetworkLayout) -> TaskLayouts {
         let n = resultCells
@@ -109,20 +211,21 @@ extension NetworkLayout {
             results, "Depth estimation", "how far every pixel is · near bright, far dark", tilt: 0.2, turn: -0.4,
             color: { cell, _ in TaskOutputEffect.inferno(near[cell]) * 1.1 }, depth: { near[$0] * 0.45 })
         return TaskLayouts(
-            detect: results, segment: segment, semantic: semantic, classify: classify, pose: pose, obb: obb, depth: depth)
+            detect: results, segment: segment, semantic: semantic, semanticZoom: semanticZoom(of: semantic), classify: classify,
+            pose: pose, obb: obb, depth: depth)
     }
 }
 
 /// The tasks' layouts, in the story's order.
 struct TaskLayouts {
-    let detect, segment, semantic, classify, pose, obb, depth: NetworkLayout
+    let detect, segment, semantic, semanticZoom, classify, pose, obb, depth: NetworkLayout
 }
 
 /// A task's output drawn in 2D over the results picture (`NetworkLayout.tasks`), following its particles as they
 /// show: the cat's box, its mask's polygon, the semantic classes' legend, the depth scale, the top classes, the
 /// cat's keypoints, or its oriented box beside the axis-aligned one. It fades in once the picture has formed.
 final class TaskOutputEffect: Effect {
-    enum Output { case box, mask, semantic, depth, classes, keypoints, oriented }
+    enum Output { case box, mask, semantic, pixelClasses, depth, classes, keypoints, oriented }
 
     /// COCO's cat (class 15), in the Ultralytics palette, as the live boxes color it.
     static let catColor = Theme.ultralytics.color(15)
@@ -196,6 +299,15 @@ final class TaskOutputEffect: Effect {
     private var texts: [ShadowedLabel] = []
     private var bars: [SKShapeNode] = []
     private let gradient = SKSpriteNode()
+    /// The zoom's class IDs, one per pixel; the square sweeping over them as they show; the pixel pointed at, its class.
+    private var ids: [SKLabelNode] = []
+    private let scan = SKShapeNode()
+    private let pointed = SKShapeNode()
+    private let pointedInfo = ShadowedLabel("", font: "GeistMono-Medium")
+    private let pointedChip = SKShapeNode()
+    private var readySince: TimeInterval?
+    /// How long the IDs take to show, pixel after pixel, as the model labels them.
+    static let scanDuration: TimeInterval = 2.4
 
     init(_ network: NeuralNetwork, _ layout: NetworkLayout, _ output: Output) {
         (self.network, self.layout, self.output) = (network, layout, output)
@@ -205,6 +317,7 @@ final class TaskOutputEffect: Effect {
         for child in [shape, dots, gradient, box, oriented] as [SKNode] { content.addChild(child) }
         let names: [String] = switch output {
         case .semantic: Self.semanticClasses.map(\.name)
+        case .pixelClasses: Self.semanticClasses.enumerated().map { "\($0.offset)  \($0.element.name)" }
         case .classes: Self.topClasses.map { "\($0.name) \(Int($0.confidence * 100))%" }
         case .depth: ["near", "far"]
         default: []
@@ -213,7 +326,7 @@ final class TaskOutputEffect: Effect {
             let text = ShadowedLabel(name, font: output == .classes ? Theme.ultralytics.labelFont : "GeistMono-Medium")
             (text.label.verticalAlignmentMode, text.label.horizontalAlignmentMode) = (.center, .left)
             texts.append(text)
-            if output == .semantic || output == .classes {
+            if output == .semantic || output == .pixelClasses || output == .classes {
                 let bar = SKShapeNode()
                 bar.lineWidth = 0
                 bars.append(bar)
@@ -236,6 +349,23 @@ final class TaskOutputEffect: Effect {
             gradient.texture = SKTexture(image: image)
         }
         gradient.isHidden = output != .depth
+        if output == .pixelClasses {
+            for cell in NetworkLayout.zoomClasses {
+                let id = SKLabelNode(fontNamed: "GeistMono-Medium")
+                (id.text, id.verticalAlignmentMode, id.horizontalAlignmentMode, id.alpha) = ("\(cell)", .center, .center, 0)
+                ids.append(id)
+                content.addChild(id)
+            }
+            scan.lineWidth = 0
+            pointed.fillColor = .clear
+            pointed.strokeColor = .white
+            content.addChild(scan)
+            content.addChild(pointed)
+            (pointedChip.fillColor, pointedChip.lineWidth) = (NSColor(white: 0, alpha: 0.8), 0)
+            content.addChild(pointedChip)
+            content.addChild(pointedInfo)
+            (pointedInfo.label.verticalAlignmentMode, pointedInfo.label.horizontalAlignmentMode) = (.center, .left)
+        }
     }
 
     override func update(_ frame: StageFrame) {
@@ -248,11 +378,13 @@ final class TaskOutputEffect: Effect {
         // Its own fade, on a node of its own: the stage fades `node` in as the step starts.
         content.alpha = content.alpha.approaching(ready ? 1 : 0, CGFloat(1 - exp(-frame.dt * (ready ? 4 : 14))))
         content.isHidden = content.alpha < 0.01
+        if ready { readySince = readySince ?? frame.time } else { readySince = nil }
         guard !content.isHidden else { return }
+        if output == .pixelClasses { return pixelClasses(frame) }
         let stage = { (c: CGPoint) in system.shownPoint(NetworkLayout.resultPoint(c)).point }
         let picture = CGRect(enclosing: [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 100)].map(stage))
         let catBox = CGRect(enclosing: [Self.catBox.origin, CGPoint(x: Self.catBox.maxX, y: Self.catBox.maxY)].map(stage))
-        let color = Theme.ultralyticsYellow  // as the live boxes
+        let color = Theme.ultralyticsYellow
         shape.lineWidth = 2.5 * u
 
         switch output {
@@ -289,7 +421,71 @@ final class TaskOutputEffect: Effect {
             oriented.update(to: corners, text: Theme.ultralytics.label("cat", 0.92), color: color, theme: .ultralytics, unit: u, k: 1)
         case .semantic, .classes, .depth:
             column(beside: picture, frame: frame)
+        case .pixelClasses:
+            break
         }
+    }
+
+    /// The zoom's class IDs, written on their pixels one after the other (row by row, a square sweeping over them), its
+    /// legend beside; with Space held, the pixel a fingertip points at outlined, with its place and class.
+    private func pixelClasses(_ frame: StageFrame) {
+        let u = frame.stage.unit
+        let system = network.system
+        let n = NetworkLayout.zoomCells
+        let h = NetworkLayout.zoomSide / 2
+        let corners = [SIMD3<Float>(-h, -h, 0), [h, -h, 0], [h, h, 0], [-h, h, 0]].map { system.shownPoint($0).point }
+        column(beside: CGRect(enclosing: corners), frame: frame)
+        let pitch = corners[0].distance(to: corners[1]) / CGFloat(n)
+        let elapsed = frame.time - (readySince ?? frame.time)
+        let reached = elapsed / Self.scanDuration * Double(ids.count)  // pixels labeled so far
+        for (k, id) in ids.enumerated() {
+            id.position = system.shownPoint(NetworkLayout.zoomPoint(k % n, k / n)).point
+            id.set(\.fontSize, pitch * 0.5)
+            id.alpha = CGFloat(min(max(reached - Double(k), 0), 1)) * 0.95
+        }
+        // The square over the pixel being labeled, gone once all are.
+        let current = Int(reached)
+        scan.isHidden = current >= ids.count
+        if !scan.isHidden {
+            let c = system.shownPoint(NetworkLayout.zoomPoint(current % n, current / n)).point
+            scan.path = CGPath(rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
+            scan.fillColor = NSColor(white: 1, alpha: 0.35)
+        }
+
+        // The pointed pixel: the fingertip's place in the grid (the picture faces the viewer, so a plane's corners do).
+        var hit: Int?
+        if frame.keys.held.contains("space") {
+            for pointer in frame.pointers {
+                let (o, x, y) = (corners[3], corners[2], corners[0])  // top left, top right, bottom left
+                let (ax, ay) = (CGVector(dx: x.x - o.x, dy: x.y - o.y), CGVector(dx: y.x - o.x, dy: y.y - o.y))
+                let d = CGVector(dx: pointer.location.x - o.x, dy: pointer.location.y - o.y)
+                let det = ax.dx * ay.dy - ax.dy * ay.dx
+                guard abs(det) > 1 else { continue }
+                let (fx, fy) = ((d.dx * ay.dy - d.dy * ay.dx) / det, (ax.dx * d.dy - ax.dy * d.dx) / det)
+                guard (0..<1).contains(fx), (0..<1).contains(fy) else { continue }
+                hit = Int(fy * CGFloat(n)) * n + Int(fx * CGFloat(n))
+                frame.pointing.mark(pointer.hand)
+                break
+            }
+        }
+        pointed.isHidden = hit == nil
+        pointedInfo.isHidden = hit == nil
+        pointedChip.isHidden = hit == nil
+        guard let hit else { return }
+        let c = system.shownPoint(NetworkLayout.zoomPoint(hit % n, hit / n)).point
+        pointed.path = CGPath(rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
+        pointed.lineWidth = 3 * u
+        let name = Self.semanticClasses[NetworkLayout.zoomClasses[hit]].name
+        pointedInfo.label.set(\.text, "pixel (\(hit % n), \(hit / n)) → \(NetworkLayout.zoomClasses[hit]) \(name)")
+        pointedInfo.label.set(\.fontSize, 16 * u)
+        // On a dark chip beside the pixel, over the grid.
+        let pad = 8 * u
+        pointedInfo.position = CGPoint(x: c.x + pitch / 2 + 6 * u + pad, y: c.y)
+        pointedInfo.sync(unit: u)
+        let size = pointedInfo.label.frame.size
+        pointedChip.path = CGPath(
+            roundedRect: CGRect(x: c.x + pitch / 2 + 6 * u, y: c.y - size.height / 2 - pad / 2, width: size.width + 2 * pad, height: size.height + pad),
+            cornerWidth: 5 * u, cornerHeight: 5 * u, transform: nil)
     }
 
     /// A closed path through `points`.

@@ -6,6 +6,8 @@ import YoloMeetCore
 /// Private controls. Only the Stage window is meant to be shared in Meet.
 struct ControlPanel: View {
     @Environment(AppModel.self) private var model
+    /// Whether the story's step list is shown (remembered across launches).
+    @AppStorage("storyStepsExpanded") private var stepsExpanded = false
 
     var body: some View {
         @Bindable var model = model
@@ -85,17 +87,31 @@ struct ControlPanel: View {
         Picker("Story", selection: $model.storyID) {
             ForEach(Story.all) { Text($0.title).tag($0.id) }
         }
-        ForEach(Array(model.story.steps.enumerated()), id: \.offset) { index, step in
-            Button { model.stepIndex = index } label: {
-                HStack {
-                    Image(systemName: index == model.stepIndex ? "play.fill" : "circle").frame(width: 16)
-                    Text("\(index + 1). \(step.title)")
-                    Spacer()
+        // The steps, collapsed by default (a story can have dozens): the row shows where the story is, and
+        // Previous/Next below step through it either way.
+        DisclosureGroup(isExpanded: $stepsExpanded) {
+            ForEach(Array(model.story.steps.enumerated()), id: \.offset) { index, step in
+                Button { model.stepIndex = index } label: {
+                    HStack {
+                        Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(minWidth: 20, alignment: .trailing)
+                        Text(step.title)
+                        Spacer()
+                        if index == model.stepIndex {
+                            Image(systemName: "play.fill").foregroundStyle(.tint).accessibilityLabel("Current step")
+                        }
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+                .fontWeight(index == model.stepIndex ? .semibold : .regular)
             }
-            .buttonStyle(.plain)
-            .fontWeight(index == model.stepIndex ? .semibold : .regular)
+        } label: {
+            LabeledContent("Steps") {
+                Text("\(model.stepIndex + 1) of \(model.story.steps.count) · \(model.story.steps[model.stepIndex].title)")
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
         }
         HStack {
             Button("Previous", systemImage: "chevron.left") { model.previous() }.disabled(model.stepIndex == 0)

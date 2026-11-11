@@ -146,7 +146,7 @@ and wins over the hands' while it acts.
 sets its look, and `update(…, left:)` puts every label in one column (e.g. beside a whole layout, as `NetworkEffect` does).
 
 H on stage (or the panel's switch) hides the camera image: the stage is black behind the effects, and
-`frame.cameraHidden` tells them (NN explained centers its object meanwhile, then puts it back).
+`frame.cameraHidden` tells them (NN intro centers its object meanwhile, then puts it back).
 
 A step can loop: `Step(…, loop: 7)` starts it over every 7 seconds. Effects read the step's clock from the frame
 (`StageFrame.stepTime`, since the step or its loop started, and `loopCount`, 0 the first time through) and play their
@@ -156,7 +156,7 @@ A step can follow the previous one with no transition, as in a slide deck: `Step
 between the two (either way) swaps instantly instead of fading the 2D content out and in, and each new effect has
 `continuing` set: what both steps share (e.g. the title and subtitle) shows at once and stays still (a title that changes cross-fades in
 place), while what the
-step adds or drops still fades in or out (NN explained: the arrows on the same object).
+step adds or drops still fades in or out (NN intro: the arrows on the same object).
 
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.

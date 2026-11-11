@@ -6,7 +6,7 @@ extension Story {
     static let nnExplained: Story = {
         let network = NeuralNetwork()
         return Story(
-            id: "nn-explained", title: "NN explained",
+            id: "nn-explained", title: "NN intro",
             steps: [
                 Step(title: "Black box", models: ["mediapipe-hand"]) {
                     [

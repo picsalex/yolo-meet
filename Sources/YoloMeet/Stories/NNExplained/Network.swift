@@ -1,7 +1,7 @@
 import CoreGraphics
 import simd
 
-/// The NN explained story's network, shared by its steps (created in the story file) so the particles fly from one
+/// The NN intro story's network, shared by its steps (created in the story file) so the particles fly from one
 /// layout to the next instead of starting over: one particle system, and the layouts it forms.
 final class NeuralNetwork {
     /// Particles per 60,000 of the layouts' budgets below: more is denser (the GPU simulates 60,000 in about 0.2 ms).

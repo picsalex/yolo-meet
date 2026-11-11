@@ -59,6 +59,8 @@ final class NetworkEffect: Effect {
     private let headers: [ShadowedLabel]
     /// The layout's arrows (e.g. into its input).
     private let arrows: [Arrow]
+    /// The flow's result beside the output arrow (`NetworkLayout.flowResult`), shown once the particles are through.
+    private let result: ShadowedLabel
     /// The layout's measurements (e.g. a picture's width and height).
     private let dimensions: [Dimension]
     /// The previous step's title, fading out (after a first frame to place it), when this one continues it with another.
@@ -102,6 +104,7 @@ final class NetworkEffect: Effect {
         arrows = layout?.arrows.map { Arrow($0.text, color: NetworkEffect.gold) } ?? []
         dimensions = layout?.dimensions.map { Dimension($0.text) } ?? []
         title = ObjectTitle(layout?.title ?? "", subtitle: layout?.subtitle ?? "")
+        result = ShadowedLabel(layout?.flowResult ?? "", font: "Archivo-SemiBold")
         super.init()
         particles = network.system
 
@@ -114,7 +117,8 @@ final class NetworkEffect: Effect {
         outlines.strokeColor = Self.gold
         weight.label.verticalAlignmentMode = .bottom
         weight.alpha = 0
-        for child in [line, focus, outlines, neuronInfo, weight] + headers + arrows + dimensions { labels.addChild(child) }
+        (result.label.horizontalAlignmentMode, result.label.verticalAlignmentMode, result.alpha) = (.left, .center, 0)
+        for child in [line, focus, outlines, neuronInfo, weight, result] + headers + arrows + dimensions { labels.addChild(child) }
         labels.alpha = 0
         node.addChild(labels)
         node.addChild(title)
@@ -232,8 +236,19 @@ final class NetworkEffect: Effect {
         // Arrows new to this step fade in (they start hidden only when continuing the previous step), old ones out.
         let fading = CGFloat(1 - exp(-frame.dt * 6))
         for (arrow, ends) in zip(arrows, layout.arrows) {
-            arrow.update(from: system.shownPoint(ends.tail).point, to: system.shownPoint(ends.tip).point, frame: frame)
+            let feeds = (layout.arrowFeeds[ends.text] ?? []).map { $0.map { system.shownPoint($0).point } }
+            arrow.update(from: system.shownPoint(ends.tail).point, to: system.shownPoint(ends.tip).point, feeds: feeds, frame: frame)
             arrow.alpha = arrow.alpha.approaching(1, fading)
+        }
+        // The flow's result past the output arrow's tip: in once the pixels are through, out as the timeline starts over.
+        if let flow = layout.flow, layout.flowResult != nil, let output = layout.arrows.last {
+            let through = network.formed === layout && Float(frame.stepTime) > flow.end
+            result.alpha = result.alpha.approaching(through ? 1 : 0, CGFloat(1 - exp(-frame.dt * (through ? 5 : 8))))
+            result.label.set(\.fontSize, 30 * u)
+            result.label.set(\.fontColor, Self.gold)
+            let tip = system.shownPoint(output.tip).point
+            result.position = CGPoint(x: tip.x + 14 * u, y: tip.y)
+            result.sync(unit: u)
         }
         for (dimension, ends) in zip(dimensions, layout.dimensions) {
             dimension.update(from: system.shownPoint(ends.from).point, to: system.shownPoint(ends.to).point, frame: frame)
@@ -245,7 +260,7 @@ final class NetworkEffect: Effect {
         }
         leaving.removeAll { $0.arrow.parent == nil }
         for (label, header) in zip(headers, layout.headers) {
-            label.label.set(\.fontSize, 24 * u)
+            label.label.set(\.fontSize, layout.headerSize * u)
             label.label.verticalAlignmentMode = .top
             label.position = system.shownPoint(header.point).point
             label.sync(unit: u)

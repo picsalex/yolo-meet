@@ -40,6 +40,8 @@ final class NeuralNetwork {
     /// The inference's output on its input: a large picture, then each task's output on it.
     let results: NetworkLayout
     let tasks: TaskLayouts
+    /// The recap: the picture, YOLO, and the seven tasks' outputs.
+    let recap: NetworkLayout
     /// The rotation the particles last showed, so the next step's view turns from it instead of jumping.
     var rotation: simd_quatf?
 
@@ -58,6 +60,7 @@ final class NeuralNetwork {
         inference = .flow(of: picture, through: architecture)
         results = .results(after: inference, picture: picture)
         tasks = NetworkLayout.tasks(results)
+        recap = .recap(tasks, architecture: architecture)
     }
 }
 
@@ -94,11 +97,15 @@ final class NetworkLayout {
     private(set) var grown: CGFloat = 1.8
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name
     /// (outlined when a header is touched in action mode).
-    private(set) var headers: [(text: String, point: SIMD3<Float>, members: [Int])] = []
+    var headers: [(text: String, point: SIMD3<Float>, members: [Int])] = []
+    /// The headers' text size at 720 px of stage height.
+    var headerSize: CGFloat = 24
     /// Measurements along the layout's sides (`Dimension`: its size, from, to), e.g. a picture's width and height.
     private(set) var dimensions: [(text: String, from: SIMD3<Float>, to: SIMD3<Float>)] = []
     /// Drawn arrows, labelled, between points of the layout (e.g. into its input).
     var arrows: [(text: String, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
+    /// Lines joining into an arrow's tail, by its text (points of the layout, each line ending at the tail).
+    var arrowFeeds: [String: [[SIMD3<Float>]]] = [:]
     /// Whether its particles move on after it forms, eased (`ParticleShape.offsets`, `ParticleSystem.explode`), when
     /// it follows `splitsFrom`: they start where that layout has them and glide to their place, e.g. a picture
     /// growing or coming apart in layers. From any other layout they go straight to their place. Its headers and
@@ -107,7 +114,7 @@ final class NetworkLayout {
     weak var splitsFrom: NetworkLayout?
     /// A layout formed first when coming from the one it `splitsFrom`, this one then gliding on from it: e.g. the
     /// perceptron's neurons leaving the brain before the rest of the brain becomes its connections.
-    private(set) var prelude: NetworkLayout?
+    var prelude: NetworkLayout?
     /// `shape` once it has fully moved on (`splits`): each point where its offset takes it, no offsets left, so a
     /// part grown around its center (`ParticleSystem.highlight`) grows where it is.
     var settled: ParticleShape? {
@@ -126,6 +133,8 @@ final class NetworkLayout {
     var arrivedColors: [SIMD3<Float>?]?
     /// Particles moving through the layout over time, animated by the effect every frame; nil: it stands still.
     private(set) var flow: Flow?
+    /// What the flow's output shows once its particles are through (e.g. "Cat"), beside the output arrow's tip.
+    private(set) var flowResult: String?
     /// The particles' points; nil until ready (the brain's surface is built in the background).
     var shape: ParticleShape?
     /// Some points around the layout, to place its title.
@@ -322,10 +331,17 @@ final class NetworkLayout {
     static func inputOutput(of architecture: NetworkLayout) -> NetworkLayout {
         let layout = variant(of: architecture)
         let n = architecture.neurons
-        // Into the image's left face, out of the middle Detect block's right face, both along x.
+        // Into the image's left face, along x; out of the head: a line from each Detect block's right face, joining
+        // level with the middle one, then the arrow along x.
         let inTip = n[0].point - [n[0].box!.x + 0.06, 0, 0]
-        let outTail = n[11].point + [n[11].box!.x + 0.06, 0, 0]
-        layout.arrows = [("Input", inTip - [0.5, 0, 0], inTip), ("Output", outTail, outTail + [0.5, 0, 0])]
+        let heads = [10, 11, 12]
+        let join = heads.map { n[$0].point.x + n[$0].box!.x }.max()! + 0.14
+        let outTail = SIMD3<Float>(join, n[11].point.y, n[11].point.z)
+        layout.arrows = [("Input", inTip - [0.42, 0, 0], inTip), ("Output", outTail, outTail + [0.42, 0, 0])]
+        layout.arrowFeeds["Output"] = heads.map { h in
+            let face = n[h].point + [n[h].box!.x + 0.03, 0, 0]
+            return [face, [join, face.y, face.z], outTail]
+        }
         layout.outline = architecture.outline + layout.arrows.flatMap { [$0.tail, $0.tip] }
         layout.shape = architecture.shape
         return layout
@@ -335,7 +351,7 @@ final class NetworkLayout {
     /// cat, a pixel per particle, in color; every other particle stays where it is.
     static func picture(of inputOutput: NetworkLayout) -> NetworkLayout {
         let layout = variant(of: inputOutput)
-        layout.arrows = inputOutput.arrows
+        (layout.arrows, layout.arrowFeeds) = (inputOutput.arrows, inputOutput.arrowFeeds)
         // A square picture, its right edge just before the input arrow.
         let side: Float = 1
         let center = inputOutput.arrows[0].tail - [0.06 + side / 2, 0, 0]
@@ -493,6 +509,7 @@ final class NetworkLayout {
     static func returning(to target: NetworkLayout, from previous: NetworkLayout, through stop: NetworkLayout? = nil) -> NetworkLayout {
         let layout = variant(of: target)
         (layout.arrows, layout.outline, layout.splits, layout.splitsFrom) = (target.arrows, target.outline, true, previous)
+        layout.arrowFeeds = target.arrowFeeds
         guard var shape = target.shape, var from = previous.shape else { return layout }
         if let stop, let there = stop.shape {
             let prelude = variant(of: target)
@@ -517,6 +534,7 @@ final class NetworkLayout {
     static func flow(of picture: NetworkLayout, through architecture: NetworkLayout) -> NetworkLayout {
         let layout = variant(of: picture, title: "Inference", subtitle: "also called prediction or forward propagation")
         (layout.arrows, layout.outline, layout.shape) = (picture.arrows, picture.outline, picture.shape)
+        layout.arrowFeeds = picture.arrowFeeds
         guard let shape = picture.shape else { return layout }
         let blocks = architecture.neurons
         var next: [Int: [Int]] = [:]
@@ -538,8 +556,17 @@ final class NetworkLayout {
                 guard let pick = next[block]?.randomElement() else { break }
                 block = pick
             }
-            route.append(blocks[block].point + [blocks[block].box!.x + 0.45, .random(in: -0.02...0.02), 0])  // out of the head
-            visit.append(-1)
+            // Out of the head: along its line into the output arrow, and along it.
+            if let output = picture.arrows.last, let feed = picture.arrowFeeds[output.text]?.first(where: {
+                simd_distance($0[0], blocks[block].point) < blocks[block].box!.x + 0.1
+            }) {
+                let jitter = SIMD3<Float>(0, .random(in: -0.015...0.015), .random(in: -0.015...0.015))
+                route += feed.dropFirst().map { $0 + jitter } + [output.tip - [0.04, 0, 0] + jitter]
+                visit += Array(repeating: -1, count: feed.count)
+            } else {
+                route.append(blocks[block].point + [blocks[block].box!.x + 0.45, .random(in: -0.02...0.02), 0])
+                visit.append(-1)
+            }
             visits.append(visit)
             let column = (start.x - lo.x) / (hi.x - lo.x)
             particles.append(i)
@@ -550,6 +577,7 @@ final class NetworkLayout {
         let members = blocks.indices.map { b in shape.parts.indices.filter { shape.parts[$0] == b + 1 } }
         layout.flow = Flow(
             particles: particles, routes: routes, colors: colors, departures: departures, visits: visits, blocks: members)
+        layout.flowResult = "Cat"
         return layout
     }
 
@@ -567,6 +595,8 @@ final class NetworkLayout {
         let visits: [[Int]]
         /// The particles of each block the routes go through, to light up as they pass.
         let blocks: [[Int]]
+        /// When nearly all the particles are through (seconds into the timeline).
+        var end: Float { (departures.max() ?? 0) + Self.travel * 0.9 }
         /// Each route's distance from its start at each of its points.
         private let distances: [[Float]]
         private let seeds: [Float]

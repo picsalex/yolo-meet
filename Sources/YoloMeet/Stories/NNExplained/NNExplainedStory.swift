@@ -44,10 +44,17 @@ extension Story {
                 Step(title: "Back to the input", models: ["mediapipe-hand"]) {
                     [NetworkEffect(network, network.pictureAgain), handSkeleton(), titleCard("Back to the picture at the model's input")]
                 },
-                Step(title: "Inference", models: ["mediapipe-hand"], transition: .none, loop: 7) {
+                Step(title: "Inference", models: ["mediapipe-hand"], transition: .none, loop: 8.5) {
                     [NetworkEffect(network, network.inference), handSkeleton(), titleCard("The pixels flow through backbone, neck and head")]
                 },
-            ] + taskSteps(network))
+            ] + taskSteps(network) + [
+                Step(title: "Conclusion", models: ["mediapipe-hand"]) {
+                    [
+                        NetworkEffect(network, network.recap), RecapEffect(network, network.recap), handSkeleton(),
+                        titleCard("One image, one model, 7 tasks"),
+                    ]
+                },
+            ])
     }()
 
     /// Each YOLO task's output: drawn on the cat picture, then live from YOLO26n on the camera.

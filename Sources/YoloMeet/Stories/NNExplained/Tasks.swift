@@ -219,6 +219,98 @@ extension NetworkLayout {
 /// The tasks' layouts, in the story's order.
 struct TaskLayouts {
     let detect, segment, semantic, semanticZoom, classify, pose, obb, depth: NetworkLayout
+    /// The seven tasks, with their names.
+    var all: [(name: String, layout: NetworkLayout)] {
+        [("Detect", detect), ("Segment", segment), ("Semantic", semantic), ("Classify", classify), ("Pose", pose),
+         ("OBB", obb), ("Depth", depth)]
+    }
+}
+
+/// The recap: the cat picture on top, an arrow down into YOLO, and arrows splitting from it to the seven tasks'
+/// outputs in a row, each a small copy of its step's picture.
+extension NetworkLayout {
+    static let recapPicture = (center: SIMD3<Float>(0, 0.95, 0), side: Float(0.72))
+    /// The brace between the shrunk model and its "YOLO" label: its x, top, bottom and depth (set by `recap`).
+    static var recapBrace: (x: Float, top: Float, bottom: Float, z: Float) = (0, 0, 0, 0)
+    static let recapModel = (center: SIMD3<Float>(0, -0.15, 0), scale: Float(0.42))
+    static let recapThumbSide: Float = 0.5
+    static func recapThumb(_ k: Int) -> SIMD3<Float> { [Float(k - 3) * 0.62, -1.3, 0] }
+    /// Particles in the picture and in each output (the rest make the model).
+    static let recapCopy = 5_500 * NeuralNetwork.scale
+
+    /// From `tasks.depth` (the last task's picture), in two glides: first the picture, whole, to the input's place on top
+    /// (its `prelude`, in the input's colors); then out of it, each particle to the same place in one of the seven
+    /// tasks' small pictures (colored as in its step, so each comes down as a picture, through the model, splitting
+    /// to its place), or into the model, shrunk; an eighth stays as the input.
+    static func recap(_ tasks: TaskLayouts, architecture: NetworkLayout) -> NetworkLayout {
+        let layout = NetworkLayout(
+            title: "Conclusion", subtitle: "one image in · one YOLO model · 7 tasks out",
+            neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
+        layout.splits = true
+        let picture = recapPicture, model = recapModel, side = recapThumbSide
+        // The model's extent, shrunk, for the arrows.
+        let ys = architecture.outline.map { $0.y * model.scale + model.center.y }
+        let (modelTop, modelBottom) = (ys.max()!, ys.min()!)
+        let modelRight = architecture.outline.map { $0.x * model.scale + model.center.x }.max()!
+        let pictureBottom = picture.center.y - picture.side / 2
+        layout.arrows = [("", [0, pictureBottom - 0.05, 0], [0, modelTop + 0.06, 0])]
+            + (0..<7).map { k in ("", [0, modelBottom - 0.05, 0], recapThumb(k) + [0, side / 2 + 0.05, 0]) }
+        layout.headers = tasks.all.enumerated().map { k, task in (task.name, recapThumb(k) - [0, side / 2 + 0.05, 0], []) }
+            // Beside the model, centered on it (headers hang from their point, so a little above the middle).
+            + [("YOLO", [modelRight + 0.3, (modelTop + modelBottom) / 2 + 0.03, model.center.z], [])]
+        recapBrace = (modelRight + 0.05, modelTop + 0.02, modelBottom - 0.02, model.center.z)
+        layout.headerSize = 19
+        layout.outline = [picture.center + [picture.side / 2, picture.side / 2, 0], recapThumb(0) - [side / 2, side / 2 + 0.15, 0],
+                          recapThumb(6) + [side / 2, -side / 2 - 0.15, 0], picture.center - [picture.side / 2, -picture.side / 2, 0]]
+        guard let from = tasks.depth.settled, let blocks = architecture.shape else { return layout }
+        let n = from.points.count
+        // Light adds up: denser copies get dimmer colors, so they look as bright as the large picture.
+        let dim = { (count: Int, side: Float) -> Float in
+            min(Float(n) / (resultSide * resultSide) / (Float(count) / (side * side)), 1)
+        }
+        let sources = [tasks.detect] + tasks.all.map(\.layout)
+        let centers = [picture.center] + (0..<7).map(recapThumb)
+        let sides = [picture.side] + Array(repeating: side, count: 7)
+        let order = Array(0..<n).shuffled()
+        // First: every particle to its place in the input picture.
+        let inputScale = picture.side / resultSide
+        let input = from.points.map { p -> SIMD3<Float> in
+            var q = p * inputScale
+            q.z = .random(in: -0.002...0.002)
+            return picture.center + q
+        }
+        let prelude = NetworkLayout(title: layout.title, subtitle: layout.subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
+        (prelude.splits, prelude.splitsFrom, prelude.outline) = (true, tasks.depth, layout.outline)
+        let inputColors = (tasks.detect.settled ?? tasks.detect.shape)?.colors.map { $0.map { $0 * dim(n, picture.side) * 1.3 } }
+        prelude.shape = ParticleShape(
+            points: from.points, offsets: zip(input, from.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            colors: inputColors ?? Array(repeating: nil, count: n))
+        (layout.prelude, layout.splitsFrom) = (prelude, prelude)
+        var points = input, colors = [SIMD3<Float>?](repeating: nil, count: n)
+        for (copy, source) in sources.enumerated() {
+            guard let shape = source.settled ?? source.shape else { continue }
+            let scale = sides[copy] / resultSide
+            let brightness = dim(recapCopy, sides[copy]) * 1.3
+            for i in order[copy * recapCopy..<min((copy + 1) * recapCopy, n)] {
+                var p = shape.points[i] * scale
+                p.z = p.z * 0.5 + .random(in: -0.002...0.002)
+                points[i] = centers[copy] + p
+                colors[i] = shape.colors[i].map { $0 * brightness }
+            }
+        }
+        // The model: the architecture's blocks and connections (not its dust), shrunk, from as many of its particles.
+        let solid = blocks.parts.indices.filter { blocks.parts[$0] != dustPart }.shuffled()
+        for (k, i) in order[min(8 * recapCopy, n)...].enumerated() {
+            points[i] = recapModel.center + blocks.points[solid[k % solid.count]] * recapModel.scale
+        }
+        // On the way, dim (they all leave the input together, adding up) and the model's unseen; lit once there.
+        let inModel = Set(order[min(8 * recapCopy, n)...])
+        let onTheWay = (0..<n).map { i -> SIMD3<Float>? in inModel.contains(i) ? .zero : colors[i].map { $0 * 0.3 } }
+        layout.shape = ParticleShape(
+            points: input, offsets: zip(points, input).map { $0 - $1 }, parts: Array(repeating: 0, count: n), colors: onTheWay)
+        layout.arrivedColors = colors
+        return layout
+    }
 }
 
 /// A task's output drawn in 2D over the results picture (`NetworkLayout.tasks`), following its particles as they
@@ -274,7 +366,7 @@ final class TaskOutputEffect: Effect {
             return CGPoint(x: center.x + direction.x * reach, y: center.y + direction.y * reach)
         }
     }
-    private static let upright = outline()
+    static let upright = outline()
 
     /// A canvas point turned by `tilt` around the cat's center.
     static func turned(_ p: CGPoint, by a: CGFloat) -> CGPoint {
@@ -548,5 +640,89 @@ extension NSColor {
     var rgb: SIMD3<Float> {
         let c = usingColorSpace(.sRGB) ?? self
         return [Float(c.redComponent), Float(c.greenComponent), Float(c.blueComponent)]
+    }
+}
+
+/// The recap's outputs drawn over their small pictures, as in their steps but thin: the cat's box (detect), its
+/// outline (segment), its top class (classify), its skeleton (pose), its rotated box (OBB). It fades in once the
+/// particles have arrived.
+final class RecapEffect: Effect {
+    private let network: NeuralNetwork
+    private let layout: NetworkLayout
+    private let content = SKNode()
+    private let boxes = SKShapeNode()
+    private let outline = SKShapeNode()
+    private let limbs = SKShapeNode()
+    private let joints = SKShapeNode()
+    private let brace = SKShapeNode()
+    private let topClass = ShadowedLabel("tabby cat 71%", font: Theme.ultralytics.labelFont)
+
+    init(_ network: NeuralNetwork, _ layout: NetworkLayout) {
+        (self.network, self.layout) = (network, layout)
+        super.init()
+        node.addChild(content)
+        content.alpha = 0
+        for child in [boxes, outline, limbs, joints, brace, topClass] as [SKNode] { content.addChild(child) }
+        (boxes.strokeColor, boxes.fillColor) = (Theme.ultralyticsYellow, .clear)
+        (outline.strokeColor, outline.fillColor) = (.white, .clear)
+        (limbs.strokeColor, joints.fillColor, joints.strokeColor) = (NSColor.hex("FF8000"), NSColor.hex("00D4BB"), .clear)
+        (topClass.label.verticalAlignmentMode, topClass.label.horizontalAlignmentMode) = (.top, .center)
+        (brace.strokeColor, brace.fillColor, brace.lineCap, brace.lineJoin) = (.white, .clear, .round, .round)
+    }
+
+    override func update(_ frame: StageFrame) {
+        let u = frame.stage.unit
+        let system = network.system
+        let ready = network.formed === layout && system.mode == .form && network.split >= 1
+        content.alpha = content.alpha.approaching(ready ? 1 : 0, CGFloat(1 - exp(-frame.dt * (ready ? 3 : 14))))
+        content.isHidden = content.alpha < 0.01
+        guard !content.isHidden else { return }
+        // A point of the cat picture's canvas in output `k`'s small picture, on stage.
+        let side = NetworkLayout.recapThumbSide
+        let at = { (k: Int, c: CGPoint) -> CGPoint in
+            system.shownPoint(NetworkLayout.recapThumb(k) + [(Float(c.x) / 100 - 0.5) * side, (Float(c.y) / 100 - 0.5) * side, 0]).point
+        }
+        let box = TaskOutputEffect.catBox
+        let corners = [box.origin, CGPoint(x: box.maxX, y: box.minY), CGPoint(x: box.maxX, y: box.maxY), CGPoint(x: box.minX, y: box.maxY)]
+        let paths = CGMutablePath()
+        paths.addLines(between: corners.map { at(0, $0) })
+        paths.closeSubpath()
+        paths.addLines(between: corners.map { at(5, TaskOutputEffect.turned($0, by: TaskOutputEffect.tilt)) })
+        paths.closeSubpath()
+        (boxes.path, boxes.lineWidth) = (paths, 2 * u)
+
+        let polygon = CGMutablePath()
+        polygon.addLines(between: TaskOutputEffect.upright.map { at(1, $0) })
+        polygon.closeSubpath()
+        (outline.path, outline.lineWidth) = (polygon, 1.5 * u)
+
+        let points = TaskOutputEffect.keypoints.map { at(4, $0) }
+        let lines = CGMutablePath(), dots = CGMutablePath()
+        for (a, b) in TaskOutputEffect.limbs {
+            lines.move(to: points[a])
+            lines.addLine(to: points[b])
+        }
+        for p in points { dots.addEllipse(in: CGRect(x: p.x - 3 * u, y: p.y - 3 * u, width: 6 * u, height: 6 * u)) }
+        (limbs.path, limbs.lineWidth, joints.path) = (lines, 2 * u, dots)
+
+        // A "}" spanning the model, its tip toward "YOLO".
+        let b = NetworkLayout.recapBrace
+        let top = system.shownPoint([b.x, b.top, b.z]).point, bottom = system.shownPoint([b.x, b.bottom, b.z]).point
+        let (w, mid) = (0.07 * (top.y - bottom.y), (top.y + bottom.y) / 2)
+        let r = min(w, (top.y - bottom.y) / 4), (x, spine) = (top.x, top.x + w / 2)
+        let curl = CGMutablePath()
+        curl.move(to: top)
+        curl.addQuadCurve(to: CGPoint(x: spine, y: top.y - r), control: CGPoint(x: spine, y: top.y))
+        curl.addLine(to: CGPoint(x: spine, y: mid + r))
+        curl.addQuadCurve(to: CGPoint(x: x + w, y: mid), control: CGPoint(x: spine, y: mid))
+        curl.addQuadCurve(to: CGPoint(x: spine, y: mid - r), control: CGPoint(x: spine, y: mid))
+        curl.addLine(to: CGPoint(x: spine, y: bottom.y + r))
+        curl.addQuadCurve(to: bottom, control: CGPoint(x: spine, y: bottom.y))
+        (brace.path, brace.lineWidth) = (curl, 2 * u)
+
+        // The top class over the classify picture's top.
+        topClass.label.set(\.fontSize, 13 * u)
+        topClass.position = at(3, CGPoint(x: 50, y: 97))
+        topClass.sync(unit: u)
     }
 }

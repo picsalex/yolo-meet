@@ -184,7 +184,8 @@ always fade from the previous shape's to the new one's (`ParticleSystem.colorFad
 step loops (`loop: 7`): its pixels flow through the model as pulses of gold light, from the input arrow down the
 backbone, through the neck to a Detect block of the head (`NetworkLayout.flow`: a random path of the blocks'
 connections per pixel), while the architecture stands still, its blocks lighting up gold as the pixels go through them
-(`ParticleSystem.paint(_:color:)`, from how many are in each block); before, the bands merge back into the RGB pixels
+(`ParticleSystem.paint(_:color:)`, from how many are in each block), and once they're through, the result ("Cat",
+`NetworkLayout.flowResult`) shows past the output arrow until the loop starts over; before, the bands merge back into the RGB pixels
 and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude); Then each YOLO task gets two
 steps (`Tasks.swift`): its output on the cat picture (the particles glide into one large picture, recolored per task:
 the cat's mask, class colors, an inferno depth map in relief; `TaskOutputEffect` draws the box, polygon, legend, top
@@ -194,7 +195,10 @@ particles grow into them while the rest turn black where they are, shift just en
 there through `NetworkLayout.arrivedColors`), then the real YOLO26n model of that task on the camera, with the app's
 live overlays (`BoxesEffect`, `OverlayEffect`, `ClassifyEffect`, `PoseEffect`, `OrientedBoxesEffect`); as the model visualizer
 draws them (class colors), except the depth map, inferno as on the cat (`OverlayEffect(depthColors:)`); the cat steps' boxes
-are Ultralytics yellow. `ParticleSystem.place(_:at:colors:)` moves and colors
+are Ultralytics yellow. The last step, a **recap** (`NetworkLayout.recap`, `RecapEffect`), shows the input picture on top, an
+arrow down into YOLO (the architecture, shrunk) and arrows splitting to the seven tasks' small pictures: the last task's
+picture first glides whole to the input's place (its `prelude`), then each output comes out of it, dimmed on the way and lit
+once there (`arrivedColors`). `ParticleSystem.place(_:at:colors:)` moves and colors
 some particles every frame without forming again, and black particles stay unseen as they move. **Steps that continue each other**
 share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
 step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a

@@ -161,7 +161,10 @@ step adds or drops still fades in or out (NN explained: the arrows on the same o
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
 
-The `NNExplained` story is the first full scene: a cloud of particles (Cmd + fist gathers it; opening the hand moves on),
+The `NNExplained` story is the first full scene: a black box (`NetworkLayout.blackBox`), its edges made of the
+particles in dark gray and its faces filled black behind them (`BlackBoxEffect`, `behind`), turning on its own
+(`NetworkLayout.spins`); Cmd + fist releases the particles, fading them to the system's blue
+(`ParticleSystem.scatter(plainColors:)`), and opening the hand moves on (`releases`, as a cloud does),
 then a brain (`Brain.shape`) holding a network of 300
 neurons (balls of particles, each its own part) and their synapses (lines of particles); in action mode, the touched
 neuron shows as a disc with its bias and the touched synapse with its weight, kept on the particles with `shownPoint`.

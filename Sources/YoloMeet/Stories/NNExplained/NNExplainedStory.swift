@@ -1,15 +1,18 @@
 import YoloMeetCore
 
 extension Story {
-    /// How a neural network works: a cloud of particles becomes a brain, with the neurons and weights inside it, then
+    /// How a neural network works: a black box made of particles opens, and its particles become a brain, with the neurons and weights inside it, then
     /// some of them are laid out as a multilayer perceptron, then YOLO's architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, their red, green and blue channels, and the same picture in grayscale (one channel) or multispectral (five). The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
         let network = NeuralNetwork()
         return Story(
             id: "nn-explained", title: "NN explained",
             steps: [
-                Step(title: "Cloud", models: ["mediapipe-hand"]) {
-                    [NetworkEffect(network, nil), handSkeleton(), titleCard("Cmd + fist to gather the particles")]
+                Step(title: "Black box", models: ["mediapipe-hand"]) {
+                    [
+                        NetworkEffect(network, network.blackBox), BlackBoxEffect(network, network.blackBox), handSkeleton(),
+                        titleCard("Cmd + fist to open the black box"),
+                    ]
                 },
                 Step(title: "Neural network", models: ["mediapipe-hand"]) {
                     [NetworkEffect(network, network.brain), handSkeleton(), titleCard("Pinch to move, two hands to zoom inside; hold space and point at a neuron")]

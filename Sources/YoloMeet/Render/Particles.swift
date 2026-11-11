@@ -146,10 +146,15 @@ final class ParticleSystem {
         }
     }
 
-    /// Breaks the shape back into a cloud, with an outward burst (`kick`, 0 for none).
-    func scatter(kick: Float = 1) {
+    /// Breaks the shape back into a cloud, with an outward burst (`kick`, 0 for none). `plainColors`: the particles'
+    /// own colors fade back to the system's `color` (over `colorFade`); otherwise they keep them.
+    func scatter(kick: Float = 1, plainColors: Bool = false) {
         mode = .cloud
         self.kick = kick
+        if plainColors, shape != nil {
+            shape!.colors = Array(repeating: .zero, count: count)
+            shapeChanged = true
+        }
     }
 
     /// Creates the GPU buffers on first use: particles start spread over the whole stage.

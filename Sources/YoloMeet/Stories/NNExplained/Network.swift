@@ -13,6 +13,8 @@ final class NeuralNetwork {
     /// Where the particles are centered (stage points), kept from step to step so the next layout forms there; nil
     /// until the first step places it on the right third of the stage (0 brings it back there).
     var home: CGPoint?
+    /// The network from outside: a black box, its edges made of the particles.
+    let blackBox: NetworkLayout
     /// 300 neurons inside a brain, each joined to its three nearest.
     let brain: NetworkLayout
     /// 23 of the brain's neurons (with their biases) in three fully connected layers.
@@ -47,6 +49,7 @@ final class NeuralNetwork {
 
     init() {
         system.brightness = 0.45 / Float(Self.scale).squareRoot()  // points add light: about the same look, denser
+        blackBox = .blackBox()
         brain = .brain()
         perceptron = .perceptron(layers: [10, 5, 8], from: brain)
         architecture = .architecture()
@@ -93,6 +96,11 @@ final class NetworkLayout {
     /// Tilt toward the viewer and turn at rest (`KeyTurn`).
     let restingTilt: Float
     var restingTurn: Float = 0
+    /// Whether it turns slowly on its own at first (R toggles it).
+    var spins = false
+    /// Whether a fist releasing its particles, let go, moves on to the next step (as the cloud does) instead of
+    /// forming it again.
+    var releases = false
     /// How much a touched neuron or block grows.
     private(set) var grown: CGFloat = 1.8
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name

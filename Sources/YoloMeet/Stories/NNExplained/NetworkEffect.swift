@@ -7,7 +7,7 @@ import simd
 /// into a ball that follows the fist; opening the hand forms the layout there, or, on the cloud alone, moves the story to
 /// its next step (`frame.nextStep`), which forms there. Both hands pinching zoom (around the point between them, to look inside) when they move apart or closer, and move it
 /// when they move together; one hand pinching moves it too. A fist on it breaks it again (fists need Command held). Keys:
-/// R turns a slow spin on or off (off at first), Q/D turn and Z/S tilt while held, 0 resets the view. With the camera
+/// R turns a slow spin on or off (off at first, unless the layout `spins`), Q/D turn and Z/S tilt while held, 0 resets the view. With the camera
 /// hidden (H), it moves to the middle of the stage, and back to its last position with the camera when it shows again.
 ///
 /// Action mode (Space held): the neuron a fingertip touches grows its particles and shows as a neuron, a disc with a
@@ -99,7 +99,7 @@ final class NetworkEffect: Effect {
         (self.network, self.layout) = (network, layout)
         items = layout?.neurons.map { _ in Actionable(grown: layout!.grown) } ?? []
         turning = KeyTurn(
-            restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25, spinning: false)
+            restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25, spinning: layout?.spins ?? false)
         headers = layout?.headers.map { ShadowedLabel($0.text, font: Theme.titleFont) } ?? []
         arrows = layout?.arrows.map { Arrow($0.text, color: NetworkEffect.gold) } ?? []
         dimensions = layout?.dimensions.map { Dimension($0.text) } ?? []
@@ -147,13 +147,18 @@ final class NetworkEffect: Effect {
             switch gesture.kind {
             case let .fist(location):
                 if gesture.phase == .began {
-                    system.scatter(kick: formed != nil ? 1 : 0.4)
+                    // A layout that releases its particles (the black box) lets them go in the system's colors.
+                    system.scatter(kick: formed != nil ? 1 : 0.4, plainColors: layout?.releases == true)
                     formed = nil
                 }
                 home = location
                 if gesture.phase == .ended {
-                    if let shape = layout?.shape { form(shape, frame) }  // at its zoom
-                    if layout == nil { frame.nextStep() }  // the cloud, gathered and let go: on to the next step
+                    // The cloud, or a layout that releases its particles, gathered and let go: on to the next step.
+                    if layout == nil || layout?.releases == true {
+                        frame.nextStep()
+                    } else if let shape = layout?.shape {
+                        form(shape, frame)  // at its zoom
+                    }
                 }
             case let .drag(start, location) where formed != nil:
                 home = CGPoint(x: base.home.x + location.x - start.x, y: base.home.y + location.y - start.y)

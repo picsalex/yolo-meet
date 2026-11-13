@@ -79,7 +79,7 @@ final class NetworkEffect: Effect {
     /// The neuron and synapse last described, so their labels fade out in place.
     private var described: (neuron: Int?, synapse: Int?) = (nil, nil)
 
-    private static let gold = NSColor(red: 1, green: 0.78, blue: 0.22, alpha: 1)
+    private static let gold = NNColors.gold
     /// A neuron's look: a white disc with a blue ring, 64 points across.
     private static let disc: SKTexture = {
         let (size, width) = (128, CGFloat(10))
@@ -199,7 +199,7 @@ final class NetworkEffect: Effect {
             system.place(flow.particles, at: points, colors: colors)
             // Blocks light up gold as the pixels go through them (quickly), and cool down after (slowly).
             if glow.count != flow.blocks.count { (glow, painted) = (Array(repeating: 0, count: flow.blocks.count), Array(repeating: -1, count: flow.blocks.count)) }
-            let gold = SIMD3<Float>(1, 0.78, 0.22) * 1.4
+            let gold = NNColors.goldLight * 1.4
             for b in flow.blocks.indices {
                 let target = 1 - exp(-Float(inside[b]) / 120)
                 glow[b] += (target - glow[b]) * Float(1 - exp(-frame.dt * (target > glow[b] ? 10 : 2)))

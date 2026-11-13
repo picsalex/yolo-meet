@@ -87,6 +87,9 @@ struct ControlPanel: View {
         Picker("Story", selection: $model.storyID) {
             ForEach(Story.all) { Text($0.title).tag($0.id) }
         }
+        if model.preparingStory == model.storyID {
+            LabeledContent("Preparing \(model.story.title)…") { ProgressView().controlSize(.small) }
+        }
         // The steps, collapsed by default (a story can have dozens): the row shows where the story is, and
         // Previous/Next below step through it either way.
         DisclosureGroup(isExpanded: $stepsExpanded) {

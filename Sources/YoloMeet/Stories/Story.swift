@@ -7,6 +7,9 @@ struct Story: Identifiable {
     let id: String
     let title: String
     let steps: [Step]
+    /// Work done once before the story's first step shows (e.g. building its shared state): the stage shows a loading
+    /// card meanwhile, and the panel a spinner. Nil: the steps show at once.
+    var prepare: (() async -> Void)? = nil
 
     struct Step {
         let title: String

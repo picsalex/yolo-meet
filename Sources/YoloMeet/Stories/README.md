@@ -22,6 +22,8 @@ Stories/
 3. Put effects only this story uses in its folder. Move something to `Kit/` once a second story needs it.
 4. Put its files in `Assets/<Name>/` and find them with `Story.asset("file.usdz", in: "<Name>")`, in the built app
    (`scripts/build.sh`) and with `swift run`.
+5. If the story needs heavy shared state, build it in `Story(…, prepare:)` rather than at launch: the app runs it once,
+   the first time the story is opened, showing `loadingCard` on stage and a spinner in the panel until it's done.
 
 A step lists models by catalog id (`ModelCatalog`); missing ones are downloaded when the step is shown. Effects are
 built anew each time a step starts.
@@ -161,7 +163,10 @@ step adds or drops still fades in or out (NN intro: the arrows on the same objec
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
 
-The `NNExplained` story is the first full scene: a black box (`NetworkLayout.blackBox`), its edges made of the
+The `NNExplained` story is the first full scene. Its network (every layout, about 180 MB) is built when the
+story is first opened, not at launch: `Story.prepare` builds it (`LazyNetwork`), pausing between layouts so the app
+keeps drawing, while the stage shows `loadingCard` and the panel a spinner; and its steps go through `nnStep`, which adds the hand
+skeleton and the caption. It opens on a black box (`NetworkLayout.blackBox`), its edges made of the
 particles in dark gray and its faces filled black behind them (`BlackBoxEffect`, `behind`), turning on its own
 (`NetworkLayout.spins`); Cmd + fist releases the particles, fading them to the system's blue
 (`ParticleSystem.scatter(plainColors:)`), and opening the hand moves on (`releases`, as a cloud does),

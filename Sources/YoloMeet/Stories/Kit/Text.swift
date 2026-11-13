@@ -44,3 +44,12 @@ func titleCard(_ title: String) -> Effect {
     effect.node.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.6)]))
     return effect
 }
+
+/// A lower-third card while a story gets ready (`Story.prepare`): its title, and dots that keep moving so the stage
+/// reads as working, not frozen.
+func loadingCard(_ title: String) -> Effect {
+    TextEffect(.lowerThird) { frame in
+        let dots = Int(frame.time * 3) % 4
+        return "Preparing \(title)" + String(repeating: ".", count: dots) + String(repeating: " ", count: 3 - dots)
+    }
+}

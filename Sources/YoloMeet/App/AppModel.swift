@@ -72,6 +72,12 @@ final class AppModel {
     private(set) var pendingModels: Set<String> = []
     /// Written by the renderer every frame; read periodically by the panel, so not observed.
     @ObservationIgnored var renderFPS = 0
+    /// Stories whose `prepare` has finished.
+    @ObservationIgnored private var prepared: Set<String> = []
+    /// The story whose `prepare` is running: the stage shows a loading card and the panel a spinner meanwhile.
+    private(set) var preparingStory: String?
+    /// Whether the story on stage still has to be prepared before its steps can show.
+    private var storyNeedsPreparing: Bool { mode == .story && story.prepare != nil && !prepared.contains(storyID) }
 
     var story: Story { Story.all.first { $0.id == storyID } ?? Story.all[0] }
 
@@ -111,6 +117,17 @@ final class AppModel {
     /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
     func applyScene(transition: Story.Transition = .fade) {
         (self.transition, sceneStory) = (transition, mode == .story ? storyID : nil)
+        if storyNeedsPreparing, preparingStory == nil, let prepare = story.prepare {
+            // Once per story: its steps show when it's ready (the stage shows a loading card until then).
+            let id = storyID
+            preparingStory = id
+            Task {
+                await prepare()
+                prepared.insert(id)
+                preparingStory = nil
+                applyScene()
+            }
+        }
         // A live step shows the camera even when it's hidden (H); the next step that doesn't hides it again.
         let live = mode == .story && story.steps[stepIndex].showsCamera
         if live, cameraHidden {
@@ -139,7 +156,7 @@ final class AppModel {
         case .display:
             displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? [] }
         case .story:
-            story.steps[stepIndex].effects()
+            storyNeedsPreparing ? [loadingCard(story.title)] : story.steps[stepIndex].effects()
         }
     }
 

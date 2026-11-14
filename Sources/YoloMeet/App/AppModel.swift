@@ -23,6 +23,9 @@ final class AppModel {
     @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
     /// Keys for the stage's effects (`frame.keys`).
     @ObservationIgnored let stageKeys = StageKeys()
+    /// Ink drawn on the stage with the mouse, or with the iPad pen app's Apple Pencil; both observe their own settings.
+    @ObservationIgnored let drawing = Drawing()
+    @ObservationIgnored private(set) lazy var pen = PenInput(drawing: drawing)
 
     var mode: Mode = .display { didSet { applyScene() } }
     /// Models drawn in Display mode, in drawing order.
@@ -83,6 +86,7 @@ final class AppModel {
 
     init() {
         _ = keys  // ←/→ step the story while yolo-meet is active
+        _ = pen  // the iPad pen app finds yolo-meet from launch, when the pen is on
         pipeline.onPendingChange = { [weak self] in
             Task { @MainActor in self.map { $0.pendingModels = $0.pipeline.pending } }
         }

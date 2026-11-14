@@ -5,6 +5,7 @@ import SwiftUI
 
 /// The shareable output, rendered into one Metal drawable: camera frame (Core Image), the 2D content of effects drawn
 /// `behind`, then the effects' 3D content (RealityKit), their particles (Metal), and their 2D content (SpriteKit).
+/// The iPad pen app's pad gets the result as a picture (`StagePicture`).
 struct StageView: NSViewRepresentable {
     let model: AppModel
 
@@ -18,6 +19,7 @@ struct StageView: NSViewRepresentable {
         view.clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         view.delegate = context.coordinator
         view.mouse = context.coordinator.mouse
+        view.drawing = model.drawing
         return view
     }
 
@@ -25,9 +27,13 @@ struct StageView: NSViewRepresentable {
 }
 
 /// Locks the stage window to 16:9 so it shares cleanly, takes key presses so keys the stage doesn't use don't make
-/// macOS beep (its keys reach effects through `StageKeys`), and passes the mouse and trackpad to `MouseGestures`.
+/// macOS beep (its keys reach effects through `StageKeys`), and passes the mouse and trackpad to `MouseGestures`, or to
+/// the `Drawing` while it's on.
 private final class StageMTKView: MTKView {
     var mouse: MouseGestures?
+    var drawing: Drawing?
+    /// The drawing, while it takes the mouse.
+    private var inking: Drawing? { drawing?.isOn == true ? drawing : nil }
 
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {}
@@ -48,14 +54,31 @@ private final class StageMTKView: MTKView {
         return CGPoint(x: p.x * scale, y: p.y * scale)
     }
 
-    override func mouseEntered(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
-    override func mouseMoved(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
-    override func mouseExited(with event: NSEvent) { mouse?.moved(to: nil) }
-    override func mouseDown(with event: NSEvent) { mouse?.pressed(at: stagePoint(event)) }
-    override func mouseDragged(with event: NSEvent) { mouse?.moved(to: stagePoint(event)) }
+    /// An event's location in ink points (`Drawing`): stage points at unit 1.
+    private func inkPoint(_ event: NSEvent) -> CGPoint {
+        let (p, unit) = (stagePoint(event), drawableSize.height / 720)
+        return unit > 0 ? CGPoint(x: p.x / unit, y: p.y / unit) : p
+    }
+
+    /// The cursor moved to the event's location, or left the stage (nil).
+    private func moved(to event: NSEvent?) {
+        if let inking {
+            if let event { inking.moved(to: inkPoint(event)) }
+        } else {
+            mouse?.moved(to: event.map(stagePoint))
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) { moved(to: event) }
+    override func mouseMoved(with event: NSEvent) { moved(to: event) }
+    override func mouseExited(with event: NSEvent) { moved(to: nil) }
+    override func mouseDragged(with event: NSEvent) { moved(to: event) }
+    override func mouseDown(with event: NSEvent) {
+        if let inking { inking.pressed(at: inkPoint(event)) } else { mouse?.pressed(at: stagePoint(event)) }
+    }
     override func mouseUp(with event: NSEvent) {
-        mouse?.released()
-        if !bounds.contains(convert(event.locationInWindow, from: nil)) { mouse?.moved(to: nil) }
+        if let inking { inking.released(time: CACurrentMediaTime()) } else { mouse?.released() }
+        if !bounds.contains(convert(event.locationInWindow, from: nil)) { moved(to: nil) }
     }
 
     override func magnify(with event: NSEvent) {
@@ -91,6 +114,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private let reality: RealityLayer?
     /// Nil if its shaders fail to compile.
     private lazy var particles = ParticleRenderer(device: device, pixelFormat: .bgra8Unorm)
+    private lazy var picture = StagePicture(device: device)
     private var effects: [Effect] = []
     private lazy var stats = StatsEffect(model: model)
     private let gestures = HandGestures()
@@ -120,6 +144,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         super.init()
         scene.addChild(stats.node)
         scene.addChild(gestureDebug.node)
+        scene.addChild(model.drawing.node)
     }
 
     func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {}
@@ -182,15 +207,20 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         stageFrame.keys = model.stageKeys.take()  // before gestures: a fist needs Command held
         if stageFrame.keys.pressed.contains("h") { model.cameraHidden.toggle() }  // shown from the next frame
         stageFrame.cameraHidden = model.cameraHidden
+        if stageFrame.keys.pressed.contains("p") { model.drawing.isOn.toggle() }
+        if stageFrame.keys.pressed.contains("c") { model.drawing.clear() }
+        if stageFrame.keys.pressed.contains("delete") { model.drawing.undo() }
         let handGesture = gestures.update(stageFrame)  // every frame, to keep following the hands
         let mouseGesture = mouse.update(time: now)
         stageFrame.gesture = mouseGesture ?? handGesture  // the mouse wins while it acts
         stageFrame.charge = mouseGesture == nil ? gestures.charging : nil
-        stageFrame.pointers = gestures.pointers + (mouse.pointer.map { [$0] } ?? [])
+        // While drawing is on the mouse draws: it doesn't point.
+        stageFrame.pointers = gestures.pointers + (model.drawing.isOn ? [] : mouse.pointer.map { [$0] } ?? [])
         pointing.next()
         stageFrame.pointing = pointing
         stageFrame.nextStep = { [model] in Task { model.next() } }  // after this frame
         for effect in effects { effect.update(stageFrame) }
+        model.drawing.update(stageFrame)
         for debug in [stats, gestureDebug] as [Effect] {
             debug.node.isHidden = !model.debugMode
             if model.debugMode { debug.update(stageFrame) }
@@ -213,6 +243,16 @@ final class StageRenderer: NSObject, MTKViewDelegate {
 
         renderer.update(atTime: now)
         renderer.render(withViewport: bounds, commandBuffer: commandBuffer, renderPassDescriptor: overlay)
+
+        // The pen's pad shows the stage: it gets the finished frame's picture.
+        if model.pen.pad != nil {
+            // A few pictures a second while the pen has been away from the pad a while, all of them from its first hover.
+            let idle = now - model.pen.lastHeard > 3
+            picture.take(of: drawable.texture, at: now, idle: idle, with: context, in: commandBuffer) {
+                [pen = model.pen, through = model.drawing.penFinished] jpeg, done in
+                pen.send(picture: jpeg, through: through, then: done)
+            }
+        }
 
         commandBuffer.present(drawable)
         commandBuffer.commit()

@@ -1,4 +1,5 @@
 import AVFoundation
+import PenLink
 import SwiftUI
 import UniformTypeIdentifiers
 import YoloMeetCore
@@ -60,6 +61,8 @@ struct ControlPanel: View {
                     }
                 }
             }
+
+            Section("Draw") { DrawControls() }
 
             Section("Models") { ModelBrowser() }
 
@@ -130,6 +133,82 @@ struct ControlPanel: View {
             .foregroundStyle(.secondary)
         }
         Toggle("Hide the camera (H on stage)", isOn: $model.cameraHidden)
+    }
+}
+
+/// Ink on the stage (`Drawing`): the mouse and the iPad's pen, the ink's look, and removing strokes.
+private struct DrawControls: View {
+    @Environment(AppModel.self) private var model
+    /// The pairing code is only readable while asked for: the panel may be on a shared screen.
+    @State private var showsCode = false
+
+    var body: some View {
+        @Bindable var drawing = model.drawing
+        @Bindable var pen = model.pen
+        Toggle("Draw on stage (P)", isOn: $drawing.isOn)
+        Toggle(isOn: $pen.isOn) {
+            Text("iPad pen")
+            Text(!pen.isOn ? "Draw with an Apple Pencil, from the yolo-meet pen app" : pen.pad.map { "Connected to \($0)" } ?? "Waiting for the yolo-meet pen app")
+        }
+        if pen.isOn {
+            LabeledContent {
+                Text(showsCode ? PenCode.shown(pen.code) : "••••-••••-••••-••••-••••").monospaced().textSelection(.enabled)
+                Button(showsCode ? "Hide" : "Show") { showsCode.toggle() }
+                Button("New") { pen.renewCode() }
+                    .help("Makes another code: every iPad has to be given it")
+            } label: {
+                Text("Pairing code")
+                Text("Typed once in the pen app. The link is encrypted with it")
+            }
+        }
+        if drawing.isOn || pen.isOn {
+            Picker("Tool", selection: $drawing.erases) {
+                Text("Pencil").tag(false)
+                Text("Eraser").tag(true)
+            }
+            .pickerStyle(.segmented)
+            LabeledContent("Color") {
+                HStack(spacing: 10) {
+                    ForEach(Drawing.colors, id: \.1) { name, hex in
+                        Button { (drawing.color, drawing.erases) = (hex, false) } label: {
+                            Circle().fill(Color(nsColor: .hex(hex))).frame(width: 18, height: 18)
+                                .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
+                                .padding(3)
+                                .overlay(Circle().stroke(Color.accentColor, lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(name)
+                        .help(name)
+                    }
+                }
+            }
+            LabeledContent {
+                Slider(value: $drawing.width, in: InkSettings.widths, step: 1)
+            } label: {
+                Text("Width")
+                Text("\(Int(drawing.width)) px")
+            }
+            Toggle(isOn: $drawing.fades) {
+                Text("Fading ink")
+                Text(drawing.fades ? "Strokes fade out after they are drawn" : "Strokes stay until they are undone, erased or cleared")
+            }
+            if drawing.fades {
+                LabeledContent {
+                    Slider(value: $drawing.fadeAfter, in: InkSettings.stays, step: 1)
+                } label: {
+                    Text("Fades after")
+                    Text("\(Int(drawing.fadeAfter)) s")
+                }
+            }
+        }
+        if drawing.isOn || pen.isOn || drawing.strokeCount > 0 {
+            HStack {
+                Button("Undo (⌫)", systemImage: "arrow.uturn.backward") { drawing.undo() }
+                Spacer()
+                Button("Clear (C)", systemImage: "trash") { drawing.clear() }
+            }
+            .disabled(drawing.strokeCount == 0)
+        }
     }
 }
 

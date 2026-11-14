@@ -2,3 +2,5 @@
 build/
 .swiftpm/
 *.xcodeproj/
+!iPad/YoloMeetPen.xcodeproj/
+xcuserdata/

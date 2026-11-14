@@ -26,6 +26,7 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 MediaPipe tests run when `YOLO_MEET_MEDIAPIPE` points to unzipped `mediapipe-*.aimodel` folders with an `img` folder of
 MediaPipe's sample photos (woman_hands, thumb_up, pose, portrait) and `reference.json` from
 `scripts/export_mediapipe.py --reference img`.
+The pen link's test connects a pad to a host over Bonjour on this machine; `YOLO_MEET_NO_NETWORK=1` skips it.
 
 ## How it works
 
@@ -108,6 +109,56 @@ Toggle it in the panel's Status section. It draws on the stage (so it is visible
 Everything but the fist also works with the mouse or trackpad on the stage, e.g. to rehearse without a camera: press
 and move to drag, pinch the trackpad (or scroll with Command held) to zoom around the cursor, and in action mode the
 cursor points like a fingertip (hold Space, hover an item, release).
+
+## Draw
+
+The panel's Draw section (or **P** on stage) turns on freehand ink over the stage, as Meet's annotations do: press and
+move the mouse or trackpad to draw. While it's on the mouse draws instead of making gestures; hands still do. Pick the
+color and width in the panel; **C** clears and **Backspace** undoes the last stroke. Ink stays on stage when Draw is
+turned off, until it is cleared.
+
+- **Tool**: the pencil draws; the eraser removes the strokes it touches, whole (a ring shows how far it reaches; it
+  grows with the width). Erasing can't be undone. Picking a color takes the pencil back.
+- **Fading ink**: off, strokes stay until they are undone, erased or cleared; on, each fades out once it has stayed
+  the time set under it (1 to 30 seconds).
+
+### iPad pen
+
+With **iPad pen** on in the Draw section, an Apple Pencil draws on the stage from the **yolo-meet pen** app on an
+iPad. The iPad is a pad that stands for the stage and shows it: where the pencil is on it is where it is on stage.
+
+- The pad shows the stage as it is drawn (camera, effects and ink), up to 20 pictures a second (4 while the pencil
+  has been away from the pad for a few seconds, back to 20 as soon as it hovers), so you draw on what you see. Your line follows the pencil on the pad at once; the stage's picture, a moment behind, takes it over when
+  it has it. With nothing on stage yet (no camera or media), the pad is black and shows its own ink.
+- Touching draws, and a harder press makes a wider line. With the eraser, touching removes the strokes under it.
+- Hovering over the glass (iPads that sense it) shows the nib on stage, in a ring that closes in as the pencil comes
+  down, so you can aim while looking at the Mac.
+- A double tap on the pencil switches between the pencil and the eraser; a squeeze (Apple Pencil Pro) picks the next
+  color, with a tap in the barrel.
+- The bar under the pad has the panel's ink settings: pencil or eraser, the colors, and under the sliders button the
+  width, Fading ink and its time. They are the same settings: a change on either shows on the other. It also undoes
+  and clears.
+- Fingers draw too until a pencil has touched the pad; after that they are ignored, so a resting hand leaves no ink.
+
+The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
+or straight between the devices when they share none (Wi-Fi turned on, on both). A USB cable charges the iPad but
+doesn't carry the strokes. Each asks once to use the local network. The stage's pictures are a couple of megabytes a
+second on that link; a slow one gets fewer of them. One pad draws at a time, named in the panel.
+
+The link is paired and encrypted, so it is safe on a network you share with strangers. yolo-meet makes a **pairing
+code** (20 characters, next to iPad pen in the panel: Show reveals it) that is typed once in the pen app, which keeps
+it in the iPad's keychain. Both ends make the link's key from the code (TLS 1.2, pre-shared key, AES-256-GCM):
+without it a device can't connect, see the stage or draw, can't push the connected iPad out, and can't read what
+crosses. Inside that, each connection makes keys of its own (X25519, then ChaChaPoly, `PenSession`) that are never
+sent nor kept, so a session someone recorded stays unreadable even if they learn the code later. **New** makes another
+code and lets go of every iPad that had the old one; the pen app's key button takes the new one. Devices that don't
+have the code can't keep the iPad out either: each address can only hold two unfinished connections at the Mac, and
+the iPad moves on from a host that doesn't answer. What others nearby can still see is that a Mac offers the
+yolo-meet pen service, under the app's name rather than the Mac's. On the Mac the code is kept with the app's
+settings, readable by anything that runs as you there.
+
+The app is the Xcode project in `iPad/` (iPadOS 18+): open `iPad/YoloMeetPen.xcodeproj`, pick your team under
+Signing & Capabilities, and run it on the iPad. It shares its messages and connection with yolo-meet (`Sources/PenLink`).
 
 ## Keys
 

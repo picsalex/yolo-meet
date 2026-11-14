@@ -64,8 +64,8 @@ struct StageFrame {
 
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys
-        /// belong to the clicker (previous and next step).
-        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space", "cmd", "h"]
+        /// belong to the clicker (previous and next step), and P, C and "delete" to the drawing (`Drawing`).
+        static let reserved: Set<String> = ["r", "z", "q", "s", "d", "0", "space", "cmd", "h", "p", "c", "delete"]
         /// Keys down now (hold to act every frame).
         var held: Set<String> = []
         /// Keys pressed since the last frame (toggles).

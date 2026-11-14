@@ -78,7 +78,8 @@ public final class PenHost {
     private func accept(_ connection: NWConnection) {
         guard listener != nil else { return connection.cancel() }
         let from = Self.address(of: connection.endpoint)
-        if let index = Self.makingRoom(for: from, among: arriving.map(\.from)) { arriving.remove(at: index).channel.close() }
+        let waiting = arriving.map { (from: $0.from, hasCode: $0.channel.hasCode) }
+        if let index = Self.makingRoom(for: from, among: waiting) { arriving.remove(at: index).channel.close() }
         let channel = PenChannel<PadMessage, HostMessage>(connection)
         channel.received = { [weak self, weak channel] in if self?.channel === channel { self?.received?($0) } }
         channel.changed = { [weak self, weak channel] ready in
@@ -103,19 +104,25 @@ public final class PenHost {
     }
 
     /// Connections waiting at most from one address, and in all.
-    static let (perAddress, waitingAtMost) = (2, 16)
+    static let (perAddress, waitingAtMost) = (2, 64)
 
-    /// Which waiting connection (by index, among their addresses, oldest first) makes room for a new one from `from`,
-    /// if one must: `from`'s own oldest once it has `perAddress`; when all places are taken, the oldest of the address
-    /// that holds the most. Whoever floods from one address or many only pushes out their own, as long as they hold
-    /// more than the pad, which holds one.
-    static func makingRoom(for from: String, among waiting: [String]) -> Int? {
-        let own = waiting.indices.filter { waiting[$0] == from }
+    /// Which waiting connection (by index, oldest first) makes room for a new one from `from`, if one must. Only one
+    /// still in its TLS handshake can: one past it has shown it has the code, and is only waiting for keys. Among
+    /// those, `from`'s own oldest once it has `perAddress`; when all places are taken, the oldest of the address that
+    /// holds the most.
+    ///
+    /// Whoever floods without the code only pushes out their own, as long as they hold more than the pad, which holds
+    /// one. Flooding from more addresses than there are places, one connection each, can still push out the pad's,
+    /// but only during its handshake, a round trip on the local network: that takes cycling through all the places
+    /// faster than that, for as long as it goes on. No list of a fixed size can rule it out.
+    static func makingRoom(for from: String, among waiting: [(from: String, hasCode: Bool)]) -> Int? {
+        let open = waiting.indices.filter { !waiting[$0].hasCode }
+        let own = open.filter { waiting[$0].from == from }
         if own.count >= perAddress { return own.first }
         guard waiting.count >= waitingAtMost else { return nil }
-        let counts = waiting.reduce(into: [String: Int]()) { $0[$1, default: 0] += 1 }
+        let counts = open.reduce(into: [String: Int]()) { $0[waiting[$1].from, default: 0] += 1 }
         let most = counts.values.max() ?? 0
-        return waiting.firstIndex { counts[$0] == most }
+        return open.first { counts[waiting[$0].from] == most }  // none: all of them have the code, and are let in
     }
 
     /// The address a connection comes from, without its port.

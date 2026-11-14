@@ -43,6 +43,8 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
     private(set) var wasRefused = false
     /// It is over because the other end is another version of the link (`PenLink.version`).
     private(set) var wasIncompatible = false
+    /// TLS is up: the other end has shown it has the pairing code (its keys may still be on their way).
+    private(set) var hasCode = false
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "PenLink", qos: .userInteractive)
     private let session = PenSession()
@@ -64,6 +66,7 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
                     guard let self else { return }
                     switch state {
                     case .ready:
+                        self.hasCode = true
                         let key = PenFrames.frame(.key, Data([PenLink.version]) + self.session.publicKey)
                         self.connection.send(content: key, completion: .idempotent)
                     case .failed(.tls), .waiting(.tls):

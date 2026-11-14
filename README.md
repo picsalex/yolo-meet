@@ -153,8 +153,10 @@ without it a device can't connect, see the stage or draw, can't push the connect
 crosses. Inside that, each connection makes keys of its own (X25519, then ChaChaPoly, `PenSession`) that are never
 sent nor kept, so a session someone recorded stays unreadable even if they learn the code later. **New** makes another
 code and lets go of every iPad that had the old one; the pen app's key button takes the new one. Devices that don't
-have the code can't keep the iPad out either: the Mac always makes room for a new connection (the address holding the
-most unfinished ones gives one up), and the iPad moves on from a host that doesn't answer. Both ends check they speak
+have the code can't connect or read anything, and make it hard to keep the iPad out: the Mac always makes room for a
+new connection (the address holding the most unfinished ones gives one up, and never one that has shown the code),
+and the iPad moves on from a host that doesn't answer. A sustained, fast flood from many addresses could still delay
+or block the iPad's connection, only while it lasts. Both ends check they speak
 the same version of the link; if not, the iPad says to update both apps. What others nearby can still see is that a
 Mac offers the yolo-meet pen service: it is advertised under the app's name, but its address points at the Mac's
 network name (`<name>.local`), as for any service a Mac shares. The Mac's own name only goes to an iPad that has the

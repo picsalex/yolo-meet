@@ -127,24 +127,32 @@ import Testing
         }
     }
 
-    /// The host makes room for every new connection: an address that floods only pushes out its own, and when all
-    /// places are taken, the busiest address gives one up, not the pad's.
+    /// The host makes room for every new connection: an address that floods only pushes out its own, when all
+    /// places are taken the busiest address gives one up, not the pad's, and one that has shown the code never does.
     @Test func roomIsMadeFromTheBusiest() {
-        #expect(PenHost.makingRoom(for: "pad", among: []) == nil)
-        #expect(PenHost.makingRoom(for: "a", among: ["a", "pad", "a"]) == 0)  // its own oldest
-        #expect(PenHost.makingRoom(for: "pad", among: ["a", "pad"]) == nil)
-        // Eight addresses, two each, fill every place: the pad's new connection takes the oldest of one of them.
-        let full = (0..<8).flatMap { ["x\($0)", "x\($0)"] }
-        #expect(full.count == PenHost.waitingAtMost)
-        #expect(PenHost.makingRoom(for: "pad", among: full) == 0)
-        // Then the flood goes on: it never pushes out the pad, which holds one.
-        var waiting = Array(full.dropFirst()) + ["pad"]
-        for k in 0..<100 {
-            let from = "x\(k % 8)"
-            if let index = PenHost.makingRoom(for: from, among: waiting) { waiting.remove(at: index) }
-            waiting.append(from)
-            #expect(waiting.contains("pad"))
+        func waiting(_ froms: [String], code: Set<Int> = []) -> [(from: String, hasCode: Bool)] {
+            froms.enumerated().map { ($1, code.contains($0)) }
         }
+        #expect(PenHost.makingRoom(for: "pad", among: []) == nil)
+        #expect(PenHost.makingRoom(for: "a", among: waiting(["a", "pad", "a"])) == 0)  // its own oldest
+        #expect(PenHost.makingRoom(for: "a", among: waiting(["a", "pad", "a", "a"], code: [0])) == 2)  // not one past TLS
+        #expect(PenHost.makingRoom(for: "pad", among: waiting(["a", "pad"])) == nil)
+        // Addresses with two each fill every place: the pad's new connection takes the oldest of one of them.
+        let full = (0..<PenHost.waitingAtMost / 2).flatMap { ["x\($0)", "x\($0)"] }
+        #expect(full.count == PenHost.waitingAtMost)
+        #expect(PenHost.makingRoom(for: "pad", among: waiting(full)) == 0)
+        // Then the flood goes on: it never pushes out the pad, which holds one.
+        var list = Array(full.dropFirst()) + ["pad"]
+        for k in 0..<200 {
+            let from = "x\(k % 8)"
+            if let index = PenHost.makingRoom(for: from, among: waiting(list)) { list.remove(at: index) }
+            list.append(from)
+            #expect(list.contains("pad"))
+        }
+        // One connection from each of as many addresses as places: oldest first, but never the pad's once past TLS.
+        let spread = (0..<PenHost.waitingAtMost).map { "y\($0)" }
+        #expect(PenHost.makingRoom(for: "new", among: waiting(["pad"] + spread.dropFirst(), code: [0])) == 1)
+        #expect(PenHost.makingRoom(for: "new", among: waiting(Array(repeating: "pad", count: PenHost.waitingAtMost), code: Set(0..<PenHost.waitingAtMost))) == nil)
     }
 
     /// Without a pad, a message is done at once: whoever waits for it to leave doesn't wait for good.

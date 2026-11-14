@@ -86,6 +86,67 @@ import Testing
         #expect(frames.isBroken)
     }
 
+    /// The other end's key, then its sealed messages: whatever a newer end adds is skipped, and whatever can't be
+    /// right closes the link.
+    @Test func readerTakesKeyThenSealed() throws {
+        let (host, pad) = (PenSession(), PenSession())
+        var reader = PenReader<PadMessage, HostMessage>(session: host)
+        var padSide = try #require(pad.ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self))
+        let key = PenFrames.frame(.key, Data([PenLink.version]) + pad.publicKey)
+        func sealed(_ frame: Data) -> Data { PenFrames.frame(.sealed, padSide.seal.seal(frame)!) }
+        // The key and a message in one read; then a newer end's frame kind, and a message this end can't decode.
+        let first = try reader.read(key + sealed(PenFrames.frame(PadMessage.undo))).get()
+        #expect(first.sealer != nil && first.messages == [.undo])
+        let next = try reader.read(
+            PenFrames.frame(kind: 9, Data([1])) + sealed(PenFrames.frame(.json, Data(#"{"fly":{}}"#.utf8)))
+                + sealed(PenFrames.frame(kind: 9, Data([2]))) + sealed(PenFrames.frame(PadMessage.up))).get()
+        #expect(next.sealer == nil && next.messages == [.up])
+        // A changed message, a second key, or one that isn't sealed: the link is broken.
+        var changed = sealed(PenFrames.frame(PadMessage.clear))
+        changed[changed.endIndex - 1] ^= 1
+        #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) { try reader.read(changed).get() }
+        var again = PenReader<PadMessage, HostMessage>(session: host)
+        _ = try again.read(key).get()
+        #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) { try again.read(key).get() }
+        var plain = PenReader<PadMessage, HostMessage>(session: host)
+        _ = try plain.read(key).get()
+        #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) { try plain.read(PenFrames.frame(PadMessage.up)).get() }
+    }
+
+    /// An end of another version says so: a key of another version, no key first, or the JSON lines from before
+    /// frames (read as a frame far too long).
+    @Test func otherVersionsAreTold() {
+        let pad = PenSession()
+        for first in [
+            PenFrames.frame(.key, Data([PenLink.version &+ 1]) + pad.publicKey), PenFrames.frame(.key, pad.publicKey),
+            PenFrames.frame(.key, Data([PenLink.version]) + pad.publicKey.dropLast()),  // a key from before versions, starting with it
+            PenFrames.frame(PadMessage.up), Data(#"{"hello":{"name":"iPad"}}"#.utf8) + Data([0x0A]),
+        ] {
+            var reader = PenReader<PadMessage, HostMessage>(session: PenSession())
+            #expect(throws: PenReader<PadMessage, HostMessage>.Failure.incompatible) { try reader.read(first).get() }
+        }
+    }
+
+    /// The host makes room for every new connection: an address that floods only pushes out its own, and when all
+    /// places are taken, the busiest address gives one up, not the pad's.
+    @Test func roomIsMadeFromTheBusiest() {
+        #expect(PenHost.makingRoom(for: "pad", among: []) == nil)
+        #expect(PenHost.makingRoom(for: "a", among: ["a", "pad", "a"]) == 0)  // its own oldest
+        #expect(PenHost.makingRoom(for: "pad", among: ["a", "pad"]) == nil)
+        // Eight addresses, two each, fill every place: the pad's new connection takes the oldest of one of them.
+        let full = (0..<8).flatMap { ["x\($0)", "x\($0)"] }
+        #expect(full.count == PenHost.waitingAtMost)
+        #expect(PenHost.makingRoom(for: "pad", among: full) == 0)
+        // Then the flood goes on: it never pushes out the pad, which holds one.
+        var waiting = Array(full.dropFirst()) + ["pad"]
+        for k in 0..<100 {
+            let from = "x\(k % 8)"
+            if let index = PenHost.makingRoom(for: from, among: waiting) { waiting.remove(at: index) }
+            waiting.append(from)
+            #expect(waiting.contains("pad"))
+        }
+    }
+
     /// Without a pad, a message is done at once: whoever waits for it to leave doesn't wait for good.
     @Test func sendingToNoPadIsDone() {
         var isDone = false
@@ -172,7 +233,7 @@ import Testing
         listener.newConnectionHandler = { connection in
             MainActor.assumeIsolated { deaf.connections.append(connection) }
             connection.start(queue: .main)
-            connection.send(content: PenFrames.frame(.key, PenSession().publicKey), completion: .idempotent)
+            connection.send(content: PenFrames.frame(.key, Data([PenLink.version]) + PenSession().publicKey), completion: .idempotent)
         }
         listener.start(queue: .main)
         for _ in 0..<100 where (listener.port?.rawValue ?? 0) == 0 { try await Task.sleep(for: .milliseconds(20)) }
@@ -193,7 +254,11 @@ import Testing
         #expect(left == 49)
         listener.cancel()
     }
+}
 
+/// The tests that advertise on Bonjour, one at a time: run together, each would see the others' hosts. They need the
+/// local network (set `YOLO_MEET_NO_NETWORK` to skip them), and no other yolo-meet advertising the pen nearby.
+@Suite(.serialized) struct PenLinkBonjourTests {
     /// The pad finds the host with Bonjour on this machine, and messages cross both ways. Needs the local network
     /// (set `YOLO_MEET_NO_NETWORK` to skip it), and no other yolo-meet advertising the pen nearby.
     @Test(.enabled(if: ProcessInfo.processInfo.environment["YOLO_MEET_NO_NETWORK"] == nil))
@@ -264,6 +329,18 @@ import Testing
         var states: [PenClient.State] = []
         client.changed = { states.append($0) }
         host.start(code: code)
+        // The client starts once both are advertised, so that it sees the stalled host first.
+        let browser = NWBrowser(for: .bonjour(type: PenLink.service, domain: nil), using: .tcp)
+        var names: Set<String> = []
+        browser.browseResultsChangedHandler = { results, _ in
+            let found = results.compactMap { if case .service(let name, _, _, _) = $0.endpoint { name } else { nil } }
+            MainActor.assumeIsolated { names = Set(found) }
+        }
+        browser.start(queue: .main)
+        for _ in 0..<100 where !names.isSuperset(of: ["a stalled host", PenLink.serviceName]) {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        browser.cancel()
         client.start(code: code)
         for _ in 0..<150 where !states.contains(where: { if case .connected = $0 { true } else { false } }) {
             try await Task.sleep(for: .milliseconds(100))

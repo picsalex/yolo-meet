@@ -212,9 +212,10 @@ final class Drawing {
 ///
 /// It is drawn as images, a segment of the line each: SpriteKit's own shapes can't vary in width, fill overlapping
 /// pieces with holes, and cost time on every frame for as long as they are on stage. A segment's image is drawn once,
-/// when its pieces are all there; only the last one, which grows with the line, is drawn again, so a long line costs no
-/// more per frame than a short one. The translucent layers of a segment's image leave out the area the segments before
-/// it already cover, so they never add up where segments meet or where the line crosses itself.
+/// when its pieces are all there; only the last one, which grows with the line, is drawn again. The translucent layers
+/// of a segment's image leave out the area the segments before it already cover, so they never add up where segments
+/// meet or where the line crosses itself; only the segments it overlaps are looked at, so a frame costs about the same
+/// at the end of a long line as at its start (more only where the line crosses itself many times).
 private final class Stroke {
     typealias Sample = (at: CGPoint, width: CGFloat)
 
@@ -246,9 +247,9 @@ private final class Stroke {
     private var points: [Sample] = []
     /// The line's middle up to the midpoint between the last two points: it no longer changes.
     private var line: [Sample] = []
-    /// For each layer of the `look`: the area the drawn segments cover, as one outline, and the pieces of the segment
-    /// being drawn, which overlap and all wind the same way.
-    private var drawn = look.map { _ in CGPath?.none }
+    /// The drawn segments, in order: for each layer of the `look`, the area each covers as one outline, and around it.
+    private var drawn: [(areas: [CGPath], bounds: [CGRect])] = []
+    /// For each layer, the pieces of the segment being drawn, which overlap and all wind the same way.
     private var growing = look.map { _ in CGMutablePath() }
     /// How much of `line` is in the areas, how many pieces the growing segment has, and the direction of the last piece.
     private var covered = (count: 1, pieces: 0, heading: CGFloat?.none)
@@ -341,11 +342,11 @@ private final class Stroke {
         let rescaled = abs(wanted - scale) > 0.2 * scale
         guard changed || rescaled else { return }
         (changed, scale) = (false, rescaled ? wanted : scale)
-        if rescaled, drawn[0] != nil {
-            // At the new scale, the drawn segments become one image of the area they cover.
+        if rescaled, !drawn.isEmpty {
+            // At the new scale, every segment is drawn again, as it was.
             node.removeAllChildren()
             growingImage = nil
-            draw(drawn.map { $0 ?? CGMutablePath() }, leavingOut: nil)
+            for index in drawn.indices { draw(drawn[index].areas, leavingOut: drawn[..<index]) }
         }
         // The line's new pieces join the growing segment; a segment that is whole is drawn one last time, and its area
         // joins the drawn area. The last piece, to the last point, is drawn apart: it changes with the next point.
@@ -356,14 +357,9 @@ private final class Stroke {
             if covered.pieces == Self.segment {
                 growingImage?.removeFromParent()
                 growingImage = nil
-                draw(growing, leavingOut: drawn)
-                drawn = zip(drawn, growing).map { area, pieces in
-                    guard let area else { return pieces.normalized(using: .winding) }
-                    let both = CGMutablePath()
-                    both.addPath(area)
-                    both.addPath(pieces)
-                    return both.normalized(using: .winding)
-                }
+                draw(growing, leavingOut: drawn[...])
+                let areas = growing.map { $0.normalized(using: .winding) }
+                drawn.append((areas, areas.map(\.boundingBoxOfPath)))
                 (growing, covered.pieces) = (Self.look.map { _ in CGMutablePath() }, 0)
                 // The next segment starts with this one's last piece again: where two images meet edge to edge, their
                 // smoothed edges would leave a faint seam across the line.
@@ -380,13 +376,13 @@ private final class Stroke {
             return area
         }
         growingImage?.removeFromParent()
-        growingImage = draw(areas, leavingOut: drawn)
+        growingImage = draw(areas, leavingOut: drawn[...])
     }
 
     /// Adds an image of `areas` (one per layer of the `look`) to the node, over the others. The translucent layers
-    /// leave out `drawn`, the area the images under it already cover.
+    /// leave out the area of the `drawn` segments it overlaps: only those near it cost anything.
     @discardableResult
-    private func draw(_ areas: [CGPath], leavingOut drawn: [CGPath?]?) -> SKSpriteNode? {
+    private func draw(_ areas: [CGPath], leavingOut drawn: ArraySlice<(areas: [CGPath], bounds: [CGRect])>) -> SKSpriteNode? {
         // Around the widest layer and its edge's smoothing, on whole pixels of the stroke's scale: the images line up.
         let bounds = areas[0].boundingBoxOfPath.insetBy(dx: -2, dy: -2)
         guard !bounds.isEmpty else { return nil }
@@ -401,11 +397,13 @@ private final class Stroke {
         context.translateBy(x: -frame.minX, y: -frame.minY)
         for (index, look) in Self.look.enumerated() {
             context.saveGState()
-            if look.alpha < 1, let area = drawn?[index] ?? nil, area.boundingBoxOfPath.intersects(frame) {
-                // Everywhere but the drawn area: around it, inside the frame.
-                context.addRect(frame)
-                context.addPath(area)
-                context.clip(using: .evenOdd)
+            if look.alpha < 1 {
+                // Everywhere but each drawn segment it overlaps: around it, inside the frame (clips add up).
+                for segment in drawn where segment.bounds[index].intersects(frame) {
+                    context.addRect(frame)
+                    context.addPath(segment.areas[index])
+                    context.clip(using: .evenOdd)
+                }
             }
             context.setFillColor(color.copy(alpha: look.alpha) ?? color)
             context.addPath(areas[index])

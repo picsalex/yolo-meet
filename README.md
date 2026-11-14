@@ -26,7 +26,8 @@ Model tests run the real `yolo26n*` Core AI models on Ultralytics' `bus.jpg` and
 MediaPipe tests run when `YOLO_MEET_MEDIAPIPE` points to unzipped `mediapipe-*.aimodel` folders with an `img` folder of
 MediaPipe's sample photos (woman_hands, thumb_up, pose, portrait) and `reference.json` from
 `scripts/export_mediapipe.py --reference img`.
-The pen link's test connects a pad to a host over Bonjour on this machine; `YOLO_MEET_NO_NETWORK=1` skips it.
+The pen link's network tests connect a pad to a host on this machine, some over Bonjour (one at a time, and with no
+other yolo-meet advertising the pen nearby); `YOLO_MEET_NO_NETWORK=1` skips them.
 
 ## How it works
 
@@ -152,10 +153,13 @@ without it a device can't connect, see the stage or draw, can't push the connect
 crosses. Inside that, each connection makes keys of its own (X25519, then ChaChaPoly, `PenSession`) that are never
 sent nor kept, so a session someone recorded stays unreadable even if they learn the code later. **New** makes another
 code and lets go of every iPad that had the old one; the pen app's key button takes the new one. Devices that don't
-have the code can't keep the iPad out either: each address can only hold two unfinished connections at the Mac, and
-the iPad moves on from a host that doesn't answer. What others nearby can still see is that a Mac offers the
-yolo-meet pen service, under the app's name rather than the Mac's. On the Mac the code is kept with the app's
-settings, readable by anything that runs as you there.
+have the code can't keep the iPad out either: the Mac always makes room for a new connection (the address holding the
+most unfinished ones gives one up), and the iPad moves on from a host that doesn't answer. Both ends check they speak
+the same version of the link; if not, the iPad says to update both apps. What others nearby can still see is that a
+Mac offers the yolo-meet pen service: it is advertised under the app's name, but its address points at the Mac's
+network name (`<name>.local`), as for any service a Mac shares. The Mac's own name only goes to an iPad that has the
+code, for its status line. On the Mac the code is kept with the app's settings, readable by anything that runs as you
+there.
 
 The app is the Xcode project in `iPad/` (iPadOS 18+): open `iPad/YoloMeetPen.xcodeproj`, pick your team under
 Signing & Capabilities, and run it on the iPad. It shares its messages and connection with yolo-meet (`Sources/PenLink`).

@@ -41,6 +41,8 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
     var changed: ((Bool) -> Void)?
     /// It is over because the two ends don't have the same pairing code.
     private(set) var wasRefused = false
+    /// It is over because the other end is another version of the link (`PenLink.version`).
+    private(set) var wasIncompatible = false
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "PenLink", qos: .userInteractive)
     private let session = PenSession()
@@ -61,7 +63,9 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     switch state {
-                    case .ready: self.connection.send(content: PenFrames.frame(.key, self.session.publicKey), completion: .idempotent)
+                    case .ready:
+                        let key = PenFrames.frame(.key, Data([PenLink.version]) + self.session.publicKey)
+                        self.connection.send(content: key, completion: .idempotent)
                     case .failed(.tls), .waiting(.tls):
                         self.wasRefused = true
                         self.close()
@@ -72,7 +76,7 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
             }
         }
         connection.start(queue: queue)
-        Self.receive(connection, into: Reader(session: session)) { [weak self] event in
+        Self.receive(connection, into: Box(reader: PenReader(session: session))) { [weak self] event in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self, !self.isOver else { return }
@@ -85,8 +89,9 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
                         self.changed?(true)
                     case .messages(let messages):
                         for message in messages { self.received?(message) }
-                    case .ended(let wasRefused):
+                    case .ended(let wasRefused, let wasIncompatible):
                         if wasRefused { self.wasRefused = true }  // the handshake's failure can show here first
+                        if wasIncompatible { self.wasIncompatible = true }
                         self.close()
                     }
                 }
@@ -122,53 +127,32 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
         /// Both keys are in: what this end sends is sealed with this.
         case ready(PenCipher)
         case messages([Incoming])
-        case ended(wasRefused: Bool)
+        case ended(wasRefused: Bool, wasIncompatible: Bool)
     }
 
-    /// What the connection's queue keeps: the frames read so far, and the other end's sealing once its key is in.
-    private nonisolated final class Reader: @unchecked Sendable {
-        let session: PenSession
-        var frames = PenFrames(longest: Incoming.largestFrame + 64)  // and the frame and seal around it
-        var opener: PenCipher?
-
-        init(session: PenSession) { self.session = session }
-
-        /// The events in what was just read: the other end's key, then its sealed messages; nil when the link is
-        /// broken (something that isn't either, or a message that doesn't open).
-        func read(_ data: Data) -> [Event]? {
-            var events: [Event] = [], messages: [Incoming] = []
-            for frame in frames.split(data) {
-                switch PenFrames.Kind(rawValue: frame.kind) {
-                case .key where opener == nil:
-                    guard let ciphers = session.ciphers(with: frame.payload, sending: Outgoing.self, receiving: Incoming.self)
-                    else { return nil }
-                    opener = ciphers.open
-                    events.append(.ready(ciphers.seal))
-                case .sealed where opener != nil:
-                    guard let inner = opener?.open(frame.payload), let message = PenFrames.message(inFrame: inner, as: Incoming.self)
-                    else { return nil }
-                    messages.append(message)
-                default:
-                    return nil  // unsealed messages, a second key, or a kind this end doesn't know
-                }
-            }
-            return frames.isBroken ? nil : events + (messages.isEmpty ? [] : [.messages(messages)])
-        }
+    /// The reader, on the connection's queue only.
+    private nonisolated final class Box: @unchecked Sendable {
+        var reader: PenReader<Incoming, Outgoing>
+        init(reader: PenReader<Incoming, Outgoing>) { self.reader = reader }
     }
 
     /// Reads the connection on its queue, and hands what it read to `deliver`, until it ends.
     private nonisolated static func receive(
-        _ connection: NWConnection, into reader: Reader, deliver: @escaping @Sendable (Event) -> Void
+        _ connection: NWConnection, into box: Box, deliver: @escaping @Sendable (Event) -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 16) { data, _, isComplete, error in
-            let events = reader.read(data ?? Data())
-            for event in events ?? [] { deliver(event) }
-            guard events != nil, !isComplete, error == nil else {
-                var wasRefused = false
-                if case .tls = error { wasRefused = true }
-                return deliver(.ended(wasRefused: wasRefused))
+            let read = box.reader.read(data ?? Data())
+            if case .success(let (sealer, messages)) = read {
+                if let sealer { deliver(.ready(sealer)) }
+                if !messages.isEmpty { deliver(.messages(messages)) }
             }
-            receive(connection, into: reader, deliver: deliver)
+            var wasRefused = false
+            if case .tls = error { wasRefused = true }
+            if case .failure(let failure) = read {
+                return deliver(.ended(wasRefused: wasRefused, wasIncompatible: failure == .incompatible))
+            }
+            guard !isComplete, error == nil else { return deliver(.ended(wasRefused: wasRefused, wasIncompatible: false)) }
+            receive(connection, into: box, deliver: deliver)
         }
     }
 
@@ -180,5 +164,51 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
         self.waiting = [:]
         for done in waiting { done() }
         changed?(false)
+    }
+}
+
+/// One end's reading of the link: the other end's key (`PenLink.version` first), then its sealed messages.
+///
+/// What a newer end may add is skipped: frames of kinds this end doesn't know, and messages it can't decode. What
+/// can't be right closes the link: a message that doesn't open (changed, dropped, repeated or moved), a second key, a
+/// message that isn't sealed, a frame too long. An end whose first frame isn't a key of this version is another
+/// version of the link (or of the app, from before it had keys).
+nonisolated struct PenReader<Incoming: PenMessage, Outgoing: PenMessage>: Sendable {
+    enum Failure: Error, Equatable { case incompatible, broken }
+
+    let session: PenSession
+    private var frames = PenFrames(longest: Incoming.largestFrame + 64)  // and the frame and seal around it
+    private var opener: PenCipher?
+
+    init(session: PenSession) { self.session = session }
+
+    /// What was just read: the sealer for what this end sends, once the other end's key is in, and its messages.
+    mutating func read(_ data: Data) -> Result<(sealer: PenCipher?, messages: [Incoming]), Failure> {
+        var sealer: PenCipher?
+        var messages: [Incoming] = []
+        for frame in frames.split(data) {
+            let kind = PenFrames.Kind(rawValue: frame.kind)
+            guard opener != nil else {
+                // The version, then an X25519 key (32 bytes).
+                guard kind == .key, frame.payload.count == 33, frame.payload.first == PenLink.version else {
+                    return .failure(.incompatible)
+                }
+                guard let ciphers = session.ciphers(with: frame.payload.dropFirst(), sending: Outgoing.self, receiving: Incoming.self)
+                else { return .failure(.broken) }
+                (opener, sealer) = (ciphers.open, ciphers.seal)
+                continue
+            }
+            switch kind {
+            case .sealed:
+                guard let inner = opener?.open(frame.payload) else { return .failure(.broken) }
+                if let message = PenFrames.message(inFrame: inner, as: Incoming.self) { messages.append(message) }
+            case .key, .json, .picture:
+                return .failure(.broken)
+            case nil:
+                continue  // a kind from a newer end
+            }
+        }
+        guard !frames.isBroken else { return .failure(opener == nil ? .incompatible : .broken) }
+        return .success((sealer, messages))
     }
 }

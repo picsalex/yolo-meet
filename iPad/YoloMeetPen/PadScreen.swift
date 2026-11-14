@@ -71,7 +71,8 @@ struct PadScreen: View {
         case .refused: "yolo-meet has another pairing code: tap the key"
         case .searching: "Looking for yolo-meet: turn on iPad pen in its Draw section"
         case .blocked: "Allow Local Network for yolo-meet pen in Settings"
-        case .connected(let name): "Drawing on \(name)"
+        case .outdated: "yolo-meet on the Mac and this app are different versions: update both"
+        case .connected(let name): "Drawing on \(model.hostName ?? name)"
         }
     }
 }

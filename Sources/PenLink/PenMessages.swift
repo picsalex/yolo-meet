@@ -9,6 +9,8 @@ public nonisolated enum PenLink {
     /// adds a number when two Macs nearby have it on).
     public static let service = "_yolomeet-pen._tcp"
     public static let serviceName = "yolo-meet"
+    /// The link's version, in each end's first frame: ends of different versions don't connect, and the pad says so.
+    public static let version: UInt8 = 1
     /// The pad's surface in ink points: the stage at unit 1, origin bottom-left.
     public static let size = CGSize(width: 1280, height: 720)
 
@@ -60,6 +62,8 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
 
 /// From the host to the pad.
 public nonisolated enum HostMessage: Codable, Sendable, Equatable {
+    /// The Mac's name, sent first: only a pad that has the code hears it (Bonjour shows the app's name).
+    case hello(name: String)
     /// The ink's settings and the colors to pick from (hex): sent on connecting and whenever the host changes them.
     case settings(InkSettings, colors: [String])
     /// The pad's strokes still on stage, sent on connecting: the pad forgets its others.

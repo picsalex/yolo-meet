@@ -20,6 +20,8 @@ final class PadModel {
     }
 
     private(set) var link = PenClient.State.unpaired
+    /// The Mac's name, once connected (it says it inside the link; Bonjour only shows the app's name).
+    private(set) var hostName: String?
     /// yolo-meet's pairing code, typed once and kept in the keychain: the link is encrypted with it (`PenCode`).
     private(set) var code = Keychain.read("pairing code")
     /// The ink's settings, and the colors to pick from (hex).
@@ -55,6 +57,7 @@ final class PadModel {
             if case .connected = state {
                 self.client.send(.hello(name: UIDevice.current.name))
             } else {
+                self.hostName = nil
                 self.end()
                 self.forgetPicture()
             }
@@ -77,6 +80,8 @@ final class PadModel {
 
     private func handle(_ message: HostMessage) {
         switch message {
+        case .hello(let name):
+            hostName = String(name.prefix(40))
         case .settings(let settings, let colors):
             if settings.erases != self.settings.erases { end() }  // the pen's touch was for the other tool
             (self.settings, self.colors) = (settings, colors)

@@ -13,6 +13,9 @@ public final class PenClient {
         case blocked
         /// A host is there, but it doesn't have the same pairing code. It is tried again every few seconds.
         case refused
+        /// A host is there, but it is another version of yolo-meet than this app's: one of them needs updating. It is
+        /// tried again every few seconds.
+        case outdated
         /// Connected to the host of this name.
         case connected(String)
     }
@@ -28,6 +31,8 @@ public final class PenClient {
     /// others are tried first, so one bad host can't keep the pad from the right one.
     private var refused: Set<String> = []
     private var unanswered: Set<String> = []
+    /// The hosts of another version of the link, by name.
+    private var outdated: Set<String> = []
     /// Every host was tried: they are tried again in a while.
     private var isWaiting = false
 
@@ -42,7 +47,7 @@ public final class PenClient {
     }
 
     public func stop() {
-        (code, refused, unanswered, isWaiting) = (nil, [], [], false)
+        (code, refused, unanswered, outdated, isWaiting) = (nil, [], [], [], false)
         browser?.cancel()
         browser = nil
         let channel = channel
@@ -86,13 +91,14 @@ public final class PenClient {
         let hosts = (browser?.browseResults ?? []).map { result -> (name: String, endpoint: NWEndpoint) in
             if case .service(let name, _, _, _) = result.endpoint { (name, result.endpoint) } else { ("yolo-meet", result.endpoint) }
         }.sorted { $0.name < $1.name }
-        guard let host = hosts.first(where: { !refused.contains($0.name) && !unanswered.contains($0.name) }) else {
+        let tried = refused.union(unanswered).union(outdated)
+        guard let host = hosts.first(where: { !tried.contains($0.name) }) else {
             guard !hosts.isEmpty else { return state = .searching }
-            state = refused.isEmpty ? .searching : .refused
+            state = !outdated.isEmpty ? .outdated : !refused.isEmpty ? .refused : .searching
             guard !isWaiting else { return }
             isWaiting = true
             return later(seconds: 4) {
-                (self.refused, self.unanswered, self.isWaiting) = ([], [], false)
+                (self.refused, self.unanswered, self.outdated, self.isWaiting) = ([], [], [], false)
                 self.connect()
             }
         }
@@ -101,11 +107,15 @@ public final class PenClient {
         channel.changed = { [weak self, weak channel] ready in
             guard let self, let channel, self.channel === channel else { return }
             if ready {
-                (self.refused, self.unanswered, self.state) = ([], [], .connected(host.name))
+                (self.refused, self.unanswered, self.outdated, self.state) = ([], [], [], .connected(host.name))
             } else if channel.wasRefused {
                 self.channel = nil
                 self.refused.insert(host.name)
                 self.connect()  // the next host, if there is one
+            } else if channel.wasIncompatible {
+                self.channel = nil
+                self.outdated.insert(host.name)
+                self.connect()
             } else if !self.isConnected {
                 // It never got ready: the next host first, this one again with the others in a while.
                 self.channel = nil

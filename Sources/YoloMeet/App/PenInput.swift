@@ -1,6 +1,7 @@
 import AppKit
 import Observation
 import PenLink
+import SystemConfiguration
 
 /// The iPad pen app's Apple Pencil on the stage: while it's on, yolo-meet can be found by the app (the pad) on the
 /// network they share, or straight from a nearby iPad when they share none, and the pad's strokes are drawn as ink
@@ -43,6 +44,7 @@ final class PenInput {
             self.drawing.released(.pen, time: CACurrentMediaTime())
             self.drawing.hover(at: nil)
             if connected {
+                self.host.send(.hello(name: Self.macName))
                 self.sendSettings()
                 self.host.send(.ink(ids: self.drawing.penStrokes))
             }
@@ -61,6 +63,11 @@ final class PenInput {
     /// when it was taken). `done` is called once it left, or at once without a pad.
     func send(picture jpeg: Data, through: Int?, then done: @escaping @MainActor () -> Void) {
         host.send(.picture(jpeg: jpeg, through: through), then: done)
+    }
+
+    /// This Mac's name (as in Sharing settings), for the pad's status: told only to a pad that has the code.
+    private static var macName: String {
+        (SCDynamicStoreCopyComputerName(nil, nil) as String?).map { String($0.prefix(40)) } ?? "your Mac"
     }
 
     /// Makes another pairing code: every iPad has to be given it.

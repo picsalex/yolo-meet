@@ -10,8 +10,8 @@ public final class PenHost {
     public var changed: ((Bool) -> Void)?
     private var listener: NWListener?
     private var channel: PenChannel<PadMessage, HostMessage>?
-    /// Connections that haven't shown they have the code yet, with where they come from, oldest first: two per
-    /// address and 16 in all at most, each for a few seconds.
+    /// Connections that haven't shown they have the code yet, with where they come from, oldest first: a few seconds
+    /// each, and room for a new one is always made (`makingRoom`).
     private var arriving: [(channel: PenChannel<PadMessage, HostMessage>, from: String)] = []
     /// The pairing code, while started.
     private var code: String?
@@ -73,15 +73,12 @@ public final class PenHost {
     }
 
     /// A connection is the pad once it is ready, which takes the code: until then it changes nothing, so whoever
-    /// doesn't have the code can't push the pad out. Nor can they hold the door: an address keeps at most two
-    /// connections waiting (a third takes the place of its oldest), so the pad's own address always gets in.
+    /// doesn't have the code can't push the pad out. Nor can they hold the door: a new connection is never turned
+    /// away, another waiting one makes room for it (`makingRoom`).
     private func accept(_ connection: NWConnection) {
         guard listener != nil else { return connection.cancel() }
         let from = Self.address(of: connection.endpoint)
-        if arriving.filter({ $0.from == from }).count >= 2, let oldest = arriving.firstIndex(where: { $0.from == from }) {
-            arriving.remove(at: oldest).channel.close()
-        }
-        guard arriving.count < 16 else { return connection.cancel() }
+        if let index = Self.makingRoom(for: from, among: arriving.map(\.from)) { arriving.remove(at: index).channel.close() }
         let channel = PenChannel<PadMessage, HostMessage>(connection)
         channel.received = { [weak self, weak channel] in if self?.channel === channel { self?.received?($0) } }
         channel.changed = { [weak self, weak channel] ready in
@@ -103,6 +100,22 @@ public final class PenHost {
             try? await Task.sleep(for: .seconds(4))
             if let channel, arriving.contains(where: { $0.channel === channel }) { channel.close() }
         }
+    }
+
+    /// Connections waiting at most from one address, and in all.
+    static let (perAddress, waitingAtMost) = (2, 16)
+
+    /// Which waiting connection (by index, among their addresses, oldest first) makes room for a new one from `from`,
+    /// if one must: `from`'s own oldest once it has `perAddress`; when all places are taken, the oldest of the address
+    /// that holds the most. Whoever floods from one address or many only pushes out their own, as long as they hold
+    /// more than the pad, which holds one.
+    static func makingRoom(for from: String, among waiting: [String]) -> Int? {
+        let own = waiting.indices.filter { waiting[$0] == from }
+        if own.count >= perAddress { return own.first }
+        guard waiting.count >= waitingAtMost else { return nil }
+        let counts = waiting.reduce(into: [String: Int]()) { $0[$1, default: 0] += 1 }
+        let most = counts.values.max() ?? 0
+        return waiting.firstIndex { counts[$0] == most }
     }
 
     /// The address a connection comes from, without its port.

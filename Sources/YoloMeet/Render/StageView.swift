@@ -20,6 +20,7 @@ struct StageView: NSViewRepresentable {
         view.delegate = context.coordinator
         view.mouse = context.coordinator.mouse
         view.drawing = model.drawing
+        view.acting = { [keys = model.stageKeys] in keys.isHeld("space") }
         return view
     }
 
@@ -32,6 +33,8 @@ struct StageView: NSViewRepresentable {
 private final class StageMTKView: MTKView {
     var mouse: MouseGestures?
     var drawing: Drawing?
+    /// Whether the space bar is held (action mode): a press clicks instead of dragging.
+    var acting: () -> Bool = { false }
     /// The drawing, while it takes the mouse.
     private var inking: Drawing? { drawing?.isOn == true ? drawing : nil }
 
@@ -74,7 +77,13 @@ private final class StageMTKView: MTKView {
     override func mouseExited(with event: NSEvent) { moved(to: nil) }
     override func mouseDragged(with event: NSEvent) { moved(to: event) }
     override func mouseDown(with event: NSEvent) {
-        if let inking { inking.pressed(at: inkPoint(event)) } else { mouse?.pressed(at: stagePoint(event)) }
+        if let inking {
+            inking.pressed(at: inkPoint(event))
+        } else if acting() {
+            mouse?.clicked(at: stagePoint(event))
+        } else {
+            mouse?.pressed(at: stagePoint(event))
+        }
     }
     override func mouseUp(with event: NSEvent) {
         if let inking { inking.released(time: CACurrentMediaTime()) } else { mouse?.released() }
@@ -219,6 +228,12 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         pointing.next()
         stageFrame.pointing = pointing
         stageFrame.nextStep = { [model] in Task { model.next() } }  // after this frame
+        stageFrame.click = mouse.takeClick()
+        if model.mode == .story {
+            stageFrame.branches = StageFrame.Branches(
+                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch,
+                enter: { [model] branch in Task { model.enter(branch: branch) } })
+        }
         for effect in effects { effect.update(stageFrame) }
         model.drawing.update(stageFrame)
         for debug in [stats, gestureDebug] as [Effect] {

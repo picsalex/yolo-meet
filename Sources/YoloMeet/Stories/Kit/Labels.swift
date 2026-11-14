@@ -43,12 +43,35 @@ final class ObjectTitle: SKNode {
     /// centered on the stage whatever the object's place.
     func update(above rect: CGRect, visible: Bool, frame: StageFrame) {
         let u = frame.stage.unit
-        title.set(\.fontSize, 44 * u)
+        title.set(\.fontSize, Self.titleSize * u)
         subtitle.set(\.fontSize, 15 * u)
         for label in [title, subtitle] { label.set(\.horizontalAlignmentMode, .center) }
-        let (size, half) = (frame.stage.viewSize, max(title.frame.width, subtitle.frame.width) / 2 + 24 * u)
-        let x = frame.cameraHidden ? size.width / 2 : min(max(rect.midX, half), size.width - half)
-        place(at: CGPoint(x: x, y: size.height - 30 * u), visible: visible, frame: frame)
+        let width = max(title.frame.width, subtitle.frame.width)
+        place(at: Self.top(over: rect.midX, width: width, frame: frame), visible: visible, frame: frame)
+    }
+
+    /// The title's size at unit 1, in `Theme.titleFont`.
+    static let titleSize: CGFloat = 44
+
+    /// Where `update(above:)` puts a title `width` wide over an object centered on `x`: its top center.
+    static func top(over x: CGFloat, width: CGFloat, frame: StageFrame) -> CGPoint {
+        let (u, size) = (frame.stage.unit, frame.stage.viewSize)
+        let half = width / 2 + 24 * u
+        return CGPoint(x: frame.cameraHidden ? size.width / 2 : min(max(x, half), size.width - half), y: size.height - 30 * u)
+    }
+
+    /// A title shown by something else at `point` (its top center, e.g. a label flown to the top of the stage): the
+    /// next title with the same text starts there if it shows at once (`showAtOnce`), then eases to its own place.
+    static func handOff(_ title: String, subtitle: String, at point: CGPoint) {
+        last = ("\(title)\n\(subtitle)", point)
+    }
+
+    /// Shows the title at once, picking up a title handed off (`handOff`) or the previous step's, its subtitle fading
+    /// in under it: e.g. when it takes over from a label that flew there.
+    func showAtOnce() {
+        alpha = 1
+        subtitleNode.alpha = 0
+        subtitleNode.run(.sequence([.wait(forDuration: 0.25), .fadeIn(withDuration: 0.5)]))
     }
 
     /// Eases the title (its top) toward `target`, the subtitle under it. It fades in and out in place: hidden, it

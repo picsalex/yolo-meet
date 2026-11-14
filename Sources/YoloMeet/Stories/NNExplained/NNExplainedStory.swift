@@ -6,8 +6,8 @@ extension Story {
     /// neurons and weights inside it, then some of them are laid out as a multilayer perceptron, then YOLO's
     /// architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, their red, green
     /// and blue channels, and the same picture in grayscale (one channel) or multispectral (five); then the picture
-    /// flows through the model, each task's output, and a conclusion. The steps share one network, so its particles
-    /// fly from one to the next.
+    /// flows through the model; a quiz on its seven tasks, each revealed opening its output (a branch of the quiz's
+    /// step); and a conclusion. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
         // Built when the story is first opened (`prepare`: about half a second and 180 MB), not at launch.
         let shared = LazyNetwork()
@@ -51,7 +51,7 @@ extension Story {
                 nnStep("Inference", transition: .none, loop: 8.5, caption: "The pixels flow through backbone, neck and head") {
                     [NetworkEffect(network, network.inference)]
                 },
-            ] + taskSteps(shared) + [
+                taskQuiz(shared),
                 nnStep("Conclusion", caption: "One image, one model, 7 tasks") {
                     [NetworkEffect(network, network.recap), RecapEffect(network, network.recap)]
                 },
@@ -75,29 +75,59 @@ extension Story {
     /// A step of the story: its effects, then the hand skeleton (every step tracks hands) and the step's caption.
     private static func nnStep(
         _ title: String, models: [String] = [], transition: Transition = .fade, loop: TimeInterval? = nil,
-        showsCamera: Bool = false, caption: String, _ effects: @escaping () -> [Effect]
+        showsCamera: Bool = false, branches: [[Step]] = [], caption: String, _ effects: @escaping () -> [Effect]
     ) -> Step {
-        Step(title: title, models: models + ["mediapipe-hand"], transition: transition, loop: loop, showsCamera: showsCamera) {
+        Step(
+            title: title, models: models + ["mediapipe-hand"], transition: transition, loop: loop, showsCamera: showsCamera,
+            branches: branches
+        ) {
             effects() + [handSkeleton(), titleCard(caption)]
         }
     }
 
-    /// Each YOLO task's output: drawn on the cat picture, then live from YOLO26n on the camera.
-    private static func taskSteps(_ shared: LazyNetwork) -> [Step] {
-        let tasks: [(name: String, layout: KeyPath<TaskLayouts, NetworkLayout>, output: TaskOutputEffect.Output, caption: String, model: String, live: () -> [Effect])] = [
-            ("Detect", \.detect, .box, "Detection: where each object is, what it is, how sure", "yolo26n", { [BoxesEffect(model: "yolo26n")] }),
-            ("Segment", \.segment, .mask, "Segmentation: each object's exact pixels", "yolo26n-seg",
+    /// The seven tasks as a quiz: the head's Detect blocks and their output arrow move to the left, the rest of the
+    /// particles slide off to the left and come back from the right as a small swirling ball (`TaskQuiz`), and the tasks' names stand in a column between, blurred but for their first letter. Space + click one: it comes
+    /// clear and its title flies to the top as the story enters its branch (its output on the cat, then live).
+    private static func taskQuiz(_ shared: LazyNetwork) -> Step {
+        let tasks = taskBranches(shared)
+        return nnStep("Task quiz", branches: tasks.map(\.steps), caption: "7 tasks: hold space and click one to reveal it") {
+            let network = shared.network
+            let output = TaskQuizEffect(network)  // first: it reads where the inference left the particles
+            let items = zip(tasks, network.tasks.all).map { task, named in
+                QuizEffect.Item(title: named.layout.title, subtitle: named.layout.subtitle, hint: task.hint)
+            }
+            // The titles fly over where the outputs will form: where the inference was.
+            let quiz = QuizEffect(items, column: CGRect(x: 0.25, y: 0.14, width: 0, height: 0.74), titleX: { output.objectCenter($0).x })
+            output.quiz = quiz
+            // The quiz's motion after the layout forms (on the first frame), so it carries on from there.
+            return [NetworkEffect(network, network.taskQuiz.layout, at: CGPoint(x: 0.5, y: 0.5)), output, quiz]
+        }
+    }
+
+    /// Each YOLO task's output: drawn on the cat picture, then live from YOLO26n on the camera; with its name in
+    /// Ultralytics and its pretraining dataset (`hint`, the quiz's clue, e.g. "detect · COCO"), in `TaskLayouts.all`'s
+    /// order. The first step continues the quiz's title (no transition).
+    private static func taskBranches(_ shared: LazyNetwork) -> [(hint: String, steps: [Step])] {
+        let tasks: [(name: String, task: YOLOTask, layout: KeyPath<TaskLayouts, NetworkLayout>, output: TaskOutputEffect.Output, caption: String, model: String, live: () -> [Effect])] = [
+            ("Detect", .detect, \.detect, .box, "Detection: where each object is, what it is, how sure", "yolo26n", { [BoxesEffect(model: "yolo26n")] }),
+            ("Segment", .segment, \.segment, .mask, "Segmentation: each object's exact pixels", "yolo26n-seg",
              { [OverlayEffect(model: "yolo26n-seg"), BoxesEffect(model: "yolo26n-seg")] }),
-            ("Semantic", \.semantic, .semantic, "Semantic segmentation: a class for every pixel", "yolo26n-sem",
+            ("Semantic", .semantic, \.semantic, .semantic, "Semantic segmentation: a class for every pixel", "yolo26n-sem",
              { [OverlayEffect(model: "yolo26n-sem")] }),
-            ("Classify", \.classify, .classes, "Classification: what the whole image is", "yolo26n-cls", { [ClassifyEffect(model: "yolo26n-cls")] }),
-            ("Pose", \.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose", { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose")] }),
-            ("OBB", \.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb", { [OrientedBoxesEffect(model: "yolo26n-obb")] }),
-            ("Depth", \.depth, .depth, "Depth: how far every pixel is", "yolo26n-depth", { [OverlayEffect(model: "yolo26n-depth", alpha: 0.7, depthColors: Palette.infernoGradient)] }),
+            ("Classify", .classify, \.classify, .classes, "Classification: what the whole image is", "yolo26n-cls", { [ClassifyEffect(model: "yolo26n-cls")] }),
+            ("Pose", .pose, \.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose", { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose")] }),
+            ("OBB", .obb, \.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb", { [OrientedBoxesEffect(model: "yolo26n-obb")] }),
+            ("Depth", .depth, \.depth, .depth, "Depth: how far every pixel is", "yolo26n-depth", { [OverlayEffect(model: "yolo26n-depth", alpha: 0.7, depthColors: Palette.infernoGradient)] }),
         ]
-        return tasks.flatMap { task in
-            [
-                nnStep(task.name, caption: task.caption) {
+        // The quiz's clue under each name: the task in Ultralytics, and what its pretrained model learned from (depth's:
+        // ARKitScenes, SUN RGB-D, DIODE, KITTI, Hypersim, TartanAir, Virtual KITTI 2 and ImageNet-1K, too long to list).
+        let datasets: [YOLOTask: String] = [
+            .detect: "COCO", .segment: "COCO", .semantic: "Cityscapes", .classify: "ImageNet", .pose: "COCO · 17 keypoints",
+            .obb: "DOTA", .depth: "8 datasets",
+        ]
+        return tasks.map { task in
+            ([task.task.rawValue, datasets[task.task]].compactMap { $0 }.joined(separator: " · "), [
+                nnStep(task.name, transition: .none, caption: task.caption) {
                     let network = shared.network, layout = network.tasks[keyPath: task.layout]
                     return [NetworkEffect(network, layout), TaskOutputEffect(network, layout, task.output)]
                 },
@@ -111,7 +141,7 @@ extension Story {
                 nnStep("\(task.name) · live", models: [task.model], showsCamera: true, caption: "Live: \(task.model) on the camera") {
                     task.live()
                 },
-            ]
+            ])
         }
     }
 }

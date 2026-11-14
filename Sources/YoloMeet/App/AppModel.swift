@@ -30,14 +30,31 @@ final class AppModel {
     var mode: Mode = .display { didSet { applyScene() } }
     /// Models drawn in Display mode, in drawing order.
     var displayModels: [String] = [] { didSet { applyScene() } }
-    var storyID = Story.all[0].id { didSet { stepIndex = 0 } }
-    var stepIndex = 0 {
+    /// The models on stage now: the Display picks, or the story step's.
+    var stageModels: [String] { mode == .display ? displayModels : step.models }
+    var storyID = Story.all[0].id {
         didSet {
-            // Between neighbouring steps of the story on stage: the later step's transition, both ways.
-            let neighbours = sceneStory == storyID && abs(stepIndex - oldValue) == 1
-            applyScene(transition: neighbours ? story.steps[max(stepIndex, oldValue)].transition : .fade)
+            visited = [:]
+            place = Story.Place()
         }
     }
+    /// Where the story is: a step, or a step of one of its branches.
+    var place = Story.Place() {
+        didSet {
+            // The branches entered from a step stay visited until the story goes back before that step.
+            if let branch = place.branch { visited[place.step, default: []].insert(branch) }
+            visited = visited.filter { $0.key <= place.step }
+            let left = oldValue.branch != nil && place.branch == nil && oldValue.step == place.step
+            returnedBranch = left ? oldValue.branch : nil
+            applyScene(transition: sceneStory == storyID ? story.transition(from: oldValue, to: place) : .fade)
+        }
+    }
+    /// The story's step on stage.
+    var step: Story.Step { story.step(at: place) }
+    /// The branches entered from each step (index in `story.steps`), for its effects (`StageFrame.branches`).
+    @ObservationIgnored private(set) var visited: [Int: Set<Int>] = [:]
+    /// The branch the story just came back from to its step, if it did.
+    @ObservationIgnored private(set) var returnedBranch: Int?
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
     /// The stage's input, in either mode: a story keeps its step when it changes.
     var source = Source.camera { didSet { applyInput() } }
@@ -53,7 +70,13 @@ final class AppModel {
     var cameraHidden = false { didSet { restoreHidden = false } }  // set by hand: no longer ours to restore
     /// The camera was hidden when a live step showed it: hide it again on the next step that doesn't.
     private var restoreHidden = false
-    var clickerKeys = false { didSet { keys.isEnabled = clickerKeys } }
+    /// ←/→ and Page Up/Down step the story while other apps are in front (a setting: remembered across launches).
+    var clickerKeys = UserDefaults.standard.bool(forKey: "clickerKeys") {
+        didSet {
+            UserDefaults.standard.set(clickerKeys, forKey: "clickerKeys")
+            keys.isEnabled = clickerKeys
+        }
+    }
     /// Debug mode: stats and the recognized hand gesture on the stage.
     var debugMode = UserDefaults.standard.bool(forKey: "debugMode") {
         didSet { UserDefaults.standard.set(debugMode, forKey: "debugMode") }
@@ -85,7 +108,7 @@ final class AppModel {
     var story: Story { Story.all.first { $0.id == storyID } ?? Story.all[0] }
 
     init() {
-        _ = keys  // ←/→ step the story while yolo-meet is active
+        keys.isEnabled = clickerKeys  // ←/→ step the story while yolo-meet is active, and in other apps when set
         _ = pen  // the iPad pen app finds yolo-meet from launch, when the pen is on
         pipeline.onPendingChange = { [weak self] in
             Task { @MainActor in self.map { $0.pendingModels = $0.pipeline.pending } }
@@ -115,8 +138,13 @@ final class AppModel {
         media.adopt(try await links.download(link, into: media.directory))
     }
 
-    func next() { if mode == .story, stepIndex < story.steps.count - 1 { stepIndex += 1 } }
-    func previous() { if mode == .story, stepIndex > 0 { stepIndex -= 1 } }
+    func next() { if mode == .story, let next = story.place(after: place) { place = next } }
+    func previous() { if mode == .story, let previous = story.place(before: place) { place = previous } }
+    /// Enters a branch of the step on stage (`Story.Step.branches`), at its first step.
+    func enter(branch: Int) {
+        guard mode == .story, place.branch == nil, story.steps[place.step].branches.indices.contains(branch) else { return }
+        place = Story.Place(step: place.step, branch: branch)
+    }
 
     /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
     func applyScene(transition: Story.Transition = .fade) {
@@ -133,18 +161,18 @@ final class AppModel {
             }
         }
         // A live step shows the camera even when it's hidden (H); the next step that doesn't hides it again.
-        let live = mode == .story && story.steps[stepIndex].showsCamera
+        let live = mode == .story && step.showsCamera
         if live, cameraHidden {
             cameraHidden = false
             restoreHidden = true
         } else if !live, restoreHidden {
             cameraHidden = true
         }
-        let models = mode == .display ? displayModels : story.steps[stepIndex].models
+        let models = stageModels
         missingModels = models.filter { !isAvailable($0) }
         if mode == .story {
             // A story's models download on their own: this step's, and the next one's so it's ready when it comes.
-            let next = stepIndex + 1 < story.steps.count ? story.steps[stepIndex + 1].models : []
+            let next = story.place(after: place).map { story.step(at: $0).models } ?? []
             for id in missingModels + next where !isAvailable(id) { ModelCatalog.entry(id).map(store.download) }
         }
         pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
@@ -152,7 +180,7 @@ final class AppModel {
     }
 
     /// How long the step on stage plays before starting over (`Story.Step.loop`), if it loops.
-    var stepLoop: TimeInterval? { mode == .story ? story.steps[stepIndex].loop : nil }
+    var stepLoop: TimeInterval? { mode == .story ? step.loop : nil }
 
     /// Called by the stage renderer when `sceneVersion` changes.
     func makeEffects() -> [Effect] {
@@ -160,7 +188,7 @@ final class AppModel {
         case .display:
             displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? [] }
         case .story:
-            storyNeedsPreparing ? [loadingCard(story.title)] : story.steps[stepIndex].effects()
+            storyNeedsPreparing ? [loadingCard(story.title)] : step.effects()
         }
     }
 

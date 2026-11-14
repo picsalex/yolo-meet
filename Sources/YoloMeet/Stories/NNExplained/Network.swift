@@ -39,6 +39,9 @@ final class NeuralNetwork {
     let pictureAgain: NetworkLayout
     /// The same, its pixels flowing through the model as pulses of light (`NetworkLayout.flow`), over and over.
     let inference: NetworkLayout
+    /// The quiz on YOLO's tasks: the head's Detect blocks on the left, their output arrow, and the rest of the
+    /// particles in a small ball on the right.
+    let taskQuiz: TaskQuiz
     /// The inference's output on its input: a large picture, then each task's output on it.
     let results: NetworkLayout
     let tasks: TaskLayouts
@@ -70,6 +73,8 @@ final class NeuralNetwork {
         pictureAgain = .returning(to: picture, from: multispectral, through: pixels)
         await Self.breathe()
         inference = .flow(of: picture, through: architecture)
+        await Self.breathe()
+        taskQuiz = TaskQuiz(after: inference, architecture: architecture)
         await Self.breathe()
         results = .results(after: inference, picture: picture)
         await Self.breathe()
@@ -127,7 +132,7 @@ final class NetworkLayout {
     /// forming it again.
     var releases = false
     /// How much a touched neuron or block grows.
-    private(set) var grown: CGFloat = 1.8
+    var grown: CGFloat = 1.8
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name
     /// (outlined when a header is touched in action mode).
     var headers: [(text: String, point: SIMD3<Float>, members: [Int])] = []

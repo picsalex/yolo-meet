@@ -23,6 +23,9 @@ final class NetworkEffect: Effect {
     private let network: NeuralNetwork
     /// Nil: only the cloud.
     private let layout: NetworkLayout?
+    /// Where the cloud or layout is centered (fractions of the stage), whatever the previous step left, leaving
+    /// `network.home` where it was for the next step; nil: where the previous step left the particles.
+    private let at: CGPoint?
     private var system: ParticleSystem { network.system }
     /// One per neuron: grows it while pointed at.
     private let items: [Actionable]
@@ -41,6 +44,9 @@ final class NetworkEffect: Effect {
     private var formed: TimeInterval?
     /// Forms the layout on the first frame it's ready.
     private var formNow = true
+    /// Shows the title at once (it takes over from a title already there, e.g. a quiz's label flown to it), until the
+    /// labels show.
+    private var titleAtOnce = false
     /// How lit each block of a flow is (0...1), and as last painted.
     private var glow: [Float] = [], painted: [Float] = []
     /// Whether a layout that moves on after forming has arrived and formed again without offsets (`settled`).
@@ -93,8 +99,8 @@ final class NetworkEffect: Effect {
         return SKTexture(cgImage: context.makeImage()!)
     }()
 
-    init(_ network: NeuralNetwork, _ layout: NetworkLayout?) {
-        (self.network, self.layout) = (network, layout)
+    init(_ network: NeuralNetwork, _ layout: NetworkLayout?, at: CGPoint? = nil) {
+        (self.network, self.layout, self.at) = (network, layout, at)
         items = layout?.neurons.map { _ in Actionable(grown: layout!.grown) } ?? []
         turning = KeyTurn(
             restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25, spinning: layout?.spins ?? false)
@@ -128,13 +134,18 @@ final class NetworkEffect: Effect {
         // Where the previous step left the particles, back on stage (a zoomed-in center can be off it).
         let stage = CGRect(origin: .zero, size: frame.stage.viewSize).insetBy(dx: 80 * u, dy: 80 * u)
         let middle = CGPoint(x: frame.stage.viewSize.width / 2, y: frame.stage.viewSize.height / 2)
+        let parked = at.map { CGPoint(x: $0.x * frame.stage.viewSize.width, y: $0.y * frame.stage.viewSize.height) }
         var home = frame.cameraHidden
-            ? centered ?? middle
-            : self.home ?? network.home.map { CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY)) } ?? start
+            ? centered ?? parked ?? middle
+            : self.home ?? parked ?? network.home.map { CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY)) } ?? start
         let cloud = 220 * u
 
         if formNow, let shape = layout?.shape { form(shape, frame) }
-        if layout == nil, system.mode == .form { system.scatter(kick: 0.6) }  // back from a layout
+        if layout == nil, system.mode == .form {
+            // Back from a layout, which the next one no longer forms from.
+            system.scatter(kick: 0.6)
+            network.formed = nil
+        }
         // A gesture takes hold anywhere on the formed layout as it shows on stage (with a margin), e.g. its picture or
         // a far block; on the cloud, within its radius.
         let onLayout = formed != nil && !(layout?.outline.isEmpty ?? true)
@@ -173,7 +184,9 @@ final class NetworkEffect: Effect {
         if frame.cameraHidden {
             centered = home
         } else {
-            (self.home, network.home, centered) = (home, home, nil)
+            (self.home, centered) = (home, nil)
+            // Particles placed for this step alone (`at`) aren't where the next layout should form: that stays where it was.
+            if parked == nil { network.home = home }
         }
 
         let k = frame.smoothing
@@ -224,13 +237,19 @@ final class NetworkEffect: Effect {
         let lit = formed.map { frame.time - $0 > 0.8 && !staging && (!splitting || network.split > 0.9) } ?? false
         labels.alpha = labels.alpha.approaching(lit ? 1 : 0, CGFloat(1 - exp(-frame.dt * (lit ? 3 : 14))))
         labels.isHidden = labels.alpha < 0.01
-        guard let layout, !labels.isHidden else {
+        if lit { titleAtOnce = false }
+        guard let layout, !layout.outline.isEmpty else {
             title.update(above: .zero, visible: false, frame: frame)
             system.highlight = nil
             return
         }
         let bounds = CGRect(enclosing: layout.outline.map { system.shownPoint($0).point })
-        title.update(above: bounds, visible: true, frame: frame)  // at the top, out of the way: it stays when zoomed in
+        // At the top, out of the way: it stays when zoomed in.
+        title.update(above: bounds, visible: !labels.isHidden || titleAtOnce, frame: frame)
+        guard !labels.isHidden else {
+            system.highlight = nil
+            return
+        }
         if let (old, first) = leavingTitle {
             old.update(above: bounds, visible: first, frame: frame)  // placed where it stood, then fading out
             leavingTitle = old.alpha < 0.01 ? nil : (old, false)
@@ -291,6 +310,12 @@ final class NetworkEffect: Effect {
         (formed, formNow) = (frame.time, false)
         // A layout that moves on after forming starts from where the one it follows left the particles, else at its end.
         if let layout, layout.splits { network.split = previous != nil && previous === layout.splitsFrom ? 0 : 1 }
+        if continuing, !variant, layout != nil {
+            // Following a step with no transition, a new object: its title is already there (e.g. a quiz's label flown
+            // to it, `ObjectTitle.handOff`), shown at once.
+            titleAtOnce = true
+            title.showAtOnce()
+        }
         if continuing, variant, let layout {
             // No transition from the same object: its title and labels are already there and stay; only what this
             // step adds or drops fades (its arrows here).

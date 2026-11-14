@@ -15,6 +15,7 @@ final class MouseGestures {
     private var current: (kind: HandGesture.Kind, announced: Bool, ending: Bool)?
     /// The scroll-wheel zoom in progress ends once its wheel has been idle for `wheelIdle`.
     private var wheelAt: TimeInterval?
+    private var click: CGPoint?
 
     /// The cursor as a pointer for actionable items (`frame.pointers`), while it's over the stage.
     var pointer: Pointer? { hover.map { Pointer(hand: Pointer.mouse, location: $0) } }
@@ -43,6 +44,18 @@ final class MouseGestures {
         hover = point
         guard current == nil else { return }
         current = (.drag(start: point, location: point), false, false)
+    }
+
+    /// A press while the space bar is held (action mode): a click for this frame's effects, not a drag.
+    func clicked(at point: CGPoint) {
+        hover = point
+        click = point
+    }
+
+    /// The click since the last frame, if any (`StageFrame.click`).
+    func takeClick() -> CGPoint? {
+        defer { click = nil }
+        return click
     }
 
     func released() {

@@ -7,7 +7,6 @@ struct ModelBrowser: View {
 
     @Environment(AppModel.self) private var model
     @AppStorage("modelSource") private var source = Source.ultralytics
-    @State private var confirmingDeleteAll = false
 
     var body: some View {
         Picker("Source", selection: $source) {
@@ -25,19 +24,10 @@ struct ModelBrowser: View {
         if source != .custom, let error = model.store.lastError {
             Text(error).font(.callout).foregroundStyle(.red).textSelection(.enabled)
         }
-        if source != .custom {
-            Button("Delete All Downloaded Models…", role: .destructive) { confirmingDeleteAll = true }
-                .disabled(model.store.downloaded.isEmpty)
-                .confirmationDialog("Delete all downloaded models?", isPresented: $confirmingDeleteAll) {
-                    Button("Delete All", role: .destructive) { model.deleteAllModels() }
-                } message: {
-                    Text("Removes \(model.store.downloaded.count) models and their compiled copies. Imported models are kept.")
-                }
-        }
     }
 
     private func onStage(_ source: Source) -> Bool {
-        model.displayModels.contains { id in
+        model.stageModels.contains { id in
             switch source {
             case .ultralytics: ModelCatalog.entry(id)?.family.isUltralytics == true
             case .other: ModelCatalog.entry(id)?.family.isUltralytics == false
@@ -64,7 +54,7 @@ private struct ModelGrid: View {
         if families.count > 1 {
             Picker("Family", selection: $selected) {
                 ForEach(families, id: \.self) { family in
-                    let onStage = model.displayModels.contains { ModelCatalog.entry($0)?.family == family }
+                    let onStage = model.stageModels.contains { ModelCatalog.entry($0)?.family == family }
                     Text(onStage ? "\(family.title) •" : family.title)
                 }
             }
@@ -108,6 +98,9 @@ private struct ModelGridRow: View {
 }
 
 /// Click to download; once downloaded, click to show/hide in Display mode, right-click to delete.
+///
+/// Filled: on stage now (a Display pick, or used by the story's step). Outlined: a Display pick, kept for when
+/// Display mode is back.
 private struct ModelCell: View {
     @Environment(AppModel.self) private var model
     let entry: CatalogEntry
@@ -115,21 +108,23 @@ private struct ModelCell: View {
     var body: some View {
         let progress = model.store.progress[entry.id]
         let downloaded = model.store.downloaded.contains(entry.id) || entry.family.isBuiltIn
-        let shown = model.mode == .display && model.displayModels.contains(entry.id)
+        let shown = model.stageModels.contains(entry.id)
+        let kept = !shown && model.mode == .story && model.displayModels.contains(entry.id)
         Button {
             if !downloaded { model.store.download(entry) } else if model.mode == .display { model.toggleDisplay(entry.id) }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(shown ? Color.accentColor : downloaded ? Color.secondary.opacity(0.2) : .clear)
-                RoundedRectangle(cornerRadius: 6).strokeBorder(.secondary.opacity(downloaded ? 0 : 0.4))
+                RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(kept ? Color.accentColor : .secondary.opacity(downloaded ? 0 : 0.4), lineWidth: kept ? 1.5 : 1)
                 if let progress {
                     ProgressView(value: progress).progressViewStyle(.circular).controlSize(.mini)
                 } else if shown && model.pendingModels.contains(entry.id) {
                     ProgressView().controlSize(.mini).tint(.white)  // loading until its first result
                 } else {
-                    Image(systemName: shown ? "eye.fill" : downloaded ? "checkmark" : "arrow.down")
-                        .foregroundStyle(shown ? Color.white : .secondary)
+                    Image(systemName: shown ? "eye.fill" : kept ? "eye" : downloaded ? "checkmark" : "arrow.down")
+                        .foregroundStyle(shown ? Color.white : kept ? Color.accentColor.opacity(0.7) : .secondary)
                 }
             }
             .frame(width: 40, height: 26)
@@ -137,12 +132,21 @@ private struct ModelCell: View {
         }
         .buttonStyle(.plain)
         .disabled(progress != nil)
-        .help(entry.family.isBuiltIn ? entry.title : downloaded ? "\(entry.title) — right-click to delete" : "Download \(entry.title)")
+        .help(help(downloaded: downloaded, shown: shown, kept: kept))
         .contextMenu {
             if downloaded && !entry.family.isBuiltIn {
                 Button("Delete \(entry.title)", role: .destructive) { model.deleteModel(entry.id) }
             }
         }
+    }
+
+    private func help(downloaded: Bool, shown: Bool, kept: Bool) -> String {
+        guard downloaded else { return "Download \(entry.title)" }
+        let state =
+            model.mode == .story
+            ? shown ? " — used by this story step" : kept ? " — kept for Display mode" : ""
+            : ""
+        return entry.title + state + (entry.family.isBuiltIn ? "" : " (right-click to delete)")
     }
 }
 
@@ -175,6 +179,10 @@ private struct CustomModelList: View {
                         get: { model.displayModels.contains(custom.id) }, set: { _ in model.toggleDisplay(custom.id) }))
                         .labelsHidden()
                         .help("Show on stage")
+                } else if model.stageModels.contains(custom.id) {
+                    Image(systemName: "eye.fill").foregroundStyle(.tint).help("Used by this story step")
+                } else if model.displayModels.contains(custom.id) {
+                    Image(systemName: "eye").foregroundStyle(Color.accentColor.opacity(0.7)).help("Kept for Display mode")
                 }
             }
             .labelStyle(.iconOnly)

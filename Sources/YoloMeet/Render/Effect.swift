@@ -61,6 +61,21 @@ struct StageFrame {
     var stepTime: TimeInterval = 0
     /// How many times a looping step has started over (0 the first time through).
     var loopCount = 0
+    /// Where the mouse clicked on the stage this frame while the space bar was held (action mode), stage points: a
+    /// click that acts (`Actionable(by: .click)`) rather than starting a drag.
+    var click: CGPoint?
+    /// The branches of the step on stage (`Story.Step.branches`).
+    var branches = Branches()
+
+    struct Branches {
+        /// The branches entered from this step since the story came to it (they stay visited when it moves on and
+        /// back, until it goes back before it).
+        var visited: Set<Int> = []
+        /// The branch the story just came back from (past its first or last step), e.g. to animate its way back.
+        var returned: Int?
+        /// Enters a branch, at its first step (after this frame); nothing if the step has no such branch.
+        var enter: (Int) -> Void = { _ in }
+    }
 
     struct Keys {
         /// The keys effects may use, named as on AZERTY (`StageKeys`: Z Q S D are W A S D on QWERTY). Arrow and page keys

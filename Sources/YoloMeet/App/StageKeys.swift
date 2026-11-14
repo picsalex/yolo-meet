@@ -44,6 +44,9 @@ final class StageKeys {
         return nil  // handled: no beep
     }
 
+    /// Whether a key is down now (e.g. for a mouse click in action mode, between frames).
+    func isHeld(_ key: String) -> Bool { held.contains(key) }
+
     /// The keys for this frame: held ones, and those pressed or released since the last call.
     func take() -> StageFrame.Keys {
         defer { (pressed, released) = ([], []) }

@@ -5,84 +5,113 @@ import UniformTypeIdentifiers
 import YoloMeetCore
 
 /// Private controls. Only the Stage window is meant to be shared in Meet.
+///
+/// Laid out to fit without scrolling: what is switched mid-talk is in the toolbar (drawing, hiding the camera,
+/// debug) and the bottom bar (the story's steps, the stage's speed); the rest is split into tabs, one-time setup
+/// (pen pairing, clicker keys, storage) in Settings.
 struct ControlPanel: View {
+    enum Tab: String, CaseIterable { case stage = "Stage", models = "Models", settings = "Settings" }
+
+    @Environment(AppModel.self) private var model
+    @AppStorage("panelTab") private var tab = Tab.stage
+
+    var body: some View {
+        @Bindable var model = model
+        @Bindable var drawing = model.drawing
+        Form {
+            switch tab {
+            case .stage: StageTab(tab: $tab)
+            case .models: ModelsTab()
+            case .settings: SettingsTab()
+            }
+        }
+        .formStyle(.grouped)
+        .id(tab)  // each tab opens at its top
+        .safeAreaBar(edge: .top) {
+            Picker("Section", selection: $tab) {
+                ForEach(Tab.allCases, id: \.self) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+        }
+        .safeAreaBar(edge: .bottom) { BottomBar() }
+        .toolbar {
+            ToolbarItemGroup {
+                Toggle("Draw on Stage", systemImage: "pencil.tip", isOn: $drawing.isOn)
+                    .help("Draw on the stage with the mouse (P on stage)")
+                Toggle("Hide Camera", systemImage: "video.slash", isOn: $model.cameraHidden)
+                    .help("Show black instead of the camera; the models keep running (H on stage)")
+                Toggle("Debug Mode", systemImage: "ladybug", isOn: $model.debugMode)
+                    .help("Show stats and the recognized hand gesture on the stage")
+            }
+        }
+        .onChange(of: model.store.downloaded) { model.modelsChanged() }
+    }
+}
+
+/// Where the picture comes from, what is shown on it (models, or a story), and ink drawn over it.
+private struct StageTab: View {
+    @Binding var tab: ControlPanel.Tab
     @Environment(AppModel.self) private var model
     /// Whether the story's step list is shown (remembered across launches).
     @AppStorage("storyStepsExpanded") private var stepsExpanded = false
 
     var body: some View {
         @Bindable var model = model
-        Form {
-            Section("Source") {
-                Picker("Source", selection: $model.source) {
-                    ForEach(AppModel.Source.allCases, id: \.self) { Text($0.rawValue) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                switch model.source {
-                case .camera:
-                    Toggle("Camera", isOn: $model.cameraOn)
-                    if model.cameraOn {
-                        Picker("Device", selection: $model.camera.selectedID) {
-                            ForEach(model.camera.devices, id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.uniqueID)) }
-                        }
-                        Toggle("Mirror", isOn: $model.mirror)
-                    }
-                    if !model.camera.authorized {
-                        Text("Camera access is off. Enable it in System Settings › Privacy & Security › Camera.")
-                            .foregroundStyle(.secondary)
-                    }
-                case .media: MediaSourceView()
-                }
+        Section("Source") {
+            Picker("Source", selection: $model.source) {
+                ForEach(AppModel.Source.allCases, id: \.self) { Text($0.rawValue) }
             }
-
-            if model.source == .camera {
-                Section("Background") { LibraryStrip(library: model.backgrounds, types: [.image], none: true) }
-            }
-
-            Section {
-                Picker("Mode", selection: $model.mode) {
-                    ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            switch model.source {
+            case .camera:
+                Toggle("Camera", isOn: $model.cameraOn)
+                if model.cameraOn {
+                    Picker("Device", selection: $model.camera.selectedID) {
+                        ForEach(model.camera.devices, id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.uniqueID)) }
+                    }
+                    Toggle("Mirror", isOn: $model.mirror)
                 }
-                .pickerStyle(.segmented)
-                switch model.mode {
-                case .display:
-                    Text(model.store.downloaded.isEmpty
-                        ? "Download a model below to start."
-                        : "Click a downloaded model below to show or hide it on stage.")
+                if !model.camera.authorized {
+                    Text("Camera access is off. Enable it in System Settings › Privacy & Security › Camera.")
                         .foregroundStyle(.secondary)
-                case .story: storyControls
                 }
-                if !model.missingModels.isEmpty {
-                    HStack {
-                        Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
-                        Spacer()
-                        Button("Download") { model.downloadMissing() }
-                    }
-                }
+            case .media: MediaSourceView()
             }
+        }
 
-            Section("Draw") { DrawControls() }
+        if model.source == .camera {
+            Section("Background") { LibraryStrip(library: model.backgrounds, types: [.image], none: true) }
+        }
 
-            Section("Models") { ModelBrowser() }
-
-            Section("Inference") { InferenceSettingsView() }
-
-            Section("Status") {
-                Toggle("Debug mode (on stage)", isOn: $model.debugMode)
-                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                    LabeledContent("Stage", value: "\(model.renderFPS) fps")
-                    ForEach(model.pipeline.latestOutputs.values.sorted { $0.modelID < $1.modelID }, id: \.modelID) {
-                        LabeledContent($0.modelID, value: String(format: "%.1f ms", $0.latency * 1000))
-                    }
-                    ForEach(model.pipeline.errors.sorted { $0.key < $1.key }, id: \.key) {
-                        Text("\($0.key): \($0.value)").foregroundStyle(.red)
-                    }
+        Section {
+            Picker("Mode", selection: $model.mode) {
+                ForEach(AppModel.Mode.allCases, id: \.self) { Text($0.rawValue) }
+            }
+            .pickerStyle(.segmented)
+            switch model.mode {
+            case .display:
+                LabeledContent {
+                    Button("Choose…") { tab = .models }
+                } label: {
+                    Text("Models on stage")
+                    Text(model.displayModels.isEmpty ? "None: click a downloaded model in Models" : model.displayModels.joined(separator: ", "))
+                }
+            case .story: storyControls
+            }
+            if !model.missingModels.isEmpty {
+                HStack {
+                    Text("Missing: \(model.missingModels.joined(separator: ", "))").foregroundStyle(.orange)
+                    Spacer()
+                    Button("Download") { model.downloadMissing() }
                 }
             }
         }
-        .formStyle(.grouped)
-        .onChange(of: model.store.downloaded) { model.modelsChanged() }
+
+        DrawControls()
     }
 
     @ViewBuilder private var storyControls: some View {
@@ -93,121 +122,213 @@ struct ControlPanel: View {
         if model.preparingStory == model.storyID {
             LabeledContent("Preparing \(model.story.title)…") { ProgressView().controlSize(.small) }
         }
-        // The steps, collapsed by default (a story can have dozens): the row shows where the story is, and
-        // Previous/Next below step through it either way.
+        // The steps, collapsed by default (a story can have dozens); the bottom bar shows where the story is and
+        // steps through it either way.
+        // A step's branches (`Story.Step.branches`) are indented under it, their steps unnumbered.
         DisclosureGroup(isExpanded: $stepsExpanded) {
-            ForEach(Array(model.story.steps.enumerated()), id: \.offset) { index, step in
-                Button { model.stepIndex = index } label: {
+            ForEach(model.story.places, id: \.self) { place in
+                let current = place == model.place
+                Button { model.place = place } label: {
                     HStack {
-                        Text("\(index + 1)").monospacedDigit().foregroundStyle(.secondary).frame(minWidth: 20, alignment: .trailing)
-                        Text(step.title)
+                        Text(place.branch == nil ? "\(place.step + 1)" : "").monospacedDigit().foregroundStyle(.secondary)
+                            .frame(minWidth: 20, alignment: .trailing)
+                        Text(model.story.step(at: place).title)
+                            .padding(.leading, place.branch == nil ? 0 : 16)
+                            .foregroundStyle(place.branch == nil ? .primary : .secondary)
                         Spacer()
-                        if index == model.stepIndex {
+                        if current {
                             Image(systemName: "play.fill").foregroundStyle(.tint).accessibilityLabel("Current step")
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .fontWeight(index == model.stepIndex ? .semibold : .regular)
+                .fontWeight(current ? .semibold : .regular)
             }
         } label: {
-            LabeledContent("Steps") {
-                Text("\(model.stepIndex + 1) of \(model.story.steps.count) · \(model.story.steps[model.stepIndex].title)")
+            LabeledContent("Steps", value: "\(model.story.steps.count)")
+        }
+    }
+}
+
+/// The story's Previous/Next and the stage's speed, always in view.
+private struct BottomBar: View {
+    @Environment(AppModel.self) private var model
+    @State private var showsErrors = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if model.mode == .story {
+                let (story, place) = (model.story, model.place)
+                // A branch's step after the step it branches from: "13 of 14 · Task quiz › Detect".
+                let title = place.branch == nil ? story.steps[place.step].title
+                    : "\(story.steps[place.step].title) › \(story.step(at: place).title)"
+                Button("Previous Step", systemImage: "chevron.left") { model.previous() }
+                    .disabled(story.place(before: place) == nil)
+                    .help("Previous step (←)")
+                Text("\(place.step + 1) of \(story.steps.count) · \(title)")
                     .monospacedDigit()
                     .lineLimit(1)
                     .truncationMode(.tail)
+                Button("Next Step", systemImage: "chevron.right") { model.next() }
+                    .disabled(story.place(after: place) == nil)
+                    .help("Next step (→)")
+            }
+            Spacer(minLength: 8)
+            TimelineView(.periodic(from: .now, by: 0.5)) { _ in status }
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    /// The stage's frame rate and the slowest model's latency (each model's in the tooltip); a warning for errors.
+    @ViewBuilder private var status: some View {
+        let outputs = model.pipeline.latestOutputs.values.sorted { $0.modelID < $1.modelID }
+        let errors = model.pipeline.errors.sorted { $0.key < $1.key }
+        HStack(spacing: 6) {
+            Text((["\(model.renderFPS) fps"] + (outputs.map(\.latency).max().map { [String(format: "%.0f ms", $0 * 1000)] } ?? []))
+                .joined(separator: " · "))
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .help((["Stage: \(model.renderFPS) fps"] + outputs.map { String(format: "%@: %.1f ms", $0.modelID, $0.latency * 1000) })
+                    .joined(separator: "\n"))
+            if !errors.isEmpty {
+                Button("Errors", systemImage: "exclamationmark.triangle.fill") { showsErrors.toggle() }
+                    .foregroundStyle(.red)
+                    .help("Model errors")
+                    .popover(isPresented: $showsErrors) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(errors, id: \.key) { Text("\($0.key): \($0.value)") }
+                        }
+                        .textSelection(.enabled)
+                        .padding()
+                        .frame(maxWidth: 360)
+                    }
             }
         }
-        HStack {
-            Button("Previous", systemImage: "chevron.left") { model.previous() }.disabled(model.stepIndex == 0)
-            Spacer()
-            Button("Next", systemImage: "chevron.right") { model.next() }
-                .disabled(model.stepIndex == model.story.steps.count - 1)
+    }
+}
+
+/// The model browser, and the settings for every model on stage, collapsed to a summary.
+private struct ModelsTab: View {
+    @Environment(AppModel.self) private var model
+    @AppStorage("inferenceExpanded") private var inferenceExpanded = false
+
+    var body: some View {
+        if model.mode == .story {
+            // In Story mode clicks don't change the stage: say so before one seems to fail.
+            Section {
+                LabeledContent {
+                    Button("Switch to Display") { model.mode = .display }
+                } label: {
+                    Label("Story mode", systemImage: "info.circle")
+                    Text("You're in Story mode, where each step picks its models. To choose which models to show, switch back to Display mode.")
+                }
+            }
         }
-        Toggle("Clicker keys (←/→, Page Up/Down) in other apps too", isOn: $model.clickerKeys)
-        if model.clickerKeys && !ClickerKeys.hasPermission {
-            Text(
-                "To step the story while Meet is in front, macOS needs yolo-meet allowed in System Settings › Privacy & Security › Accessibility (again after a rebuild). Then turn this off and on."
-            )
-            .foregroundStyle(.secondary)
+        Section { ModelBrowser() }
+        Section {
+            DisclosureGroup(isExpanded: $inferenceExpanded) {
+                InferenceSettingsView()
+            } label: {
+                let settings = model.inference
+                LabeledContent("Inference") {
+                    Text(
+                        [settings.imgsz.map { "\($0) px" }, "Conf \(settings.confidence.formatted(.number.precision(.fractionLength(2))))",
+                         "IoU \(settings.iou.formatted(.number.precision(.fractionLength(2))))"]
+                            .compactMap(\.self).joined(separator: " · "))
+                        .monospacedDigit()
+                }
+            }
         }
-        Toggle("Hide the camera (H on stage)", isOn: $model.cameraHidden)
+    }
+}
+
+/// The iPad pen's switch, with whether a pad is connected. Its pairing code is in the Settings tab.
+struct PenToggle: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        @Bindable var pen = model.pen
+        Toggle(isOn: $pen.isOn) {
+            Text("iPad pen")
+            Text(!pen.isOn
+                ? "Draw with an Apple Pencil, from the yolo-meet pen app"
+                : pen.pad.map { "Connected to \($0)" } ?? "Waiting for the yolo-meet pen app · pairing code in Settings")
+        }
     }
 }
 
 /// Ink on the stage (`Drawing`): the mouse and the iPad's pen, the ink's look, and removing strokes.
 private struct DrawControls: View {
     @Environment(AppModel.self) private var model
-    /// The pairing code is only readable while asked for: the panel may be on a shared screen.
-    @State private var showsCode = false
 
     var body: some View {
         @Bindable var drawing = model.drawing
-        @Bindable var pen = model.pen
-        Toggle("Draw on stage (P)", isOn: $drawing.isOn)
-        Toggle(isOn: $pen.isOn) {
-            Text("iPad pen")
-            Text(!pen.isOn ? "Draw with an Apple Pencil, from the yolo-meet pen app" : pen.pad.map { "Connected to \($0)" } ?? "Waiting for the yolo-meet pen app")
-        }
-        if pen.isOn {
-            LabeledContent {
-                Text(showsCode ? PenCode.shown(pen.code) : "••••-••••-••••-••••-••••").monospaced().textSelection(.enabled)
-                Button(showsCode ? "Hide" : "Show") { showsCode.toggle() }
-                Button("New") { pen.renewCode() }
-                    .help("Makes another code: every iPad has to be given it")
-            } label: {
-                Text("Pairing code")
-                Text("Typed once in the pen app. The link is encrypted with it")
-            }
-        }
-        if drawing.isOn || pen.isOn {
-            Picker("Tool", selection: $drawing.erases) {
-                Text("Pencil").tag(false)
-                Text("Eraser").tag(true)
-            }
-            .pickerStyle(.segmented)
-            LabeledContent("Color") {
-                HStack(spacing: 10) {
-                    ForEach(Drawing.colors, id: \.1) { name, hex in
-                        Button { (drawing.color, drawing.erases) = (hex, false) } label: {
-                            Circle().fill(Color(nsColor: .hex(hex))).frame(width: 18, height: 18)
-                                .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
-                                .padding(3)
-                                .overlay(Circle().stroke(Color.accentColor, lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(name)
-                        .help(name)
-                    }
-                }
-            }
-            LabeledContent {
-                Slider(value: $drawing.width, in: InkSettings.widths, step: 1)
-            } label: {
-                Text("Width")
-                Text("\(Int(drawing.width)) px")
-            }
-            Toggle(isOn: $drawing.fades) {
-                Text("Fading ink")
-                Text(drawing.fades ? "Strokes fade out after they are drawn" : "Strokes stay until they are undone, erased or cleared")
-            }
-            if drawing.fades {
-                LabeledContent {
-                    Slider(value: $drawing.fadeAfter, in: InkSettings.stays, step: 1)
-                } label: {
-                    Text("Fades after")
-                    Text("\(Int(drawing.fadeAfter)) s")
-                }
-            }
+        let pen = model.pen
+        Section("Draw") {
+            Toggle("Draw on stage (P)", isOn: $drawing.isOn)
+            PenToggle()
         }
         if drawing.isOn || pen.isOn || drawing.strokeCount > 0 {
-            HStack {
-                Button("Undo (⌫)", systemImage: "arrow.uturn.backward") { drawing.undo() }
-                Spacer()
-                Button("Clear (C)", systemImage: "trash") { drawing.clear() }
+            Section {
+                if drawing.isOn || pen.isOn {
+                    // The tool and the color on one row: picking a color also picks the pencil.
+                    HStack {
+                        Picker("Tool", selection: $drawing.erases) {
+                            Label("Pencil", systemImage: "pencil.tip").tag(false)
+                            Label("Eraser", systemImage: "eraser").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .fixedSize()
+                        Spacer()
+                        HStack(spacing: 6) {
+                            ForEach(Drawing.colors, id: \.1) { name, hex in
+                                Button { (drawing.color, drawing.erases) = (hex, false) } label: {
+                                    Circle().fill(Color(nsColor: .hex(hex))).frame(width: 18, height: 18)
+                                        .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
+                                        .padding(3)
+                                        .overlay(Circle().stroke(Color.accentColor, lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(name)
+                                .help(name)
+                            }
+                        }
+                    }
+                    LabeledContent {
+                        Slider(value: $drawing.width, in: InkSettings.widths, step: 1)
+                    } label: {
+                        Text("Width")
+                        Text("\(Int(drawing.width)) px")
+                    }
+                    // One row: the switch, and the delay it reveals.
+                    LabeledContent {
+                        HStack {
+                            if drawing.fades { Slider(value: $drawing.fadeAfter, in: InkSettings.stays, step: 1) }
+                            Toggle("Fading ink", isOn: $drawing.fades).labelsHidden().toggleStyle(.switch).fixedSize()
+                        }
+                    } label: {
+                        Text("Fading ink")
+                        Text(drawing.fades ? "Fades after \(Int(drawing.fadeAfter)) s" : "Strokes stay until undone, erased or cleared")
+                    }
+                }
+            } header: {
+                HStack {
+                    Text("Ink")
+                    Spacer()
+                    Group {
+                        Button("Undo", systemImage: "arrow.uturn.backward") { drawing.undo() }.help("Undo the last stroke (⌫ on stage)")
+                        Button("Clear", systemImage: "trash") { drawing.clear() }.help("Clear all strokes (C on stage)")
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .disabled(drawing.strokeCount == 0)
+                }
             }
-            .disabled(drawing.strokeCount == 0)
         }
     }
 }

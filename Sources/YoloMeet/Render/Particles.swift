@@ -114,19 +114,42 @@ final class ParticleSystem {
         mode = .form
     }
 
-    /// Moves some particles' points (in the shape's units) and sets their colors at once, without forming again or
-    /// fading the colors: to animate part of the formed shape every frame (e.g. data flowing through it). The others
-    /// keep theirs. The particles spring to their new points as usual.
-    func place(_ indices: [Int], at points: [SIMD3<Float>], colors: [SIMD3<Float>]) {
+    /// Where some particles are set to go now (shape units, with the shape's offsets at `explode`), nil before the first
+    /// `form`: e.g. for a new step's effect to carry on from where the previous one left them (an effect's `init` runs
+    /// before the new step forms anything).
+    func points(_ indices: [Int]) -> [SIMD3<Float>]? {
+        guard let shape else { return nil }
+        return indices.map { i in
+            let (p, o) = (shape.points[i], shape.offsets[i])
+            return SIMD3(p.x, p.y, p.z) + SIMD3(o.x, o.y, o.z) * explode
+        }
+    }
+
+    /// The colors some particles show now (their own, nil for the system's `color`), nil before the first frame drew
+    /// them: e.g. for a new step to form a shape that keeps them as they are.
+    func colors(_ indices: [Int]) -> [SIMD3<Float>?]? {
+        guard buffers.count == 7, !shapeChanged else { return nil }
+        let now = buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count)
+        return indices.map { now[$0].w > 0.5 ? SIMD3(now[$0].x, now[$0].y, now[$0].z) : nil }
+    }
+
+    /// Moves some particles' points (in the shape's units) and sets their colors at once (nil: they keep theirs),
+    /// without forming again or fading the colors: to animate part of the formed shape every frame (e.g. data flowing
+    /// through it). The others keep theirs. The particles spring to their new points as usual.
+    func place(_ indices: [Int], at points: [SIMD3<Float>], colors: [SIMD3<Float>]? = nil) {
         guard shape != nil else { return }
         let direct = !shapeChanged && buffers.count == 7  // else the next frame copies the shape, these included
         let targets = direct ? buffers[3].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         let now = direct ? buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         let before = direct ? buffers[6].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         for (k, i) in indices.enumerated() {
-            let point = SIMD4(points[k], shape!.points[i].w), color = SIMD4(colors[k], 1)
-            (shape!.points[i], shape!.colors[i]) = (point, color)
-            if direct { (targets![i], now![i], before![i]) = (point, color, color) }
+            let point = SIMD4(points[k], shape!.points[i].w)
+            shape!.points[i] = point
+            if direct { targets![i] = point }
+            guard let colors else { continue }
+            let color = SIMD4(colors[k], 1)
+            shape!.colors[i] = color
+            if direct { (now![i], before![i]) = (color, color) }
         }
     }
 

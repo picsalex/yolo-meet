@@ -142,7 +142,15 @@ and wins over the hands' while it acts.
   bitmap to draw a texture or a picture in.
 - `Grip`: whether the gestures hold an object (they began on it), with its swell while a pinch charges and held (`scale`).
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
-  hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`.
+  hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`. `Actionable(by: .click)` is
+  for the mouse alone: the item under the cursor grows while Space is held, and a click on it acts (`frame.click`, a
+  press while Space is held, which starts no drag).
+- `QuizEffect`: a quiz on a step with branches: labels in a column (a title and a hint under it), blurred but for the
+  title's first letter. Space + click one: it comes clear, its title flies to the top of the stage and the story enters
+  its branch (item i, branch i); coming back, the title glides home, and visited items stay clear. The other labels fade
+  as it flies (`leaving`, to fade the step's other content with them). The branch's first step should have
+  `transition: .none` and show its title with `ObjectTitle`, which picks up the flown one (`ObjectTitle.handOff`, then
+  `showAtOnce()` on a step that continues with no transition).
 - `KeyTurn`: turns an object with the keys (R spin, Q/D turn, Z/S tilt, 0 reset); apply its `rotation`. `spinning:`
   false starts with the spin off; `restingTilt`/`restingTurn` set the view at rest (and on 0).
 - `GlowingDot`: a steady additive light with trailing sparks (3D layer); `glowTexture` for your own particles.
@@ -165,6 +173,15 @@ step adds or drops still fades in or out (NN intro: the arrows on the same objec
 
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
+
+A step can have **branches**, like hyperlinks in a slide deck: `Step(…, branches: [[Step]])`, each a sequence of steps
+entered from it by an effect, `frame.branches.enter(i)` (e.g. a clicked item, `QuizEffect`). Inside a branch → and ←
+move through its steps, and past either end back to the step it branches from; → and ← on that step skip its
+branches. The panel lists a branch's steps indented under its step (click one to go there), and the bottom bar shows
+"13 of 14 · Task quiz › Detect". Effects of the step read `frame.branches.visited` (the branches entered since the
+story came to it, kept until it goes back before it) and `frame.branches.returned` (the branch it just came back from,
+e.g. to animate its way back). Where the story is: `AppModel.place` (`Story.Place`: a step, a branch, a step in it).
+Entering a branch takes its first step's transition; leaving one fades.
 
 The `NNExplained` story is the first full scene. Its network (every layout, about 180 MB) is built when the
 story is first opened, not at launch: `Story.prepare` builds it (`LazyNetwork`), pausing between layouts so the app
@@ -197,8 +214,17 @@ backbone, through the neck to a Detect block of the head (`NetworkLayout.flow`: 
 connections per pixel), while the architecture stands still, its blocks lighting up gold as the pixels go through them
 (`ParticleSystem.paint(_:color:)`, from how many are in each block), and once they're through, the result ("Cat",
 `NetworkLayout.flowResult`) shows past the output arrow until the loop starts over; before, the bands merge back into the RGB pixels
-and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude); Then each YOLO task gets two
-steps (`Tasks.swift`): its output on the cat picture (the particles glide into one large picture, recolored per task:
+and that picture glides home (`returning(to:from:through:)`, through `pixels` as a prelude). Then a **task quiz**
+(`TaskQuiz.swift`): the head's three Detect blocks glide, twice as large, to the stage's left with the lines joining
+into the output arrow and its "Cat" (`TaskQuizEffect`, gliding from the inference's arrow), while the rest of the
+particles hold where they were, in their colors (`ParticleSystem.points(_:)` and `colors(_:)`, read in the effect's
+`init`, before the step forms anything) and slide off the stage's left edge together with the blocks (one `form`: the
+same spring, so they start and settle together); the arrow moves on the particles' spring too; and
+the lit ones cross back unseen and stream in from past the right edge into a small swirling ball (`TaskQuiz`, formed
+centered on the stage by `NetworkEffect(_:_:at:)`, which leaves `network.home` where the inference was, so the outputs
+form there; only the lit ones are moved every frame, with `ParticleSystem.place`), and a `QuizEffect` lists the seven tasks between them (each layout's title, its Ultralytics
+task name and pretraining dataset as the hint, e.g. "detect · COCO"). Each task is a branch of the quiz's step with two
+steps (`Tasks.swift`), the first with no transition, its title taking over from the flown one: its output on the cat picture (the particles glide into one large picture, recolored per task:
 the cat's mask, class colors, an inferno depth map in relief; `TaskOutputEffect` draws the box, polygon, legend, top
 classes, keypoints or oriented box over it; semantic segmentation also zooms in, `semanticZoom`, its pixels large
 squares with their class ID written on them one after the other, Space + point shows one's class: the window's

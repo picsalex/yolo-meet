@@ -160,7 +160,7 @@ final class NetworkLayout {
     }
     /// The particles' colors once `settled`, faded to as they arrive, if not their colors on the way (e.g. particles
     /// that glide black, unseen, and light up once there).
-    var arrivedColors: [SIMD3<Float>?]?
+    var arrivedColors: ParticleColors?
     /// Particles moving through the layout over time, animated by the effect every frame; nil: it stands still.
     private(set) var flow: Flow?
     /// What the flow's output shows once its particles are through (e.g. "Cat"), beside the output arrow's tip.
@@ -322,7 +322,7 @@ final class NetworkLayout {
             let d = (k - outlines[i]) % dots[i]
             let (slice, cell, cells) = (d / (grid.cells * grid.cells), d % (grid.cells * grid.cells), grid.cells)
             let at = { (index: Int, count: Int) in -1 + (2 * Float(index) + 1) / Float(count) }
-            let jitter = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1)) * 0.0025
+            let jitter = SIMD3<Float>.random(in: -1...1) * 0.0025
             return SIMD3(box.x * 0.85 * at(cell % cells, cells), box.y * 0.85 * at(cell / cells, cells), box.z * at(slice, grid.slices)) + jitter
         }
         return layout
@@ -338,7 +338,7 @@ final class NetworkLayout {
         var parts = [Int](repeating: part, count: points.count)
         for (i, neuron) in neurons.enumerated() {
             for k in 0..<perNeuron[i] {
-                points.append(neuron.point + (point?(i, k) ?? randomDirection() * neuronSize))
+                points.append(neuron.point + (point?(i, k) ?? SIMD3<Float>.randomDirection() * neuronSize))
                 parts.append(i + 1)
             }
         }
@@ -396,7 +396,7 @@ final class NetworkLayout {
         let dust = shape.parts.indices.filter { shape.parts[$0] == dustPart }
         let cells = Int(Float(dust.count).squareRoot())
         let pixels = catDrawing(cells)
-        shape.colors = Array(repeating: nil, count: shape.points.count)
+        shape.colors = ParticleColors(repeating: nil, count: shape.points.count)
         for (k, i) in dust.enumerated() {
             // A pixel each (row by row, from the top); the few left over on random pixels.
             let p = k < cells * cells ? k : Int.random(in: 0..<cells * cells)
@@ -426,19 +426,8 @@ final class NetworkLayout {
         // Its width under it, its height on its left.
         let (h, g) = (side / 2, Float(0.08))
         layout.dimensions = [("\(cells) px", [-h, -h - g, 0], [h, -h - g, 0]), ("\(cells) px", [-h - g, h, 0], [-h - g, -h, 0])]
-        guard let previous = picture.shape, case let (lo, hi)? = picture.pictureCorners else { return layout }
-        let n = previous.points.count
-        let quota = (n + cells * cells - 1) / (cells * cells)
-        var cellOf = [Int](repeating: -1, count: n)
-        var counts = [Int](repeating: 0, count: cells * cells)
-        for i in 0..<n where previous.parts[i] == dustPart {
-            let p = previous.points[i]
-            let (fx, fy) = ((p.x - lo.x) / (hi.x - lo.x), (hi.y - p.y) / (hi.y - lo.y))
-            let c = min(max(Int(fy * Float(cells)), 0), cells - 1) * cells + min(max(Int(fx * Float(cells)), 0), cells - 1)
-            if counts[c] < quota { (cellOf[i], counts[c]) = (c, counts[c] + 1) }
-        }
-        var open = counts.indices.flatMap { Array(repeating: $0, count: quota - counts[$0]) }.shuffled()
-        for i in 0..<n where cellOf[i] < 0 { cellOf[i] = open.popLast()! }
+        guard let previous = picture.shape, let corners = picture.pictureCorners else { return layout }
+        let (cellOf, quota) = pictureCells(of: previous, corners: corners, cells: cells)
         let colors = catDrawing(cells)
         // Each pixel's particles on an even grid (a few slots spare), so it reads as a solid square.
         let fill: Float = 0.84  // of a pixel's side: the gaps show the grid
@@ -454,9 +443,30 @@ final class NetworkLayout {
             return [(x - 0.5) * side, (0.5 - y) * side, .random(in: -0.004...0.004)]
         }
         layout.shape = ParticleShape(
-            points: previous.points, offsets: zip(points, previous.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            points: previous.points, offsets: zip(points, previous.points).map { $0 - $1 }, parts: [],
             colors: cellOf.map { colors[$0] * 1.1 })  // dense: dimmer than the picture's single particles
         return layout
+    }
+
+    /// Each particle's pixel in a `cells` × `cells` grid over the picture at `corners` (row by row from the top), the
+    /// same share of the particles each (`quota`): the picture's own particles keep the pixel they're on while it has
+    /// room, and the others fill the rest at random.
+    static func pictureCells(
+        of shape: ParticleShape, corners: (lo: SIMD3<Float>, hi: SIMD3<Float>), cells: Int
+    ) -> (cellOf: [Int], quota: Int) {
+        let (n, (lo, hi)) = (shape.points.count, corners)
+        let quota = (n + cells * cells - 1) / (cells * cells)
+        var cellOf = [Int](repeating: -1, count: n)
+        var counts = [Int](repeating: 0, count: cells * cells)
+        for i in 0..<n where shape.parts[i] == dustPart {
+            let p = shape.points[i]
+            let (fx, fy) = ((p.x - lo.x) / (hi.x - lo.x), (hi.y - p.y) / (hi.y - lo.y))
+            let c = min(max(Int(fy * Float(cells)), 0), cells - 1) * cells + min(max(Int(fx * Float(cells)), 0), cells - 1)
+            if counts[c] < quota { (cellOf[i], counts[c]) = (c, counts[c] + 1) }
+        }
+        var open = counts.indices.flatMap { Array(repeating: $0, count: quota - counts[$0]) }.shuffled()
+        for i in 0..<n where cellOf[i] < 0 { cellOf[i] = open.popLast()! }
+        return (cellOf, quota)
     }
 
     /// `pixels` split into its red, green and blue layers back to back (red in front), each a third of every pixel's
@@ -486,7 +496,7 @@ final class NetworkLayout {
         }
         layout.shape = ParticleShape(
             points: from.arrived, offsets: Array(repeating: .zero, count: from.points.count),
-            parts: Array(repeating: 0, count: from.points.count), colors: colors)
+            parts: [], colors: colors)
         return layout
     }
 
@@ -535,7 +545,7 @@ final class NetworkLayout {
             colors.append(bands[c].tint * values(color)[c] * Float(n))  // a share of the particles: they add up
         }
         layout.shape = ParticleShape(
-            points: start, offsets: zip(points, start).map { $0 - $1 }, parts: Array(repeating: 0, count: start.count), colors: colors)
+            points: start, offsets: zip(points, start).map { $0 - $1 }, parts: [], colors: colors)
         return layout
     }
 
@@ -700,10 +710,15 @@ final class NetworkLayout {
         return layout
     }
 
-    /// What each pixel of the cat picture shows (`size` square, row by row from the top), as `Scene` raw values.
+    /// What each pixel of the cat picture shows (`size` square, row by row from the top), as `Scene` raw values. Drawn
+    /// once per size: several layouts and effects read the same one.
     static func catClasses(_ size: Int) -> [Int] {
-        catDrawing(size, classes: true).map { Int(($0.x * 255 / 60).rounded()) }
+        if let drawn = drawnClasses[size] { return drawn }
+        let classes = catDrawing(size, classes: true).map { Int(($0.x * 255 / 60).rounded()) }
+        drawnClasses[size] = classes
+        return classes
     }
+    private static var drawnClasses: [Int: [Int]] = [:]
 
     /// The parts of the cat picture, for its class map.
     enum Scene: Int { case sky, sun, grass, cat }
@@ -714,9 +729,7 @@ final class NetworkLayout {
     /// The cat picture (rgb 0...1), or its class map (`classes`: each part a flat red of 60 × its `Scene`, no
     /// antialiasing, no whiskers), the cat tilted by `tilt` radians (counterclockwise) around `catCenter`.
     static func catDrawing(_ size: Int, classes: Bool = false, tilt: CGFloat = 0) -> [SIMD3<Float>] {
-        let context = CGContext(
-            data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let context = CGContext.bitmap(width: size, height: size)
         context.setShouldAntialias(!classes)
         context.scaleBy(x: CGFloat(size) / 100, y: CGFloat(size) / 100)  // drawn on a 100 × 100 canvas, y up
         func fill(_ part: Scene, _ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ path: () -> Void) {
@@ -767,7 +780,7 @@ final class NetworkLayout {
     /// `softness` wide), so they have no hard edge.
     private static func dust(_ count: Int, core: SIMD3<Float>, softness: Float = 0.3) -> [SIMD3<Float>] {
         (0..<count).map { _ in
-            let even = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1)) * core
+            let even = SIMD3<Float>.random(in: -1...1) * core
             // Box–Muller: three normal draws.
             let normal = SIMD3<Float>((0..<3).map { _ in
                 (-2 * log(Float.random(in: Float.ulpOfOne...1))).squareRoot() * cos(2 * .pi * Float.random(in: 0...1))
@@ -782,7 +795,7 @@ final class NetworkLayout {
         let areas = [half.y * half.z, half.x * half.z, half.x * half.y]
         let pick = Float.random(in: 0..<areas.reduce(0, +))
         let axis = pick < areas[0] ? 0 : pick < areas[0] + areas[1] ? 1 : 2
-        var p = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1))
+        var p = SIMD3<Float>.random(in: -1...1)
         p[axis] = Bool.random() ? 1 : -1
         if onEdge { p[(axis + Int.random(in: 1...2)) % 3] = Bool.random() ? 1 : -1 }
         return p * half
@@ -794,14 +807,6 @@ final class NetworkLayout {
     /// Where a neuron or block reaches from its center (its radius, or the larger side of its box face), in the shape's
     /// units.
     func reach(_ neuron: Neuron) -> Float { neuron.box.map { max($0.x, $0.y) } ?? neuronSize }
-
-    private func randomDirection() -> SIMD3<Float> {
-        while true {
-            let v = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1))
-            let l = simd_length(v)
-            if l > 0.01, l <= 1 { return v / l }
-        }
-    }
 }
 
 extension ParticleShape {

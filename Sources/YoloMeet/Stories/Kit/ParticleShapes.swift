@@ -10,7 +10,34 @@ nonisolated struct ParticleShape {
     /// The part each point belongs to (e.g. a cube's face), for `ParticleSystem.highlight`; empty: all part 0.
     var parts: [Int] = []
     /// Each point's color (rgb 0...1), nil for the system's `color`; empty: all the system's.
-    var colors: [SIMD3<Float>?] = []
+    var colors = ParticleColors()
+
+    init(points: [SIMD3<Float>], offsets: [SIMD3<Float>], parts: [Int] = [], colors: [SIMD3<Float>?] = []) {
+        (self.points, self.offsets, self.parts, self.colors) = (points, offsets, parts, ParticleColors(colors))
+    }
+}
+
+/// The particles' colors (rgb 0...1, nil for the system's `color`), kept as the GPU reads them: rgb then 1, or all 0
+/// for none. Half the memory of optional colors (16 bytes each, not 32), and handed to the GPU as they are.
+nonisolated struct ParticleColors: RandomAccessCollection, MutableCollection, Sendable {
+    private(set) var gpu: [SIMD4<Float>]
+
+    init() { gpu = [] }
+    init(_ colors: some Sequence<SIMD3<Float>?>) { gpu = colors.map(Self.gpu) }
+    init(repeating color: SIMD3<Float>?, count: Int) { gpu = Array(repeating: Self.gpu(color), count: count) }
+
+    var startIndex: Int { 0 }
+    var endIndex: Int { gpu.count }
+
+    subscript(index: Int) -> SIMD3<Float>? {
+        get {
+            let color = gpu[index]
+            return color.w > 0.5 ? SIMD3(color.x, color.y, color.z) : nil
+        }
+        set { gpu[index] = Self.gpu(newValue) }
+    }
+
+    private static func gpu(_ color: SIMD3<Float>?) -> SIMD4<Float> { color.map { SIMD4($0, 1) } ?? .zero }
 }
 
 enum ParticleShapes {
@@ -65,4 +92,18 @@ enum ParticleShapes {
         }
         return shape
     }
+}
+
+/// A box in a shape's space: its 8 corners (corner `k` on the + side of x when `k & 1`, of y when `k & 2`, of z when
+/// `k & 4`), and its 12 edges and 6 faces as corner indices.
+nonisolated enum Box {
+    static func corners(_ center: SIMD3<Float> = .zero, half: SIMD3<Float>) -> [SIMD3<Float>] {
+        (0..<8).map { k in center + half * SIMD3(k & 1 == 0 ? -1 : 1, k & 2 == 0 ? -1 : 1, k & 4 == 0 ? -1 : 1) }
+    }
+
+    /// The corners that differ on one axis.
+    static let edges: [(Int, Int)] = (0..<8).flatMap { k in [1, 2, 4].filter { k & $0 == 0 }.map { (k, k | $0) } }
+
+    /// Each face's corners in order around it: left, right, bottom, top, back, front.
+    static let faces = [[0, 4, 6, 2], [1, 5, 7, 3], [0, 4, 5, 1], [2, 6, 7, 3], [0, 2, 3, 1], [4, 6, 7, 5]]
 }

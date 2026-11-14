@@ -7,6 +7,8 @@ final class TextEffect: Effect {
     private let background = SKShapeNode()
     private let placement: Placement
     private let text: (StageFrame) -> String
+    /// The background as last drawn: it is drawn again only when the text's place or size changes.
+    private var drawn: CGRect?
 
     init(_ placement: Placement, text: @escaping (StageFrame) -> String) {
         self.placement = placement
@@ -22,18 +24,21 @@ final class TextEffect: Effect {
 
     override func update(_ frame: StageFrame) {
         let u = frame.stage.unit
-        label.text = text(frame)
+        // Written only when they change: SpriteKit lays text out again on every write.
+        label.set(\.text, text(frame))
         switch placement {
         case .topLeft:
-            label.fontSize = 34 * u
-            label.horizontalAlignmentMode = .left
+            label.set(\.fontSize, 34 * u)
+            label.set(\.horizontalAlignmentMode, .left)
             label.position = CGPoint(x: 36 * u, y: frame.stage.viewSize.height - 52 * u)
         case .lowerThird:
-            label.fontSize = 30 * u
-            label.horizontalAlignmentMode = .center
+            label.set(\.fontSize, 30 * u)
+            label.set(\.horizontalAlignmentMode, .center)
             label.position = CGPoint(x: frame.stage.viewSize.width / 2, y: 70 * u)
         }
         let rect = label.frame.insetBy(dx: -18 * u, dy: -10 * u)
+        guard rect != drawn else { return }
+        drawn = rect
         background.path = CGPath(roundedRect: rect, cornerWidth: 12 * u, cornerHeight: 12 * u, transform: nil)
     }
 }

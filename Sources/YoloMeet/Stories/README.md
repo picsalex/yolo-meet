@@ -136,7 +136,10 @@ and wins over the hands' while it acts.
 - `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand` (light gray, white joints, 15%), drawn
   `behind` objects and particles, to guide the gestures; the index fingertip's joint grows on an actionable item.
 - `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart) and their parts
-  (cube: `CubeFace`, with each face's corners).
+  (cube: `CubeFace`, with each face's corners); `Box` for any box's 8 corners, 12 edges and 6 faces. A shape's
+  `colors` (`ParticleColors`) read and write as optional colors, kept as the GPU takes them.
+- `CGPath.closed(_:)` and `CGContext.bitmap(width:height:)` (`Render/Geometry.swift`): a closed polygon, and an sRGB
+  bitmap to draw a texture or a picture in.
 - `Grip`: whether the gestures hold an object (they began on it), with its swell while a pinch charges and held (`scale`).
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
   hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`.

@@ -4,12 +4,9 @@ import RealityKit
 /// A soft round light, white, `size` pixels wide: opacity falls from the center through `stops` (radius share,
 /// opacity) to the edge.
 func radialGlow(size: Int = 128, stops: [(CGFloat, CGFloat)]) -> CGImage {
-    let space = CGColorSpace(name: CGColorSpace.sRGB)!
-    let context = CGContext(
-        data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4, space: space,
-        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let context = CGContext.bitmap(width: size, height: size)
     let gradient = CGGradient(
-        colorsSpace: space, colors: stops.map { CGColor(gray: 1, alpha: $0.1) } as CFArray, locations: stops.map(\.0))!
+        colorsSpace: context.colorSpace, colors: stops.map { CGColor(gray: 1, alpha: $0.1) } as CFArray, locations: stops.map(\.0))!
     let center = CGPoint(x: size / 2, y: size / 2)
     context.drawRadialGradient(
         gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(size / 2), options: [])

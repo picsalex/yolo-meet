@@ -221,10 +221,7 @@ final class OrientedBoxNode: SKNode {
     /// The rotated box, its label chip (as on axis-aligned boxes) on its top corner.
     func update(to targets: [CGPoint], text: String, color: NSColor, theme: Theme, unit: CGFloat, k: CGFloat) {
         points = points.count == targets.count ? zip(points, targets).map { $0.approaching($1, k) } : targets
-        let path = CGMutablePath()
-        path.addLines(between: points)
-        path.closeSubpath()
-        shape.path = path
+        shape.path = CGPath.closed(points)
         shape.set(\.strokeColor, color)
         shape.set(\.lineWidth, theme.lineWidth * unit)
         let pad = theme.labelSize / 3 * unit

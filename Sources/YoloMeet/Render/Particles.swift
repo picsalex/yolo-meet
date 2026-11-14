@@ -104,13 +104,10 @@ final class ParticleSystem {
         precondition(shape.points.count == count && shape.offsets.count == count, "one point per particle")
         let parts = shape.parts.isEmpty ? Array(repeating: 0, count: count) : shape.parts
         precondition(parts.count == count, "one part per point")
-        // A point's own color has alpha 1; 0 draws it in the system's `color`.
-        let colors = shape.colors.isEmpty ? Array(repeating: nil, count: count) : shape.colors
+        // A point's own color has alpha 1; 0 draws it in the system's `color` (`ParticleColors` keeps them so).
+        let colors = shape.colors.isEmpty ? Array(repeating: .zero, count: count) : shape.colors.gpu
         precondition(colors.count == count, "one color per point")
-        self.shape = (
-            zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) },
-            colors.map { $0.map { SIMD4($0, 1) } ?? .zero }
-        )
+        self.shape = (zip(shape.points, parts).map { SIMD4($0, Float($1)) }, shape.offsets.map { SIMD4($0, 0) }, colors)
         shapeChanged = true
         formStart = staggered ? nil : -1e6  // nil: set on the next frame; long ago: every particle springs at once
         if staggered { shown = nil }  // starts where the shape is
@@ -165,7 +162,7 @@ final class ParticleSystem {
             let positions = (0..<count).map { _ in
                 SIMD4<Float>(.random(in: 0...w), .random(in: 0...h), .random(in: -1...1), 0)
             }
-            let seeds = (0..<count).map { _ in SIMD4(randomDirection(), .random(in: 0...1)) }
+            let seeds = (0..<count).map { _ in SIMD4(SIMD3<Float>.randomDirection(), .random(in: 0...1)) }
             let length = count * MemoryLayout<SIMD4<Float>>.stride
             guard let position = device.makeBuffer(bytes: positions, length: length),
                 let velocity = device.makeBuffer(length: length), let seed = device.makeBuffer(bytes: seeds, length: length),
@@ -207,11 +204,14 @@ final class ParticleSystem {
     }
 }
 
-private func randomDirection() -> SIMD3<Float> {
-    while true {
-        let v = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1))
-        let l = simd_length(v)
-        if l > 0.01, l <= 1 { return v / l }
+nonisolated extension SIMD3 where Scalar == Float {
+    /// A direction picked evenly over all directions: a unit vector.
+    static func randomDirection() -> Self {
+        while true {
+            let v = Self.random(in: -1...1)
+            let l = simd_length(v)
+            if l > 0.01, l <= 1 { return v / l }
+        }
     }
 }
 

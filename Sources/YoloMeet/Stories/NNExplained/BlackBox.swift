@@ -12,18 +12,10 @@ extension NetworkLayout {
             title: "Black box", subtitle: "a neural network, seen from outside", neurons: [], synapses: [], neuronSize: 0.02,
             restingTilt: 0.42)
         (layout.restingTurn, layout.spins, layout.releases) = (0.6, true, true)
-        let s = blackBoxSide
-        layout.outline = blackBoxCorners
-        // The 12 edges: along each axis, at each sign of the other two.
-        let edges: [(SIMD3<Float>, SIMD3<Float>)] = (0..<3).flatMap { axis in
-            [(-1, -1), (-1, 1), (1, -1), (1, 1)].map { (a: Float, b: Float) -> (SIMD3<Float>, SIMD3<Float>) in
-                var from = SIMD3<Float>.zero, along = SIMD3<Float>.zero
-                along[axis] = 2 * s
-                from[axis] = -s
-                (from[(axis + 1) % 3], from[(axis + 2) % 3]) = (a * s, b * s)
-                return (from, along)
-            }
-        }
+        let corners = blackBoxCorners
+        layout.outline = corners
+        // The 12 edges, each from a corner along to the next.
+        let edges = Box.edges.map { (corners[$0.0], corners[$0.1] - corners[$0.0]) }
         let n = NeuralNetwork.particles
         let gray = SIMD3<Float>(repeating: 0.03)
         let points = (0..<n).map { i -> SIMD3<Float> in
@@ -31,16 +23,13 @@ extension NetworkLayout {
             return from + along * Float.random(in: 0...1) + SIMD3<Float>.random(in: -0.007...0.007)
         }
         layout.shape = ParticleShape(
-            points: points, offsets: Array(repeating: .zero, count: n), parts: Array(repeating: 0, count: n),
+            points: points, offsets: Array(repeating: .zero, count: n), parts: [],
             colors: Array(repeating: gray, count: n))
         return layout
     }
 
     /// The black box's 8 corners.
-    static var blackBoxCorners: [SIMD3<Float>] {
-        let s = blackBoxSide
-        return [-1, 1].flatMap { x in [-1, 1].flatMap { y in [-1, 1].map { z in SIMD3<Float>(x, y, z) * s } } }
-    }
+    static var blackBoxCorners: [SIMD3<Float>] { Box.corners(half: SIMD3(repeating: blackBoxSide)) }
 }
 
 /// The black box's faces, filled black under the particles (`behind`, over the camera), so it reads as a solid box with
@@ -71,13 +60,6 @@ final class BlackBoxEffect: Effect {
         box.isHidden = box.alpha < 0.01
         guard !box.isHidden else { return }
         let c = NetworkLayout.blackBoxCorners.map { system.shownPoint($0).point }
-        // Corners: index x * 4 + y * 2 + z (0: -, 1: +); each face, its four corners in order.
-        let quads = [[0, 1, 3, 2], [4, 5, 7, 6], [0, 1, 5, 4], [2, 3, 7, 6], [0, 2, 6, 4], [1, 3, 7, 5]]
-        for (face, quad) in zip(faces, quads) {
-            let path = CGMutablePath()
-            path.addLines(between: quad.map { c[$0] })
-            path.closeSubpath()
-            face.path = path
-        }
+        for (face, corners) in zip(faces, Box.faces) { face.path = CGPath.closed(corners.map { c[$0] }) }
     }
 }

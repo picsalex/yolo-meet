@@ -83,9 +83,7 @@ final class NetworkEffect: Effect {
     /// A neuron's look: a white disc with a blue ring, 64 points across.
     private static let disc: SKTexture = {
         let (size, width) = (128, CGFloat(10))
-        let context = CGContext(
-            data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let context = CGContext.bitmap(width: size, height: size)
         let rect = CGRect(x: 0, y: 0, width: size, height: size).insetBy(dx: width / 2 + 2, dy: width / 2 + 2)
         context.setFillColor(.white)
         context.fillEllipse(in: rect)
@@ -266,7 +264,7 @@ final class NetworkEffect: Effect {
         leaving.removeAll { $0.arrow.parent == nil }
         for (label, header) in zip(headers, layout.headers) {
             label.label.set(\.fontSize, layout.headerSize * u)
-            label.label.verticalAlignmentMode = .top
+            label.label.set(\.verticalAlignmentMode, .top)
             label.position = system.shownPoint(header.point).point
             label.sync(unit: u)
         }
@@ -326,12 +324,7 @@ final class NetworkEffect: Effect {
         // Blocks: their 8 corners on stage (at their grown size), and the outline around them, which the whole box
         // (front, sides, depth) is inside.
         let corners: [[CGPoint]?] = zip(layout.neurons, items).map { neuron, item in
-            neuron.box.map { box in
-                let half = box * Float(item.scale)
-                return (0..<8).map { k in
-                    system.shownPoint(neuron.point + half * SIMD3(k & 1 == 0 ? -1 : 1, k & 2 == 0 ? -1 : 1, k & 4 == 0 ? -1 : 1)).point
-                }
-            }
+            neuron.box.map { box in Box.corners(neuron.point, half: box * Float(item.scale)).map { system.shownPoint($0).point } }
         }
         let hulls = corners.map { $0.map(convexHull) }
 
@@ -404,10 +397,7 @@ final class NetworkEffect: Effect {
             left = neuronInfo.side(of: 0, anchor: center, around: bounds, left: kept, frame: frame)
             if left == nil {
                 let still = layout.neurons[i].box.map { box in
-                    let half = box * Float(item.grown)
-                    return CGRect(enclosing: (0..<8).map { k in
-                        system.shownPoint(layout.neurons[i].point + half * SIMD3(k & 1 == 0 ? -1 : 1, k & 2 == 0 ? -1 : 1, k & 4 == 0 ? -1 : 1)).point
-                    })
+                    CGRect(enclosing: Box.corners(layout.neurons[i].point, half: box * Float(item.grown)).map { system.shownPoint($0).point })
                 }
                 let rest = max(onStage[i].radius / item.scale * item.grown + 2 * u, Self.focusRadius * u)
                 around = still ?? CGRect(x: center.x - rest, y: center.y - rest, width: 2 * rest, height: 2 * rest)
@@ -427,14 +417,13 @@ final class NetworkEffect: Effect {
         let path = CGMutablePath()
         for i in outlined {
             guard let corner = corners[i] else { continue }
-            // The 12 edges: corners differing on one axis.
-            for k in 0..<8 { for bit in [1, 2, 4] where k & bit == 0 {
-                path.move(to: corner[k])
-                path.addLine(to: corner[k | bit])
-            } }
+            for (a, b) in Box.edges {
+                path.move(to: corner[a])
+                path.addLine(to: corner[b])
+            }
         }
-        outlines.path = path
-        outlines.lineWidth = 2 * u
+        if !path.isEmpty || outlines.path?.isEmpty == false { outlines.path = path }  // nothing outlined, before or now: no write
+        outlines.set(\.lineWidth, 2 * u)
 
         // The touched synapse lit, its weight over its middle.
         if let s = pointedSynapse {

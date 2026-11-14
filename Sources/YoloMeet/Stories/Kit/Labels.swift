@@ -33,7 +33,7 @@ final class ObjectTitle: SKNode {
         subtitle.set(\.fontSize, 15 * u)
         let width = max(title.frame.width, subtitle.frame.width)
         let right = rect.maxX + 24 * u + width < frame.stage.viewSize.width - 24 * u
-        for label in [title, subtitle] { label.horizontalAlignmentMode = right ? .left : .right }
+        for label in [title, subtitle] { label.set(\.horizontalAlignmentMode, right ? .left : .right) }
         // Kept on stage: with no room on either side, it moves in over the object's top.
         let target = CGPoint(x: right ? rect.maxX + 24 * u : max(rect.minX - 24 * u, 24 * u + width), y: rect.maxY + 30 * u)
         place(at: target, visible: visible, frame: frame)
@@ -45,7 +45,7 @@ final class ObjectTitle: SKNode {
         let u = frame.stage.unit
         title.set(\.fontSize, 44 * u)
         subtitle.set(\.fontSize, 15 * u)
-        for label in [title, subtitle] { label.horizontalAlignmentMode = .center }
+        for label in [title, subtitle] { label.set(\.horizontalAlignmentMode, .center) }
         let (size, half) = (frame.stage.viewSize, max(title.frame.width, subtitle.frame.width) / 2 + 24 * u)
         let x = frame.cameraHidden ? size.width / 2 : min(max(rect.midX, half), size.width - half)
         place(at: CGPoint(x: x, y: size.height - 30 * u), visible: visible, frame: frame)
@@ -160,7 +160,7 @@ final class Callouts: SKNode {
                 : items[i].shown?.approaching(CGPoint(x: x, y: target.y), frame.smoothing) ?? CGPoint(x: x, y: target.y)
             items[i].shown = shown
             (item.text.isHidden, item.line.isHidden) = (false, false)
-            item.label.horizontalAlignmentMode = left ? .right : .left
+            item.label.set(\.horizontalAlignmentMode, left ? .right : .left)
             item.text.position = shown
             item.text.sync(unit: u)
             // Line from beside the label to the part, with a dot on the part.

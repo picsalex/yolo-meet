@@ -39,12 +39,9 @@ final class RealityLayer {
     /// An equirectangular environment: white at the top, fading to dark grey at the bottom.
     private static let studio: CGImage = {
         let (width, height) = (256, 128)
-        let space = CGColorSpace(name: CGColorSpace.sRGB)!
-        let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let context = CGContext.bitmap(width: width, height: height)
         let gradient = CGGradient(
-            colorsSpace: space, colors: [CGColor(gray: 0.15, alpha: 1), CGColor(gray: 0.5, alpha: 1), CGColor(gray: 1, alpha: 1)] as CFArray,
+            colorsSpace: context.colorSpace, colors: [CGColor(gray: 0.15, alpha: 1), CGColor(gray: 0.5, alpha: 1), CGColor(gray: 1, alpha: 1)] as CFArray,
             locations: [0, 0.5, 1])!
         context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: height), options: [])  // y up: top is bright
         return context.makeImage()!

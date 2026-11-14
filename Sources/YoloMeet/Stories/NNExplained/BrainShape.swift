@@ -40,7 +40,7 @@ nonisolated enum Brain {
         points.reserveCapacity(count)
         while points.count < count {
             let pick = Float.random(in: 0...1)
-            let d = randomDirection()
+            let d = SIMD3<Float>.randomDirection()
             if pick < 0.82 {
                 // A lobe's point moved onto the blended surface, kept where that lobe is the nearest (so each part of
                 // the surface is sampled once), its points crowding along winding lines (where a smooth wave pattern
@@ -100,16 +100,8 @@ nonisolated enum Brain {
     static func inside() -> SIMD3<Float> {
         let region = Float.random(in: 0...1) < 0.9 ? lobes.randomElement()! : cerebellum
         while true {
-            let d = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1))
+            let d = SIMD3<Float>.random(in: -1...1)
             if simd_length(d) < 0.85 { return region.point(d) }
-        }
-    }
-
-    private static func randomDirection() -> SIMD3<Float> {
-        while true {
-            let v = SIMD3<Float>(.random(in: -1...1), .random(in: -1...1), .random(in: -1...1))
-            let l = simd_length(v)
-            if l > 0.01, l <= 1 { return v / l }
         }
     }
 }

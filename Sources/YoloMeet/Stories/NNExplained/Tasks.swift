@@ -32,25 +32,16 @@ extension NetworkLayout {
         (layout.splits, layout.splitsFrom) = (true, inference)
         let h = resultSide / 2
         layout.outline = [[-h, -h, 0], [h, h, 0], [-h, h, 0], [h, -h, 0]]
-        guard let from = inference.shape, case let (lo, hi)? = picture.pictureCorners else { return layout }
-        let n = from.points.count, cells = resultCells
-        let quota = (n + cells * cells - 1) / (cells * cells)
-        var cellOf = [Int](repeating: -1, count: n), counts = [Int](repeating: 0, count: cells * cells)
-        for i in 0..<n where from.parts[i] == dustPart {
-            let p = from.points[i]
-            let (fx, fy) = ((p.x - lo.x) / (hi.x - lo.x), (hi.y - p.y) / (hi.y - lo.y))
-            let c = min(max(Int(fy * Float(cells)), 0), cells - 1) * cells + min(max(Int(fx * Float(cells)), 0), cells - 1)
-            if counts[c] < quota { (cellOf[i], counts[c]) = (c, counts[c] + 1) }
-        }
-        var open = counts.indices.flatMap { Array(repeating: $0, count: quota - counts[$0]) }.shuffled()
-        for i in 0..<n where cellOf[i] < 0 { cellOf[i] = open.popLast()! }
+        guard let from = inference.shape, let corners = picture.pictureCorners else { return layout }
+        let cells = resultCells
+        let cellOf = pictureCells(of: from, corners: corners, cells: cells).cellOf
         let colors = catDrawing(cells)
         let points = cellOf.map { c -> SIMD3<Float> in
             let x = (Float(c % cells) + .random(in: 0..<1)) / Float(cells), y = (Float(c / cells) + .random(in: 0..<1)) / Float(cells)
             return [(x - 0.5) * resultSide, (0.5 - y) * resultSide, .random(in: -0.004...0.004)]
         }
         layout.shape = ParticleShape(
-            points: from.points, offsets: zip(points, from.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            points: from.points, offsets: zip(points, from.points).map { $0 - $1 }, parts: [],
             colors: cellOf.map { colors[$0] * resultBrightness })
         return layout
     }
@@ -168,9 +159,9 @@ extension NetworkLayout {
         }
         let classColor = TaskOutputEffect.semanticClasses.map { $0.color.rgb }
         layout.shape = ParticleShape(
-            points: previous.points, offsets: zip(points, previous.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            points: previous.points, offsets: zip(points, previous.points).map { $0 - $1 }, parts: [],
             colors: (0..<n).map { inWindow[$0] ? classColor[zoomClasses[cellOf[$0]]] * zoomGlide : .zero })
-        layout.arrivedColors = cellOf.map { classColor[zoomClasses[$0]] * zoomBrightness }
+        layout.arrivedColors = ParticleColors(cellOf.map { classColor[zoomClasses[$0]] * zoomBrightness })
         return layout
     }
 
@@ -289,7 +280,7 @@ extension NetworkLayout {
         (prelude.splits, prelude.splitsFrom, prelude.outline) = (true, tasks.depth, layout.outline)
         let inputColors = (tasks.detect.settled ?? tasks.detect.shape)?.colors.map { $0.map { $0 * dim(n, picture.side) * 1.3 } }
         prelude.shape = ParticleShape(
-            points: from.points, offsets: zip(input, from.points).map { $0 - $1 }, parts: Array(repeating: 0, count: n),
+            points: from.points, offsets: zip(input, from.points).map { $0 - $1 }, parts: [],
             colors: inputColors ?? Array(repeating: nil, count: n))
         (layout.prelude, layout.splitsFrom) = (prelude, prelude)
         var points = input, colors = [SIMD3<Float>?](repeating: nil, count: n)
@@ -313,8 +304,8 @@ extension NetworkLayout {
         let inModel = Set(order[min(8 * recapCopy, n)...])
         let onTheWay = (0..<n).map { i -> SIMD3<Float>? in inModel.contains(i) ? .zero : colors[i].map { $0 * 0.3 } }
         layout.shape = ParticleShape(
-            points: input, offsets: zip(points, input).map { $0 - $1 }, parts: Array(repeating: 0, count: n), colors: onTheWay)
-        layout.arrivedColors = colors
+            points: input, offsets: zip(points, input).map { $0 - $1 }, parts: [], colors: onTheWay)
+        layout.arrivedColors = ParticleColors(colors)
         return layout
     }
 }
@@ -430,18 +421,13 @@ final class TaskOutputEffect: Effect {
             content.addChild(text)
         }
         if output == .depth {
-            let colors = (0..<64).map { k -> CGColor in  // near at the top
+            let scale = CGContext.bitmap(width: 1, height: 64)
+            for k in 0..<64 {  // near at the top
                 let c = Palette.inferno(1 - Float(k) / 63)
-                return CGColor(srgbRed: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1)
+                scale.setFillColor(CGColor(srgbRed: CGFloat(c.x), green: CGFloat(c.y), blue: CGFloat(c.z), alpha: 1))
+                scale.fill(CGRect(x: 0, y: 63 - k, width: 1, height: 1))
             }
-            let image = NSImage(size: NSSize(width: 1, height: 64), flipped: false) { rect in
-                for (k, color) in colors.enumerated() {
-                    NSGraphicsContext.current?.cgContext.setFillColor(color)
-                    NSGraphicsContext.current?.cgContext.fill(CGRect(x: 0, y: CGFloat(63 - k), width: 1, height: 1))
-                }
-                return true
-            }
-            gradient.texture = SKTexture(image: image)
+            gradient.texture = SKTexture(cgImage: scale.makeImage()!)
         }
         gradient.isHidden = output != .depth
         if output == .pixelClasses {
@@ -451,7 +437,7 @@ final class TaskOutputEffect: Effect {
                 ids.append(id)
                 content.addChild(id)
             }
-            scan.lineWidth = 0
+            (scan.lineWidth, scan.fillColor) = (0, NSColor(white: 1, alpha: 0.35))
             pointed.fillColor = .clear
             pointed.strokeColor = .white
             content.addChild(scan)
@@ -480,27 +466,32 @@ final class TaskOutputEffect: Effect {
         let picture = CGRect(enclosing: [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 100)].map(stage))
         let catBox = CGRect(enclosing: [Self.catBox.origin, CGPoint(x: Self.catBox.maxX, y: Self.catBox.maxY)].map(stage))
         let color = Theme.ultralyticsYellow
-        shape.lineWidth = 2.5 * u
+        shape.set(\.lineWidth, (output == .mask ? 2 : output == .keypoints ? 3 : 2.5) * u)
 
         switch output {
         case .box:
             box.update(to: catBox, text: Self.label, color: color, theme: .ultralytics, unit: u, k: 1)
         case .mask:
             box.update(to: catBox, text: Self.label, color: color, theme: .ultralytics, unit: u, k: 1)
-            shape.path = Self.closedPath(Self.upright.map(stage))
-            (shape.strokeColor, shape.fillColor) = (.white, .clear)
-            shape.lineWidth = 2 * u
+            shape.path = CGPath.closed(Self.upright.map(stage))
+            shape.set(\.strokeColor, .white)
+            shape.set(\.fillColor, .clear)
             // The polygon's vertices, every few.
             let path = CGMutablePath()
             for p in Self.upright.enumerated().filter({ $0.offset % 4 == 0 }).map({ stage($0.element) }) {
                 path.addEllipse(in: CGRect(x: p.x - 2.5 * u, y: p.y - 2.5 * u, width: 5 * u, height: 5 * u))
             }
-            (dots.path, dots.fillColor, dots.strokeColor) = (path, .white, .clear)
+            dots.path = path
+            dots.set(\.fillColor, .white)
+            dots.set(\.strokeColor, .clear)
         case .keypoints:
             box.update(to: catBox, text: Self.label, color: color, theme: .ultralytics, unit: u, k: 1)
             let skeleton = Self.skeleton(stage, joint: 5 * u)
-            (shape.path, shape.strokeColor, shape.lineWidth) = (skeleton.limbs, NNColors.limb, 3 * u)
-            (dots.path, dots.fillColor, dots.strokeColor, dots.lineWidth) = (skeleton.joints, NNColors.joint, .white, 1.5 * u)
+            (shape.path, dots.path) = (skeleton.limbs, skeleton.joints)
+            shape.set(\.strokeColor, NNColors.limb)
+            dots.set(\.fillColor, NNColors.joint)
+            dots.set(\.strokeColor, .white)
+            dots.set(\.lineWidth, 1.5 * u)
         case .oriented:
             let corners = Self.catBoxCorners(tilt: Self.tilt).map(stage)
             oriented.update(to: corners, text: Theme.ultralytics.label("cat", 0.92), color: color, theme: .ultralytics, unit: u, k: 1)
@@ -534,7 +525,6 @@ final class TaskOutputEffect: Effect {
         if !scan.isHidden {
             let c = system.shownPoint(NetworkLayout.zoomPoint(current % n, current / n)).point
             scan.path = CGPath(rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
-            scan.fillColor = NSColor(white: 1, alpha: 0.35)
         }
 
         // The pointed pixel: the fingertip's place in the grid (the picture faces the viewer, so a plane's corners do).
@@ -573,14 +563,6 @@ final class TaskOutputEffect: Effect {
             cornerWidth: 5 * u, cornerHeight: 5 * u, transform: nil)
     }
 
-    /// A closed polygon through `points`.
-    static func closedPath(_ points: [CGPoint]) -> CGPath {
-        let path = CGMutablePath()
-        path.addLines(between: points)
-        path.closeSubpath()
-        return path
-    }
-
     /// The cat box's corners on the canvas (0...100), turned by `tilt` around the cat's center
     /// (`NetworkLayout.catCenter`, as the tilted cat is drawn).
     static func catBoxCorners(tilt: CGFloat = 0) -> [CGPoint] {
@@ -617,7 +599,7 @@ final class TaskOutputEffect: Effect {
             gradient.position = CGPoint(x: x + 9 * u, y: picture.midY)
             for (k, text) in texts.enumerated() {
                 text.label.set(\.fontSize, 15 * u)
-                text.label.horizontalAlignmentMode = .left
+                text.label.set(\.horizontalAlignmentMode, .left)
                 text.position = CGPoint(x: x + 26 * u, y: picture.midY + (k == 0 ? 1 : -1) * (height / 2 - 8 * u))
                 text.sync(unit: u)
             }
@@ -641,7 +623,7 @@ final class TaskOutputEffect: Effect {
                     text.label.set(\.fontSize, 16 * u)
                     text.position = CGPoint(x: x + 30 * u, y: y)
                 }
-                text.label.horizontalAlignmentMode = .left
+                text.label.set(\.horizontalAlignmentMode, .left)
                 text.sync(unit: u)
             }
         }
@@ -697,11 +679,11 @@ final class RecapEffect: Effect {
         }
         // The detect box, and the OBB step's turned one.
         let paths = CGMutablePath()
-        paths.addPath(TaskOutputEffect.closedPath(TaskOutputEffect.catBoxCorners().map { at(0, $0) }))
-        paths.addPath(TaskOutputEffect.closedPath(TaskOutputEffect.catBoxCorners(tilt: TaskOutputEffect.tilt).map { at(5, $0) }))
+        paths.addPath(CGPath.closed(TaskOutputEffect.catBoxCorners().map { at(0, $0) }))
+        paths.addPath(CGPath.closed(TaskOutputEffect.catBoxCorners(tilt: TaskOutputEffect.tilt).map { at(5, $0) }))
         (boxes.path, boxes.lineWidth) = (paths, 2 * u)
 
-        (outline.path, outline.lineWidth) = (TaskOutputEffect.closedPath(TaskOutputEffect.upright.map { at(1, $0) }), 1.5 * u)
+        (outline.path, outline.lineWidth) = (CGPath.closed(TaskOutputEffect.upright.map { at(1, $0) }), 1.5 * u)
 
         let skeleton = TaskOutputEffect.skeleton({ at(4, $0) }, joint: 3 * u)
         (limbs.path, limbs.lineWidth, joints.path) = (skeleton.limbs, 2 * u, skeleton.joints)

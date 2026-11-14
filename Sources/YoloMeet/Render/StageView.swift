@@ -193,7 +193,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         // image darkens and brightens evenly, the same both ways.
         let step = CGFloat(dt) / Self.cameraFadeTime
         cameraFade = model.cameraHidden ? min(cameraFade + step, 1) : max(cameraFade - step, 0)
-        let eased = cameraFade * cameraFade * (3 - 2 * cameraFade)
+        let eased = smoothstep(cameraFade)
         let black = 1 - pow(1 - eased, 2.2)
         let video = black == 0 ? placed
             : CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: black)).cropped(to: bounds).composited(over: placed)
@@ -231,7 +231,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         stageFrame.click = mouse.takeClick()
         if model.mode == .story {
             stageFrame.branches = StageFrame.Branches(
-                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch,
+                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch, count: model.step.branches.count,
                 enter: { [model] branch in Task { model.enter(branch: branch) } })
         }
         for effect in effects { effect.update(stageFrame) }

@@ -7,6 +7,7 @@ import SpriteKit
 /// picks it up: `handOff`), and the story enters that branch (item i, branch i). Coming back, the title glides from the
 /// top back into its place. Items whose branch was visited stay clear. As a title flies to the top, the other labels
 /// fade out (`leaving`, for the step's other content too), since the branch's first step may follow with no transition.
+/// An item without a branch (more items than the step has branches) can't be clicked.
 final class QuizEffect: Effect {
     struct Item {
         /// The title, e.g. "Object detection": its first letter is the clue.
@@ -64,13 +65,14 @@ final class QuizEffect: Effect {
         let gap = labels.count > 1 ? (top - bottom - rowHeight) / CGFloat(labels.count - 1) : 0
         let busy = flight != nil || unveiling != nil || parked != nil
         let flying = parked ?? flight.flatMap { $0.out ? $0.index : nil }
-        leaving = parked != nil ? 1 : flight.map { $0.out ? Self.eased((frame.time - $0.start) / Self.fly) : 0 } ?? 0
+        leaving = parked != nil ? 1 : flight.map { $0.out ? smoothstep(CGFloat((frame.time - $0.start) / Self.fly)) : 0 } ?? 0
 
         for (i, label) in labels.enumerated() {
             let home = CGPoint(x: column.minX * size.width, y: top - CGFloat(i) * gap)
             let scale = rest * actions[i].scale
             let rect = CGRect(x: home.x, y: home.y - label.height * scale, width: label.width * scale, height: label.height * scale)
-            if actions[i].update(frame, isOn: busy ? nil : { rect.contains($0) }) {
+            let clickable = !busy && i < frame.branches.count
+            if actions[i].update(frame, isOn: clickable ? { rect.contains($0) } : nil) {
                 if label.revealed {
                     flight = (i, true, frame.time)
                 } else {
@@ -81,16 +83,17 @@ final class QuizEffect: Effect {
             label.unveil(frame)
             // At the top: the title centered over the branch's object, at the branch title's size.
             let up = ObjectTitle.top(over: titleX(frame), width: label.titleWidth, frame: frame)
-            let away = CGPoint(x: up.x - label.titleWidth / 2, y: up.y)
+            let atTop = CGPoint(x: up.x - label.titleWidth / 2, y: up.y)
             var (position, labelScale, hint) = (home, scale, CGFloat(1))
             if parked == i {
-                (position, labelScale, hint) = (away, 1, 0)
+                (position, labelScale, hint) = (atTop, 1, 0)
             } else if let flight, flight.index == i {
                 let t = frame.time - flight.start
-                let k = flight.out ? Self.eased(t / Self.fly) : 1 - Self.eased(t / Self.fly)
-                position = CGPoint(x: home.x + (away.x - home.x) * k, y: home.y + (away.y - home.y) * k)
-                labelScale = scale + (1 - scale) * k
-                hint = 1 - k
+                let k = smoothstep(CGFloat(t / Self.fly))
+                let away = flight.out ? k : 1 - k
+                position = CGPoint(x: home.x + (atTop.x - home.x) * away, y: home.y + (atTop.y - home.y) * away)
+                labelScale = scale + (1 - scale) * away
+                hint = 1 - away
                 if t >= Self.fly {
                     self.flight = nil
                     if flight.out {
@@ -100,22 +103,15 @@ final class QuizEffect: Effect {
                     }
                 }
             }
-            label.position = position
-            label.setScale(labelScale)
+            label.set(\.position, position)
+            label.set(\.xScale, labelScale)
+            label.set(\.yScale, labelScale)
             label.hintAlpha = hint
-            label.alpha = flying == nil || flying == i ? 1 : 1 - leaving
+            label.set(\.alpha, flying == nil || flying == i ? 1 : 1 - leaving)
         }
         if let unveiling, frame.time - unveiling.start > Self.unveil + Self.pause {
             (flight, self.unveiling) = ((unveiling.index, true, frame.time), nil)
         }
-    }
-}
-
-extension QuizEffect {
-    /// Smoothstep of `t` clamped to 0...1.
-    static func eased(_ t: TimeInterval) -> CGFloat {
-        let t = CGFloat(min(max(t, 0), 1))
-        return t * t * (3 - 2 * t)
     }
 }
 
@@ -136,21 +132,26 @@ private final class QuizLabel: SKNode {
     private var radius: CGFloat = -1
     /// The blur's radius at the title's full size and unit 1 (scaled down with the label in the column).
     static let blur: CGFloat = 26
+    /// At unit 1: the hint's size, and how far below the title's top it is (the title's line).
+    static let hintSize: CGFloat = 22, titleLine: CGFloat = 54
     private var unit: CGFloat = 1
 
     /// The hint's opacity (it fades away as the title flies to the top).
-    var hintAlpha: CGFloat = 1 { didSet { hint.alpha = hintAlpha } }
+    var hintAlpha: CGFloat {
+        get { hint.alpha }
+        set { hint.set(\.alpha, newValue) }
+    }
     /// The title's width at the top (unscaled).
     var titleWidth: CGFloat { full.label.frame.width }
     /// Unscaled size, title and hint.
     var width: CGFloat { max(full.label.frame.width, hint.label.frame.width) }
-    var height: CGFloat { (54 + 22) * unit }
+    var height: CGFloat { (Self.titleLine + Self.hintSize) * unit }
 
     init(_ title: String, hint text: String) {
         first = ShadowedLabel(String(title.prefix(1)), font: Theme.titleFont)
         rest = ShadowedLabel(String(title.dropFirst()), font: Theme.titleFont)
         full = ShadowedLabel(title, font: Theme.titleFont)
-        hint = ShadowedLabel(text, font: "GeistMono-Medium", color: NSColor(white: 1, alpha: 0.8))
+        hint = ShadowedLabel(text, font: ObjectTitle.subtitleFont, color: ObjectTitle.subtitleColor)
         super.init()
         for label in [first, rest, full, hint] {
             label.label.horizontalAlignmentMode = .left
@@ -167,9 +168,10 @@ private final class QuizLabel: SKNode {
     func layout(unit u: CGFloat) {
         unit = u
         for label in [first, rest, full] { label.label.set(\.fontSize, ObjectTitle.titleSize * u) }
-        hint.label.set(\.fontSize, 22 * u)
-        rest.position = CGPoint(x: first.label.frame.width, y: 0)
-        hint.position = CGPoint(x: 0, y: -54 * u)
+        hint.label.set(\.fontSize, Self.hintSize * u)
+        // Change-only writes: the veil is rasterized, and any write inside it blurs it again.
+        rest.set(\.position, CGPoint(x: first.label.frame.width, y: 0))
+        hint.set(\.position, CGPoint(x: 0, y: -Self.titleLine * u))
         for label in [first, rest, full, hint] { label.sync(unit: u) }
         let pad = 3 * QuizLabel.blur * u
         margin.set(\.size, CGSize(width: width + 2 * pad, height: height + 2 * pad))
@@ -194,11 +196,10 @@ private final class QuizLabel: SKNode {
 
     /// `clear`: 0 blurred, 1 clear (the whole title as one label, so it reads as it will at the top).
     private func show(clear: CGFloat) {
-        let e = clear * clear * (3 - 2 * clear)
-        blur(QuizLabel.blur * unit * (1 - e))
-        veil.alpha = clear >= 1 ? 0 : 1
-        first.alpha = clear >= 1 ? 0 : 1
-        full.alpha = clear >= 1 ? 1 : 0
+        blur(QuizLabel.blur * unit * (1 - smoothstep(clear)))
+        veil.set(\.alpha, clear >= 1 ? 0 : 1)
+        first.set(\.alpha, clear >= 1 ? 0 : 1)
+        full.set(\.alpha, clear >= 1 ? 1 : 0)
         if clear >= 1 {
             // The hint, out of the veil, stays (it fades only as the title flies).
             if hint.parent === veil {

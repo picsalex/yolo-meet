@@ -17,7 +17,7 @@ final class ParticleSystem {
     static let worldUnit: CGFloat = 200
     /// Stiffness of the spring that pulls each particle to its point of the shape (per second squared), critically
     /// damped.
-    static let formStiffness: Float = 80
+    nonisolated static let formStiffness: Float = 80
 
     let count: Int
     var mode = Mode.cloud
@@ -43,8 +43,8 @@ final class ParticleSystem {
     static let colorFade: TimeInterval = 0.8
 
     /// The shape's placement as the particles show it (`shownPoint`): its rotation and size as one matrix and its
-    /// center, in stage points, with their speeds; and the frame it was last advanced to.
-    private var shown: (matrix: simd_float3x3, center: SIMD3<Float>, speed: simd_float3x3, centerSpeed: SIMD3<Float>)?
+    /// center, in stage points, each on the particles' spring; and the frame it was last advanced to.
+    private var shown: (matrix: Spring<simd_float3x3>, center: Spring<SIMD3<Float>>)?
     private var shownTime: TimeInterval?
     private var shape: (points: [SIMD4<Float>], offsets: [SIMD4<Float>], colors: [SIMD4<Float>])?
     private var shapeChanged = false
@@ -59,8 +59,19 @@ final class ParticleSystem {
     /// Where a point of the shape (in its -1...1 units, exploded points included) is on stage, as the shape is set now
     /// (its particles spring there): for hit-testing parts of it.
     func stagePoint(_ point: SIMD3<Float>) -> CGPoint {
-        let p = rotation.act(point) * Float(size)
-        return CGPoint(x: center.x + CGFloat(p.x), y: center.y + CGFloat(p.y))
+        let p = stagePosition(point)
+        return CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
+    }
+
+    /// `stagePoint` with its depth: x and y in stage points, z toward the viewer in stage points too.
+    func stagePosition(_ point: SIMD3<Float>) -> SIMD3<Float> {
+        rotation.act(point) * Float(size) + SIMD3(Float(center.x), Float(center.y), 0)
+    }
+
+    /// The point of the shape at a stage position (`stagePosition`'s inverse), as the shape is set now: e.g. to place
+    /// particles at points of the stage.
+    func shapePoint(atStage position: SIMD3<Float>) -> SIMD3<Float> {
+        rotation.inverse.act((position - SIMD3(Float(center.x), Float(center.y), 0)) / Float(max(size, 1)))
     }
 
     /// Where a point of the shape is on stage as the particles show it, and its depth (-1 back, 1 front, at the shape's
@@ -69,8 +80,8 @@ final class ParticleSystem {
     /// shape's placement.
     func shownPoint(_ point: SIMD3<Float>) -> (point: CGPoint, depth: Float) {
         guard let shown else { return (stagePoint(point), rotation.act(point).z) }
-        let p = shown.matrix * point
-        return (CGPoint(x: CGFloat(shown.center.x + p.x), y: CGFloat(shown.center.y + p.y)), p.z / Float(max(size, 1)))
+        let (p, center) = (shown.matrix.value * point, shown.center.value)
+        return (CGPoint(x: CGFloat(center.x + p.x), y: CGFloat(center.y + p.y)), p.z / Float(max(size, 1)))
     }
 
     /// Advances `shownPoint` to this frame with the particles' spring (the stage also calls it, once per frame).
@@ -78,21 +89,12 @@ final class ParticleSystem {
         guard shownTime != time else { return }
         shownTime = time
         let target = (simd_matrix3x3(rotation) * Float(size), SIMD3<Float>(Float(center.x), Float(center.y), 0))
-        guard var s = shown else {
-            shown = (target.0, target.1, simd_float3x3(0), .zero)
+        guard shown != nil else {
+            shown = (Spring(target.0), Spring(target.1))
             return
         }
-        // As the shader: substeps of a critically damped spring.
-        let dt = Float(min(dt, 0.1)), k = Self.formStiffness
-        let steps = min(max(Int((dt * 120).rounded(.up)), 1), 8)
-        let h = dt / Float(steps)
-        for _ in 0..<steps {
-            s.speed += (k * (target.0 - s.matrix) - 2 * k.squareRoot() * s.speed) * h
-            s.centerSpeed += (k * (target.1 - s.center) - 2 * k.squareRoot() * s.centerSpeed) * h
-            s.matrix += s.speed * h
-            s.center += s.centerSpeed * h
-        }
-        shown = s
+        shown!.matrix.step(toward: target.0, dt: dt)
+        shown!.center.step(toward: target.1, dt: dt)
     }
 
     /// Whether a direction of the shape (e.g. a face's normal) turns toward the viewer.
@@ -133,23 +135,19 @@ final class ParticleSystem {
         return indices.map { now[$0].w > 0.5 ? SIMD3(now[$0].x, now[$0].y, now[$0].z) : nil }
     }
 
-    /// Moves some particles' points (in the shape's units) and sets their colors at once (nil: they keep theirs),
-    /// without forming again or fading the colors: to animate part of the formed shape every frame (e.g. data flowing
-    /// through it). The others keep theirs. The particles spring to their new points as usual.
-    func place(_ indices: [Int], at points: [SIMD3<Float>], colors: [SIMD3<Float>]? = nil) {
+    /// Moves some particles' points (in the shape's units) and sets their colors at once, without forming again or
+    /// fading the colors: to animate part of the formed shape every frame (e.g. data flowing through it). The others
+    /// keep theirs. The particles spring to their new points as usual.
+    func place(_ indices: [Int], at points: [SIMD3<Float>], colors: [SIMD3<Float>]) {
         guard shape != nil else { return }
         let direct = !shapeChanged && buffers.count == 7  // else the next frame copies the shape, these included
         let targets = direct ? buffers[3].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         let now = direct ? buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         let before = direct ? buffers[6].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         for (k, i) in indices.enumerated() {
-            let point = SIMD4(points[k], shape!.points[i].w)
-            shape!.points[i] = point
-            if direct { targets![i] = point }
-            guard let colors else { continue }
-            let color = SIMD4(colors[k], 1)
-            shape!.colors[i] = color
-            if direct { (now![i], before![i]) = (color, color) }
+            let point = SIMD4(points[k], shape!.points[i].w), color = SIMD4(colors[k], 1)
+            (shape!.points[i], shape!.colors[i]) = (point, color)
+            if direct { (targets![i], now![i], before![i]) = (point, color, color) }
         }
     }
 

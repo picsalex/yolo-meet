@@ -15,7 +15,7 @@ final class ObjectTitle: SKNode {
 
     init(_ title: String, subtitle: String = "") {
         titleNode = ShadowedLabel(title, font: Theme.titleFont)
-        subtitleNode = ShadowedLabel(subtitle, font: "GeistMono-Medium", color: NSColor(white: 1, alpha: 0.8))
+        subtitleNode = ShadowedLabel(subtitle, font: Self.subtitleFont, color: Self.subtitleColor)
         super.init()
         for node in [titleNode, subtitleNode] {
             node.label.verticalAlignmentMode = .top
@@ -52,6 +52,8 @@ final class ObjectTitle: SKNode {
 
     /// The title's size at unit 1, in `Theme.titleFont`.
     static let titleSize: CGFloat = 44
+    /// The subtitle's font and color (also a quiz's hints, `QuizEffect`).
+    static let subtitleFont = "GeistMono-Medium", subtitleColor = NSColor(white: 1, alpha: 0.8)
 
     /// Where `update(above:)` puts a title `width` wide over an object centered on `x`: its top center.
     static func top(over x: CGFloat, width: CGFloat, frame: StageFrame) -> CGPoint {

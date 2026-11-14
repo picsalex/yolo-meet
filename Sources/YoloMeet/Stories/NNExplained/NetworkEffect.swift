@@ -230,8 +230,7 @@ final class NetworkEffect: Effect {
             system.form(shape, staggered: false)
             settled = true
         }
-        let e = network.split
-        system.explode = settled ? 0 : e * e * (3 - 2 * e)
+        system.explode = settled ? 0 : smoothstep(network.split)
 
         // Labels once the particles have mostly landed (and split); they go at once with a fist.
         let lit = formed.map { frame.time - $0 > 0.8 && !staging && (!splitting || network.split > 0.9) } ?? false
@@ -244,8 +243,8 @@ final class NetworkEffect: Effect {
             return
         }
         let bounds = CGRect(enclosing: layout.outline.map { system.shownPoint($0).point })
-        // At the top, out of the way: it stays when zoomed in.
-        title.update(above: bounds, visible: !labels.isHidden || titleAtOnce, frame: frame)
+        // At the top, out of the way: it stays when zoomed in. A layout with no title (e.g. the task quiz's) shows none.
+        title.update(above: bounds, visible: (!labels.isHidden || titleAtOnce) && !layout.title.isEmpty, frame: frame)
         guard !labels.isHidden else {
             system.highlight = nil
             return

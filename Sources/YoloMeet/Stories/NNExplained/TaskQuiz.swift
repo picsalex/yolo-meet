@@ -30,18 +30,19 @@ struct TaskQuiz {
 
     init(after inference: NetworkLayout, architecture: NetworkLayout) {
         let n = architecture.neurons
-        let heads = [10, 11, 12]
+        let heads = NetworkLayout.detectBlocks
         // The view the layout rests at (the architecture's), to find where stage points are in the shape.
-        let view = KeyTurn(restingTilt: architecture.restingTilt, restingTurn: architecture.restingTurn, spinning: false).rotation
+        let view = KeyTurn.rotation(tilt: architecture.restingTilt, turn: architecture.restingTurn)
         let inShape = { (at: CGPoint) -> SIMD3<Float> in
-            let size = Float(NetworkEffect.size)
-            return view.inverse.act([Float(at.x - 0.5) * 1280 / size, Float(at.y - 0.5) * 720 / size, 0])
+            let (stage, size) = (Stage.unitSize, NetworkEffect.size)
+            return view.inverse.act([Float((at.x - 0.5) * stage.width / size), Float((at.y - 0.5) * stage.height / size), 0])
         }
-        let middle = n[11].point, center = inShape(Self.blocksAt)
+        let middle = n[heads[1]].point, center = inShape(Self.blocksAt)
         let place = { (p: SIMD3<Float>) in center + (p - middle) * Self.grow }
 
         let neurons = heads.map { h in
-            NetworkLayout.Neuron(point: place(n[h].point), box: n[h].box.map { $0 * Self.grow }, info: n[h].info, grid: n[h].grid)
+            NetworkLayout.Neuron(
+                point: place(n[h].point), box: n[h].box.map { $0 * Self.grow }, info: n[h].info, grid: n[h].grid)
         }
         layout = NetworkLayout(
             title: "", subtitle: "", neurons: neurons, synapses: [], neuronSize: 0, restingTilt: architecture.restingTilt)
@@ -99,8 +100,8 @@ struct TaskQuiz {
 /// the inference, the arrow moves with the blocks (on the particles' spring, from where the inference showed it), and
 /// every other particle, in its color, slides off the stage's left edge with them (one `form`: all on the same spring,
 /// so they start and settle together), as a slide leaves; the lit ones cross back unseen past the right edge, then
-/// stream in from there and gather into the swirling ball. Otherwise the arrow fades in as the blocks arrive, and the ball forms. It all fades out with the
-/// quiz's labels as a title flies to the top (`quiz`).
+/// stream in from there and gather into the swirling ball. Otherwise the arrow fades in as the blocks arrive, and the
+/// ball forms. It all fades out with the quiz's labels as a title flies to the top (`quiz`).
 final class TaskQuizEffect: Effect {
     private let network: NeuralNetwork
     private let arrow: Arrow
@@ -109,11 +110,9 @@ final class TaskQuizEffect: Effect {
     private let content = SKNode()
     /// The quiz beside it, whose leaving fades it out.
     weak var quiz: QuizEffect?
-    /// The arrow's tail, tip and feeds' points on stage, and their speeds, on the particles' spring (`ParticleSystem.
-    /// formStiffness`) toward where the layout puts them; nil until the first frame (from the inference's arrow, or at
-    /// their place).
-    private var arrowPoints: [CGPoint]?
-    private var arrowSpeeds: [CGVector] = []
+    /// The arrow's tail, tip and feeds' points on stage, on the particles' spring toward where the layout puts them:
+    /// from the inference's arrow, or nil until the first frame (then at their place).
+    private var arrowPoints: [Spring<SIMD2<Float>>]?
     /// Whether the arrow glides from the inference's (else it fades in as the blocks arrive).
     private let glides: Bool
     /// The ball's particles as the inference left them, on stage (x, y, depth, stage points), with their colors (in
@@ -138,21 +137,20 @@ final class TaskQuizEffect: Effect {
         if network.formed === inference, let output = inference.arrows.last, let points = system.points(quiz.rest),
             let colors = system.colors(quiz.rest) {
             let shown = { (p: SIMD3<Float>) in system.shownPoint(p).point }
-            arrowPoints = [shown(output.tail), shown(output.tip)] + (inference.arrowFeeds[output.text] ?? []).flatMap { $0.map(shown) }
-            let (center, size) = (system.center, Float(system.size))
-            let onStage = points.map { p -> SIMD3<Float> in
-                let p = system.rotation.act(p) * size
-                return [Float(center.x) + p.x, Float(center.y) + p.y, p.z]
-            }
-            leaving = (onStage, colors)
+            let feeds = (inference.arrowFeeds[output.text] ?? []).flatMap { $0.map(shown) }
+            arrowPoints = [shown(output.tail), shown(output.tip)] + feeds
+            leaving = (points.map(system.stagePosition), colors)
         } else {
             leaving = nil
         }
         glides = arrowPoints?.count == 2 + network.taskQuiz.feeds.reduce(0) { $0 + $1.count }
-        self.arrowPoints = glides ? arrowPoints : nil
-        comeback = quiz.swirl.indices.map { _ in (Self.back + .random(in: 0...Self.stream), .random(in: -1...1), .random(in: 0...1)) }
+        self.arrowPoints = glides ? arrowPoints?.map { Spring(SIMD2(Float($0.x), Float($0.y))) } : nil
+        comeback = quiz.swirl.indices.map { _ in
+            (Self.back + .random(in: 0...Self.stream), .random(in: -1...1), .random(in: 0...1))
+        }
         super.init()
         (result.label.horizontalAlignmentMode, result.label.verticalAlignmentMode) = (.left, .center)
+        result.label.fontColor = NNColors.gold
         content.addChild(arrow)
         content.addChild(result)
         node.addChild(content)
@@ -176,9 +174,7 @@ final class TaskQuizEffect: Effect {
         let (system, quiz) = (network.system, network.taskQuiz)
         guard network.formed === quiz.layout, !quiz.rest.isEmpty else { return }
         let u = Float(frame.stage.unit)
-        // A stage point (x, y, depth) in the shape, as the system is placed now.
-        let (center, size, turn) = (system.center, Float(max(system.size, 1)), system.rotation.inverse)
-        let inShape = { (s: SIMD3<Float>) in turn.act([(s.x - Float(center.x)) / size, (s.y - Float(center.y)) / size, s.z / size]) }
+        let inShape = system.shapePoint(atStage:)
         if first, let leaving, var shape = quiz.layout.shape {
             // All together, in their colors, as the blocks glide to their place: the whole picture shifted left until its
             // right end is well past the edge (the spring slows near its end, which should be out of sight).
@@ -215,22 +211,16 @@ final class TaskQuizEffect: Effect {
         let u = frame.stage.unit
         let (system, quiz) = (network.system, network.taskQuiz)
         // Where the layout puts them now; the arrow springs there as the blocks' particles do.
-        let targets = ([quiz.tail, quiz.tip] + quiz.feeds.flatMap { $0 }).map(system.stagePoint)
-        var points = arrowPoints ?? targets
-        if arrowSpeeds.count != points.count { arrowSpeeds = Array(repeating: .zero, count: points.count) }
-        let k = CGFloat(ParticleSystem.formStiffness), dt = min(frame.dt, 0.1)
-        let steps = min(max(Int((dt * 120).rounded(.up)), 1), 8)
-        let h = CGFloat(dt) / CGFloat(steps)
-        for _ in 0..<steps {
-            for i in points.indices {
-                let (gap, v) = (CGVector(dx: targets[i].x - points[i].x, dy: targets[i].y - points[i].y), arrowSpeeds[i])
-                arrowSpeeds[i] = CGVector(dx: v.dx + (k * gap.dx - 2 * k.squareRoot() * v.dx) * h, dy: v.dy + (k * gap.dy - 2 * k.squareRoot() * v.dy) * h)
-                points[i] = CGPoint(x: points[i].x + arrowSpeeds[i].dx * h, y: points[i].y + arrowSpeeds[i].dy * h)
-            }
+        let targets = ([quiz.tail, quiz.tip] + quiz.feeds.flatMap { $0 }).map {
+            let p = system.stagePoint($0)
+            return SIMD2(Float(p.x), Float(p.y))
         }
-        arrowPoints = points
-        let appear = glides ? 1 : QuizEffect.eased((t - 1) / 0.5)  // without a glide: once the blocks are about there
-        content.alpha = appear * (1 - (self.quiz?.leaving ?? 0))
+        var springs = arrowPoints ?? targets.map { Spring($0) }
+        for i in springs.indices { springs[i].step(toward: targets[i], dt: frame.dt) }
+        arrowPoints = springs
+        let points = springs.map { CGPoint(x: CGFloat($0.value.x), y: CGFloat($0.value.y)) }
+        let appear = glides ? 1 : smoothstep(CGFloat((t - 1) / 0.5))  // without a glide: once the blocks are about there
+        content.set(\.alpha, appear * (1 - (self.quiz?.leaving ?? 0)))
         var rest = points.dropFirst(2)
         let feeds = quiz.feeds.map { feed -> [CGPoint] in
             defer { rest = rest.dropFirst(feed.count) }
@@ -238,8 +228,7 @@ final class TaskQuizEffect: Effect {
         }
         arrow.update(from: points[0], to: points[1], feeds: feeds, frame: frame)
         result.label.set(\.fontSize, 30 * u)
-        result.label.set(\.fontColor, NNColors.gold)
-        result.position = CGPoint(x: points[1].x + 14 * u, y: points[1].y)
+        result.set(\.position, CGPoint(x: points[1].x + 14 * u, y: points[1].y))
         result.sync(unit: u)
     }
 }

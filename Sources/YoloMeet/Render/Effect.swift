@@ -12,6 +12,8 @@ struct Stage {
     var scale: CGFloat { max(viewSize.width / frameSize.width, viewSize.height / frameSize.height) }
     /// Resolution-independent unit: 1 at 720 pixels of stage height. Multiply line widths and font sizes by it.
     var unit: CGFloat { viewSize.height / 720 }
+    /// A 16:9 stage at unit 1, in stage points.
+    static let unitSize = CGSize(width: 1280, height: 720)
 
     func point(_ p: CGPoint) -> CGPoint {
         CGPoint(
@@ -73,6 +75,8 @@ struct StageFrame {
         var visited: Set<Int> = []
         /// The branch the story just came back from (past its first or last step), e.g. to animate its way back.
         var returned: Int?
+        /// How many branches the step has: `enter` takes 0..<count.
+        var count = 0
         /// Enters a branch, at its first step (after this frame); nothing if the step has no such branch.
         var enter: (Int) -> Void = { _ in }
     }

@@ -172,7 +172,8 @@ final class NetworkLayout {
     private(set) var flowResult: String?
     /// The particles' points; nil until ready (the brain's surface is built in the background).
     var shape: ParticleShape?
-    /// Some points around the layout, to place its title.
+    /// Some points around the layout, to place its title. A layout with none shows no title nor labels
+    /// (`NetworkEffect`).
     var outline: [SIMD3<Float>] = []
     /// The picture's lower-left and upper-right corners, on the layout that shows it at the model's input
     /// (`picture(of:)`): the layouts made from it (pixels, flow, results) map its particles to pixels with them.
@@ -365,6 +366,8 @@ final class NetworkLayout {
 
     /// The part of the architecture's dust, so the next step can gather it (no neuron has it).
     static let dustPart = 1_000_000
+    /// The architecture's Detect blocks (its neurons, `architecture()`): small, medium and large objects.
+    static let detectBlocks = [10, 11, 12]
 
     /// `architecture` with two drawn arrows, into its input (the image) and out of its output (the middle Detect block);
     /// its particles are the same.
@@ -374,7 +377,7 @@ final class NetworkLayout {
         // Into the image's left face, along x; out of the head: a line from each Detect block's right face, joining
         // level with the middle one, then the arrow along x.
         let inTip = n[0].point - [n[0].box!.x + 0.06, 0, 0]
-        let heads = [10, 11, 12]
+        let heads = detectBlocks
         let join = heads.map { n[$0].point.x + n[$0].box!.x }.max()! + 0.14
         let outTail = SIMD3<Float>(join, n[11].point.y, n[11].point.z)
         layout.arrows = [("Input", inTip - [0.42, 0, 0], inTip), ("Output", outTail, outTail + [0.42, 0, 0])]
@@ -679,7 +682,7 @@ final class NetworkLayout {
                 let route = routes[k]
                 guard t > 0 else {
                     points.append(route[0])
-                    colors.append(self.colors[k] * shown * shown * (3 - 2 * shown))
+                    colors.append(self.colors[k] * smoothstep(shown))
                     continue
                 }
                 let s = t / Self.travel

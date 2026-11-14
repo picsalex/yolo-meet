@@ -86,8 +86,9 @@ extension Story {
     }
 
     /// The seven tasks as a quiz: the head's Detect blocks and their output arrow move to the left, the rest of the
-    /// particles slide off to the left and come back from the right as a small swirling ball (`TaskQuiz`), and the tasks' names stand in a column between, blurred but for their first letter. Space + click one: it comes
-    /// clear and its title flies to the top as the story enters its branch (its output on the cat, then live).
+    /// particles slide off to the left and come back from the right as a small swirling ball (`TaskQuiz`), and the
+    /// tasks' names stand in a column between, blurred but for their first letter. Space + click one: it comes clear
+    /// and its title flies to the top as the story enters its branch (its output on the cat, then live).
     private static func taskQuiz(_ shared: LazyNetwork) -> Step {
         let tasks = taskBranches(shared)
         return nnStep("Task quiz", branches: tasks.map(\.steps), caption: "7 tasks: hold space and click one to reveal it") {

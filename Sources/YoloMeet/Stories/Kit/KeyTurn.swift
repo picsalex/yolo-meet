@@ -19,7 +19,12 @@ struct KeyTurn {
         (tilt, turn) = (restingTilt, restingTurn)
     }
 
-    var rotation: simd_quatf { simd_quatf(angle: tilt, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0]) }
+    var rotation: simd_quatf { Self.rotation(tilt: tilt, turn: turn) }
+
+    /// The rotation for a tilt and a turn: e.g. a layout's view at rest, before anything is on stage.
+    static func rotation(tilt: Float, turn: Float) -> simd_quatf {
+        simd_quatf(angle: tilt, axis: [1, 0, 0]) * simd_quatf(angle: turn, axis: [0, 1, 0])
+    }
 
     mutating func update(_ frame: StageFrame) {
         let keys = frame.keys

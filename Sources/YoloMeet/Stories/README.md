@@ -63,6 +63,7 @@ its 2D content.
   each point along its shape's offset (a cube's faces out along their normals). See `ParticleMorphEffect`. The
   particles spring to their points, so they trail the shape when it moves: 2D content drawn on them uses
   `shownPoint(_:)` (after `follow(time:dt:)`), not `stagePoint(_:)`, to stay on them. See `NetworkEffect`.
+  `stagePosition(_:)` keeps the depth, and `shapePoint(atStage:)` is its inverse (to place particles at stage points).
 - **Keys:** `frame.keys.pressed` (this frame, for toggles), `frame.keys.held` (hold to act; `"cmd"` while Command
   alone is held) and
   `frame.keys.released` (this frame), while yolo-meet is
@@ -139,7 +140,9 @@ and wins over the hands' while it acts.
   (cube: `CubeFace`, with each face's corners); `Box` for any box's 8 corners, 12 edges and 6 faces. A shape's
   `colors` (`ParticleColors`) read and write as optional colors, kept as the GPU takes them.
 - `CGPath.closed(_:)` and `CGContext.bitmap(width:height:)` (`Render/Geometry.swift`): a closed polygon, and an sRGB
-  bitmap to draw a texture or a picture in.
+  bitmap to draw a texture or a picture in. Also `smoothstep(_:)` (clamped 0...1, eased at both ends) and `Spring`, a
+  value on the particles' critically damped spring: 2D content that moves with them (e.g. an arrow on blocks that fly).
+  `KeyTurn.rotation(tilt:turn:)` and `Stage.unitSize` (1280 × 720) place things before anything is on stage.
 - `Grip`: whether the gestures hold an object (they began on it), with its swell while a pinch charges and held (`scale`).
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
   hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`. `Actionable(by: .click)` is
@@ -219,13 +222,14 @@ and that picture glides home (`returning(to:from:through:)`, through `pixels` as
 into the output arrow and its "Cat" (`TaskQuizEffect`, gliding from the inference's arrow), while the rest of the
 particles hold where they were, in their colors (`ParticleSystem.points(_:)` and `colors(_:)`, read in the effect's
 `init`, before the step forms anything) and slide off the stage's left edge together with the blocks (one `form`: the
-same spring, so they start and settle together); the arrow moves on the particles' spring too; and
-the lit ones cross back unseen and stream in from past the right edge into a small swirling ball (`TaskQuiz`, formed
-centered on the stage by `NetworkEffect(_:_:at:)`, which leaves `network.home` where the inference was, so the outputs
-form there; only the lit ones are moved every frame, with `ParticleSystem.place`), and a `QuizEffect` lists the seven tasks between them (each layout's title, its Ultralytics
-task name and pretraining dataset as the hint, e.g. "detect · COCO"). Each task is a branch of the quiz's step with two
-steps (`Tasks.swift`), the first with no transition, its title taking over from the flown one: its output on the cat picture (the particles glide into one large picture, recolored per task:
-the cat's mask, class colors, an inferno depth map in relief; `TaskOutputEffect` draws the box, polygon, legend, top
+same spring, so they start and settle together); the arrow moves on the particles' spring too (`Spring`); and the lit
+ones cross back unseen and stream in from past the right edge into a small swirling ball (`TaskQuiz`, formed centered
+on the stage by `NetworkEffect(_:_:at:)`, which leaves `network.home` where the inference was, so the outputs form
+there; only the lit ones are moved every frame, with `ParticleSystem.place`), and a `QuizEffect` lists the seven tasks
+between them (each layout's title, its Ultralytics task name and pretraining dataset as the hint, e.g. "detect ·
+COCO"). Each task is a branch of the quiz's step with two steps (`Tasks.swift`), the first with no transition, its
+title taking over from the flown one: its output on the cat picture (the particles glide into one large picture,
+recolored per task: the cat's mask, class colors, an inferno depth map in relief; `TaskOutputEffect` draws the box, polygon, legend, top
 classes, keypoints or oriented box over it; semantic segmentation also zooms in, `semanticZoom`, its pixels large
 squares with their class ID written on them one after the other, Space + point shows one's class: the window's
 particles grow into them while the rest turn black where they are, shift just enough to fill the grid, and light up

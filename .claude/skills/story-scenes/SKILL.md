@@ -12,7 +12,7 @@ Vocabulary:
 - **Phase** ("substate"): progress inside a step, driven by its own effect: a gesture, a timeline (`stepTime`, `loop`) or a staged glide (`prelude`).
 - **Branch:** a sequence of steps entered from one step and returning to it (e.g. a quiz).
 
-The API is documented in `Sources/YoloMeet/Stories/README.md`. Read it before writing code: it covers effects, particles, gestures, keys, transitions, branches and the Kit. `NNExplained/` (NN intro) is the full worked example of the look and feel. `Test/` is the small reference.
+The API is documented in `Sources/YoloMeet/Stories/README.md`. Read it before writing code: it covers effects, particles, gestures, keys, transitions, branches and the Kit. `NNExplained/` (CV onboarding) is the full worked example of the look and feel. `Test/` is the small reference.
 
 ## Design the scene first
 
@@ -36,7 +36,7 @@ A scene with only a moving outline, or a table of parameters off to the side, te
 
 **Make the subject the brightest, most vivid thing on screen:**
 - Supporting content stays readable and colourful. Don't dim neighbours into mud to make one element stand out.
-- Use the story's accent instead: gold in NN intro, for outlines, lines, arrows and highlighted values.
+- Use the story's accent instead: gold in CV onboarding, for outlines, lines, arrows and highlighted values.
 - If particles add up to white, fix that element's colour or density so it stays vivid. Don't fade the focal element.
 
 **Use the right tool for each part:**
@@ -50,7 +50,7 @@ A scene with only a moving outline, or a table of parameters off to the side, te
 
 ## Build it
 
-- **Shared state:** steps that continue each other share one state object created in the story file. NN intro's is `NeuralNetwork`: one `ParticleSystem` and its layouts. That's what makes particles fly from the previous step's shape into the next.
+- **Shared state:** steps that continue each other share one state object created in the story file. CV onboarding's is `NeuralNetwork`: one `ParticleSystem` and its layouts. That's what makes particles fly from the previous step's shape into the next.
 - **Build heavy state in `prepare`:** use `Story(…, prepare:)`, not launch. The app shows a loading card meanwhile. Build in chunks with short pauses, as `NeuralNetwork.init` does with `breathe`.
 - **A step helper per story** (like `nnStep`): it adds the models every step needs, the hand skeleton and the caption.
 - **Layout options** that already work: reuse them where they fit.

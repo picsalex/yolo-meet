@@ -13,7 +13,7 @@ extension Story {
         let shared = LazyNetwork()
         var network: NeuralNetwork { shared.network }
         return Story(
-            id: "nn-explained", title: "NN intro",
+            id: "nn-explained", title: "CV onboarding",
             steps: [
                 nnStep("Black box", caption: "Cmd + fist to open the black box") {
                     [NetworkEffect(network, network.blackBox), BlackBoxEffect(network, network.blackBox)]
@@ -75,7 +75,7 @@ extension Story {
     private final class LazyNetwork {
         private var built: NeuralNetwork?
         var network: NeuralNetwork {
-            guard let built else { preconditionFailure("NN intro: a step showed before the story was prepared") }
+            guard let built else { preconditionFailure("CV onboarding: a step showed before the story was prepared") }
             return built
         }
 

@@ -1,4 +1,4 @@
 schema_version: "1.1"
 name: insert-pixel-zoom-step
 expected_outcome: |
-  A new step right after Pixels in NN intro whose particles glide from the pixel grid into a zoom on one eye pixel, with its R, G and B values shown beside it in 2D that follows the particles, without breaking the steps around it; the app builds and the step was rendered offscreen and looked at.
+  A new step right after Pixels in CV onboarding whose particles glide from the pixel grid into a zoom on one eye pixel, with its R, G and B values shown beside it in 2D that follows the particles, without breaking the steps around it; the app builds and the step was rendered offscreen and looked at.

@@ -61,7 +61,7 @@ Swift package (`Package.swift`), main-actor isolation by default (`.defaultIsola
   - `Stories/`: presentations made of steps, the presenter stepping through them. `Story.all` is the registry. One
     folder per story, with shared building blocks in `Kit/`. Assets live in `Stories/Assets/<Story>/`: they aren't
     compiled, `build.sh` copies them in. **Read `Sources/YoloMeet/Stories/README.md` before touching a story**: it
-    documents the Effect API, particles, gestures, keys, transitions, branches and the NN intro story's layouts. Keep
+    documents the Effect API, particles, gestures, keys, transitions, branches and the CV onboarding story's layouts. Keep
     it up to date when adding patterns or layout options.
 - **`scripts/`**: `export_models.py` and `export_mediapipe.py` export models to Core AI, with their outputs attached
   to the GitHub `models` release that the app downloads from. `make_icon.swift` draws the app icon.

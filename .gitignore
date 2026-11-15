@@ -5,3 +5,4 @@ build/
 !iPad/YoloMeetPen.xcodeproj/
 xcuserdata/
 .DS_Store
+.claude/worktrees/

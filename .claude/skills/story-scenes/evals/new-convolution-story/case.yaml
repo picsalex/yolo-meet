@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: new-convolution-story
+expected_outcome: |
+  A new Convolutions story in its own folder under Sources/YoloMeet/Stories, registered in Story.all, with three steps (pixels, a looping 3x3 kernel sliding over them, the feature map beside the picture) that reuse NN intro's look and particle approach, keep any styling inside the story, build with scripts/build.sh, and were checked by rendering the steps offscreen.

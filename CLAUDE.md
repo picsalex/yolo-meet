@@ -68,6 +68,6 @@ Swift package (`Package.swift`), main-actor isolation by default (`.defaultIsola
   vendor's brand (README › Visual style).
 - **Sizes:** stage sizes are multiplied by `frame.stage.unit` (the stage is 1280 × 720 at unit 1). Use `set(_:_:)`
   for SpriteKit properties written every frame, to skip writes that change nothing.
-- **Commits** go straight to `main`, only when asked. Push only when asked. `optimizations.md` is
-  a local notes file, excluded in `.git/info/exclude`: never commit it.
+- **Commits** go straight to `main`, only when asked. Push only when asked. `SCENES.md` and `optimizations.md` are
+  local notes, excluded in `.git/info/exclude`: never commit them.
 - **The user's app:** don't quit or relaunch the user's running app. Build it and tell them to relaunch.

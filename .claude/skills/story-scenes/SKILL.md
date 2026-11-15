@@ -46,7 +46,11 @@ A scene with only a moving outline, or a table of parameters off to the side, te
 
 **Be generous.** When you're choosing between a minimal scene and one that explains more (an extra panel of values, a connecting line, slow first examples), choose the richer one. Mention in your report what you added, so the user can trim it.
 
-**For a new story:** sketch the step list (title, the one idea, what's on screen, caption) and share it as you build. Each caption tells the presenter what to say or do ("Cmd + fist to open the black box").
+**For a new story:** sketch the step list (title, the one idea, what's on screen, caption) and share it as you build. Each caption tells the presenter what to say or do ("Cmd + fist to open the black box"). Where the request leaves these open, pick and say what you picked:
+- which beats the presenter advances (steps) and which the hands trigger inside one (phases);
+- exact strings for titles, labels and captions;
+- thresholds such as "zoom big enough", as numbers;
+- data: random, fixed or real, with its range and format (e.g. `+0.42`).
 
 ## Build it
 
@@ -59,7 +63,8 @@ A scene with only a moving outline, or a table of parameters off to the side, te
   - `arrows` / `arrowFeeds`, `headers`, `dimensions`;
   - `flow` + `flowResult`;
   - `spins`, `releases`.
-- **Write the story's own effects** when the explanation needs something the existing ones don't do. A story's effects live in its folder. Don't reshape another story's effects or code just to reuse them. Copy the small pieces you need, or move a helper to `Kit/` once two stories truly share it (the README's rule).
+- **Generous scenes, minimal code:** delete before replacing, replace before adding, and no abstractions for a second use that doesn't exist yet.
+- **Write the story's own effects** when the explanation needs something the existing ones don't do. Read `reference/effects.md` first: a template, the coordinate spaces, and how labels, particles and pointing behave in detail. A story's effects live in its folder. Don't reshape another story's effects or code just to reuse them. Copy the small pieces you need, or move a helper to `Kit/` once two stories truly share it (the README's rule).
 - **2D on particles:** `system.shownPoint(_:)`. Fade overlays in once the layout has arrived (`network.formed === layout && split >= 1`).
 - **Transitions and timelines:** `.none` between steps that continue the same object, `.fade` otherwise. `loop:` for timelines that replay (read `frame.stepTime`, `loopCount`).
 - **Gestures:** `frame.nextStep()` for a gesture that ends a phase, `Grip` for acting on an object, `Actionable` with Space for pointing at items.
@@ -100,6 +105,8 @@ Fix what you find, then render again.
 Then build the app with `scripts/build.sh`, which sets `DEVELOPER_DIR` itself, so the user can look live.
 
 ## Traps
+
+When something on stage behaves oddly (it lingers, never moves, renders black, appears late), or before changing a gesture threshold, read `reference/pitfalls.md`.
 
 - **Additive light:** many particles at one spot, or copies leaving one place together, saturate to white or flare. Fix that element with lower density or a colour that sums right, travel unlit and light up on arrival (`arrivedColors`), or dim only the travelling copies. Black particles are invisible and free to move.
 - **Budget:** about 120,000 particles in all. N copies × M particles must fit (`NeuralNetwork.particles`).

@@ -19,7 +19,12 @@ swift test                               # all tests (swift-testing, @Test)
 swift test --filter PenLinkTests         # one suite; --filter also takes a test name, e.g. sessionsSeal
 YOLO_MEET_MODELS=/path/to/aimodels YOLO_MEET_IMAGE=/path/to/bus.jpg swift test   # + real-model tests
 xcodebuild -project iPad/YoloMeetPen.xcodeproj -scheme YoloMeetPen -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+swift format -i -r --parallel Sources iPad Tests   # format (config: .swift-format, 4 spaces, 120 columns)
+swift format lint -r Sources iPad Tests            # lint; kept at zero warnings
 ```
+
+- **Formatting is automatic:** a PostToolUse hook (`.claude/hooks/swift-format.sh`) formats every `.swift` file
+  Claude edits, then lints it and reports any warnings to fix by hand. Expect the file to change after an edit.
 
 - **Model tests** are skipped unless `YOLO_MEET_MODELS` (unzipped `yolo26n*.aimodel` folders) and `YOLO_MEET_IMAGE`
   (Ultralytics' `bus.jpg`) are set. MediaPipe tests need `YOLO_MEET_MEDIAPIPE` (see README).

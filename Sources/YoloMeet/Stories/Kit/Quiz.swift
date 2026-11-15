@@ -65,12 +65,14 @@ final class QuizEffect: Effect {
         let gap = labels.count > 1 ? (top - bottom - rowHeight) / CGFloat(labels.count - 1) : 0
         let busy = flight != nil || unveiling != nil || parked != nil
         let flying = parked ?? flight.flatMap { $0.out ? $0.index : nil }
-        leaving = parked != nil ? 1 : flight.map { $0.out ? smoothstep(CGFloat((frame.time - $0.start) / Self.fly)) : 0 } ?? 0
+        leaving =
+            parked != nil ? 1 : flight.map { $0.out ? smoothstep(CGFloat((frame.time - $0.start) / Self.fly)) : 0 } ?? 0
 
         for (i, label) in labels.enumerated() {
             let home = CGPoint(x: column.minX * size.width, y: top - CGFloat(i) * gap)
             let scale = rest * actions[i].scale
-            let rect = CGRect(x: home.x, y: home.y - label.height * scale, width: label.width * scale, height: label.height * scale)
+            let rect = CGRect(
+                x: home.x, y: home.y - label.height * scale, width: label.width * scale, height: label.height * scale)
             let clickable = !busy && i < frame.branches.count
             if actions[i].update(frame, isOn: clickable ? { rect.contains($0) } : nil) {
                 if label.revealed {

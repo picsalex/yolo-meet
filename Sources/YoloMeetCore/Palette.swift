@@ -34,7 +34,9 @@ public nonisolated enum Palette {
 
     /// Inferno, the depth colormap: dark purple (far, 0) through red and orange to pale yellow (near, 1), rgb 0...1.
     public static func inferno(_ t: Float) -> SIMD3<Float> {
-        let stops: [SIMD3<Float>] = [[0.08, 0.03, 0.22], [0.34, 0.06, 0.42], [0.73, 0.21, 0.33], [0.98, 0.55, 0.04], [0.99, 1, 0.64]]
+        let stops: [SIMD3<Float>] = [
+            [0.08, 0.03, 0.22], [0.34, 0.06, 0.42], [0.73, 0.21, 0.33], [0.98, 0.55, 0.04], [0.99, 1, 0.64],
+        ]
         let x = min(max(t, 0), 1) * Float(stops.count - 1)
         let i = min(Int(x), stops.count - 2)
         return stops[i] + (stops[i + 1] - stops[i]) * (x - Float(i))

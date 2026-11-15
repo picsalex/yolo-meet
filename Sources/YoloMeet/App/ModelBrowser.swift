@@ -3,7 +3,11 @@ import YoloMeetCore
 
 /// Models by source: Ultralytics' families, other vendors' families, and user-imported models.
 struct ModelBrowser: View {
-    enum Source: String, CaseIterable { case ultralytics = "Ultralytics", other = "Other", custom = "Custom" }
+    enum Source: String, CaseIterable {
+        case ultralytics = "Ultralytics"
+        case other = "Other"
+        case custom = "Custom"
+    }
 
     @Environment(AppModel.self) private var model
     @AppStorage("modelSource") private var source = Source.ultralytics
@@ -111,13 +115,18 @@ private struct ModelCell: View {
         let shown = model.stageModels.contains(entry.id)
         let kept = !shown && model.mode == .story && model.displayModels.contains(entry.id)
         Button {
-            if !downloaded { model.store.download(entry) } else if model.mode == .display { model.toggleDisplay(entry.id) }
+            if !downloaded {
+                model.store.download(entry)
+            } else if model.mode == .display {
+                model.toggleDisplay(entry.id)
+            }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(shown ? Color.accentColor : downloaded ? Color.secondary.opacity(0.2) : .clear)
                 RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(kept ? Color.accentColor : .secondary.opacity(downloaded ? 0 : 0.4), lineWidth: kept ? 1.5 : 1)
+                    .strokeBorder(
+                        kept ? Color.accentColor : .secondary.opacity(downloaded ? 0 : 0.4), lineWidth: kept ? 1.5 : 1)
                 if let progress {
                     ProgressView(value: progress).progressViewStyle(.circular).controlSize(.mini)
                 } else if shown && model.pendingModels.contains(entry.id) {
@@ -160,29 +169,41 @@ private struct CustomModelList: View {
 
     var body: some View {
         if model.custom.models.isEmpty {
-            Text("Import an Ultralytics or RF-DETR model: PyTorch weights (.pt, .pth) are converted to Core AI, or pick an .aimodel (.zip). The family and task are detected automatically.")
-                .font(.callout).foregroundStyle(.secondary)
+            Text(
+                "Import an Ultralytics or RF-DETR model: PyTorch weights (.pt, .pth) are converted to Core AI, or pick an .aimodel (.zip). The family and task are detected automatically."
+            )
+            .font(.callout).foregroundStyle(.secondary)
         }
         ForEach(model.custom.models) { custom in
             HStack {
                 VStack(alignment: .leading) {
                     Text(custom.name)
-                    Text("\(custom.family) · \(custom.task.title) · \(model.custom.size(of: custom.id).formatted(.byteCount(style: .file)))")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Text(
+                        "\(custom.family) · \(custom.task.title) · \(model.custom.size(of: custom.id).formatted(.byteCount(style: .file)))"
+                    )
+                    .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Rename", systemImage: "pencil") { newName = custom.name; renaming = custom }
+                Button("Rename", systemImage: "pencil") {
+                    newName = custom.name
+                    renaming = custom
+                }
                 Button("Delete", systemImage: "trash", role: .destructive) { model.deleteCustom(custom.id) }
                 if model.pendingModels.contains(custom.id) { ProgressView().controlSize(.small) }
                 if model.mode == .display {
-                    Toggle("Show on stage", isOn: Binding(
-                        get: { model.displayModels.contains(custom.id) }, set: { _ in model.toggleDisplay(custom.id) }))
-                        .labelsHidden()
-                        .help("Show on stage")
+                    Toggle(
+                        "Show on stage",
+                        isOn: Binding(
+                            get: { model.displayModels.contains(custom.id) },
+                            set: { _ in model.toggleDisplay(custom.id) })
+                    )
+                    .labelsHidden()
+                    .help("Show on stage")
                 } else if model.stageModels.contains(custom.id) {
                     Image(systemName: "eye.fill").foregroundStyle(.tint).help("Used by this story step")
                 } else if model.displayModels.contains(custom.id) {
-                    Image(systemName: "eye").foregroundStyle(Color.accentColor.opacity(0.7)).help("Kept for Display mode")
+                    Image(systemName: "eye").foregroundStyle(Color.accentColor.opacity(0.7)).help(
+                        "Kept for Display mode")
                 }
             }
             .labelStyle(.iconOnly)

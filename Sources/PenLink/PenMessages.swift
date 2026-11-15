@@ -100,7 +100,7 @@ nonisolated extension HostMessage: PenMessage {
     /// The stage's pictures are about 100 KB at 720p, a few hundred at most.
     public static let largestFrame = 16 << 20
     public var pictureFrame: (jpeg: Data, through: Int?)? {
-        if case let .picture(jpeg, through) = self { (jpeg, through) } else { nil }
+        if case .picture(let jpeg, let through) = self { (jpeg, through) } else { nil }
     }
     public init?(pictureFrame jpeg: Data, through: Int?) { self = .picture(jpeg: jpeg, through: through) }
 }
@@ -110,7 +110,8 @@ nonisolated extension HostMessage: PenMessage {
 /// the link, a message's frame is itself sealed in a frame (`PenSession`), after each end's key.
 public nonisolated struct PenFrames: Sendable {
     enum Kind: UInt8 {
-        case json = 0, picture = 1
+        case json = 0
+        case picture = 1
         /// An end's key for the connection (`PenSession`): the first frame each way.
         case key = 2
         /// A message's frame, sealed.
@@ -128,7 +129,9 @@ public nonisolated struct PenFrames: Sendable {
     public init(longest: Int = PenFrames.limit) { self.longest = longest }
 
     public static func frame(_ message: some PenMessage) -> Data {
-        guard let picture = message.pictureFrame else { return frame(.json, (try? JSONEncoder().encode(message)) ?? Data()) }
+        guard let picture = message.pictureFrame else {
+            return frame(.json, (try? JSONEncoder().encode(message)) ?? Data())
+        }
         var payload = Data(capacity: 4 + picture.jpeg.count)
         withUnsafeBytes(of: Int32(clamping: picture.through ?? -1).bigEndian) { payload.append(contentsOf: $0) }
         payload.append(picture.jpeg)
@@ -167,7 +170,9 @@ public nonisolated struct PenFrames: Sendable {
     }
 
     /// The message a frame carries, if it is one of `Message`'s.
-    static func message<Message: PenMessage>(kind: UInt8, payload: Data, as type: Message.Type = Message.self) -> Message? {
+    static func message<Message: PenMessage>(kind: UInt8, payload: Data, as type: Message.Type = Message.self)
+        -> Message?
+    {
         switch Kind(rawValue: kind) {
         case .json:
             return try? JSONDecoder().decode(type, from: payload)

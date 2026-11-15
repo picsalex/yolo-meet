@@ -40,9 +40,11 @@ final class Camera {
     func start() async {
         authorized = await AVCaptureDevice.requestAccess(for: .video)
         guard authorized else { return }
-        devices = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video, position: .unspecified
-        ).devices
+        devices =
+            AVCaptureDevice.DiscoverySession(
+                deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera], mediaType: .video,
+                position: .unspecified
+            ).devices
         let saved = UserDefaults.standard.string(forKey: "camera")
         selectedID = devices.first { $0.uniqueID == saved }?.uniqueID ?? devices.first?.uniqueID
     }
@@ -67,7 +69,9 @@ private nonisolated final class FrameReceiver: NSObject, AVCaptureVideoDataOutpu
 
     init(onFrame: @escaping @Sendable (CVPixelBuffer) -> Void) { self.onFrame = onFrame }
 
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    func captureOutput(
+        _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
+    ) {
         if let buffer = sampleBuffer.imageBuffer { onFrame(buffer) }
     }
 }

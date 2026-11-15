@@ -24,7 +24,9 @@ final class BoxesEffect: Effect {
 
     init(
         model: String, filter: @escaping (Detection, ModelOutput) -> Bool = { _, _ in true },
-        label: @escaping (Detection, ModelOutput) -> String = { d, o in Theme.of(o).label(o.name(of: d.classIndex), d.confidence) }
+        label: @escaping (Detection, ModelOutput) -> String = { d, o in
+            Theme.of(o).label(o.name(of: d.classIndex), d.confidence)
+        }
     ) {
         self.model = model
         self.filter = filter
@@ -77,7 +79,9 @@ final class BoxNode: SKNode {
         label.position = CGPoint(x: rect.minX - line / 2 + pad, y: rect.maxY + line / 2 + pad / 2)
         let size = label.frame.size
         chip.path = CGPath(
-            rect: CGRect(x: rect.minX - line / 2, y: rect.maxY + line / 2, width: size.width + 2 * pad, height: size.height + pad),
+            rect: CGRect(
+                x: rect.minX - line / 2, y: rect.maxY + line / 2, width: size.width + 2 * pad, height: size.height + pad
+            ),
             transform: nil)
         chip.set(\.fillColor, color)
     }
@@ -114,7 +118,8 @@ final class PoseEffect: Effect {
             let points = detection.keypoints.map { $0.confidence >= minConfidence ? frame.stage.point($0.point) : nil }
             node.update(
                 to: points, skeleton: skeleton ? output?.skeleton ?? [] : [], theme: theme, unit: frame.stage.unit,
-                grown: grownJoints?(frame, detection.trackID!) ?? [:], k: frame.smoothing, smoothing: frame.smoothing(gap:))
+                grown: grownJoints?(frame, detection.trackID!) ?? [:], k: frame.smoothing,
+                smoothing: frame.smoothing(gap:))
         }
     }
 }
@@ -158,8 +163,10 @@ final class PoseNode: SKNode {
             side.move(to: p)
             side.addLine(to: q)
         }
-        for (limb, path, color) in [(left, paths.left, theme.leftLimb), (right, paths.right, theme.rightLimb),
-                                    (center, paths.center, theme.centerLimb)] {
+        for (limb, path, color) in [
+            (left, paths.left, theme.leftLimb), (right, paths.right, theme.rightLimb),
+            (center, paths.center, theme.centerLimb),
+        ] {
             limb.path = path
             limb.set(\.strokeColor, color)
             limb.set(\.lineWidth, (mesh ? 0.75 : theme.limbWidth) * unit)
@@ -191,13 +198,17 @@ final class OrientedBoxesEffect: Effect {
     init(model: String) { self.model = model }
 
     override func update(_ frame: StageFrame) {
-        guard let output = frame.outputs[model] else { _ = tracks.sync([], in: frame); return }
+        guard let output = frame.outputs[model] else {
+            _ = tracks.sync([], in: frame)
+            return
+        }
         let detections = output.detections.filter { $0.trackID != nil }
         let nodes = tracks.sync(detections.map { $0.trackID! }, in: frame)
         let theme = Theme.of(output)
         for (node, detection) in zip(nodes, detections) {
             node.update(
-                to: corners(of: detection).map(frame.stage.point), text: theme.label(output.name(of: detection.classIndex), detection.confidence),
+                to: corners(of: detection).map(frame.stage.point),
+                text: theme.label(output.name(of: detection.classIndex), detection.confidence),
                 color: theme.color(detection.classIndex), theme: theme, unit: frame.stage.unit, k: frame.smoothing)
         }
     }
@@ -232,7 +243,8 @@ final class OrientedBoxNode: SKNode {
         let top = points.max { $0.y < $1.y } ?? .zero
         label.position = CGPoint(x: top.x + pad, y: top.y + pad / 2)
         let size = label.frame.size
-        chip.path = CGPath(rect: CGRect(x: top.x, y: top.y, width: size.width + 2 * pad, height: size.height + pad), transform: nil)
+        chip.path = CGPath(
+            rect: CGRect(x: top.x, y: top.y, width: size.width + 2 * pad, height: size.height + pad), transform: nil)
         chip.set(\.fillColor, color)
     }
 }
@@ -312,7 +324,9 @@ final class ClassifyEffect: Effect {
             let shown = top.map { (index: $0.index, percent: Int($0.confidence * 100)) }
             if shown?.index != row.shown?.index || shown?.percent != row.shown?.percent {
                 rows[i].shown = shown
-                row.label.text = shown.map { "\(output.name(of: $0.index).replacingOccurrences(of: "_", with: " ")) \($0.percent)%" }
+                row.label.text = shown.map {
+                    "\(output.name(of: $0.index).replacingOccurrences(of: "_", with: " ")) \($0.percent)%"
+                }
             }
             row.label.set(\.fontSize, 16 * u)
             row.label.position = CGPoint(x: 32 * u, y: y)

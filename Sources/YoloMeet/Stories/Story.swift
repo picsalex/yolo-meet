@@ -53,15 +53,17 @@ struct Story: Identifiable {
     /// The place ← goes to: the branch's previous step, or back to the step it branches from before its first.
     func place(before place: Place) -> Place? {
         guard let branch = place.branch else { return place.step > 0 ? Place(step: place.step - 1) : nil }
-        return place.substep > 0 ? Place(step: place.step, branch: branch, substep: place.substep - 1) : Place(step: place.step)
+        return place.substep > 0
+            ? Place(step: place.step, branch: branch, substep: place.substep - 1) : Place(step: place.step)
     }
 
     /// Every place in order, each step's branches right after it (the panel's list).
     var places: [Place] {
         steps.indices.flatMap { s in
-            [Place(step: s)] + steps[s].branches.indices.flatMap { b in
-                steps[s].branches[b].indices.map { Place(step: s, branch: b, substep: $0) }
-            }
+            [Place(step: s)]
+                + steps[s].branches.indices.flatMap { b in
+                    steps[s].branches[b].indices.map { Place(step: s, branch: b, substep: $0) }
+                }
         }
     }
 
@@ -69,11 +71,13 @@ struct Story: Identifiable {
     /// one's transition, both ways; entering a branch takes its first step's; anything else (leaving a branch,
     /// jumping) fades.
     func transition(from a: Place, to b: Place) -> Transition {
-        let (first, second) = a.step < b.step || (a.step == b.step && (a.branch ?? -1, a.substep) < (b.branch ?? -1, b.substep)) ? (a, b) : (b, a)
+        let (first, second) =
+            a.step < b.step || (a.step == b.step && (a.branch ?? -1, a.substep) < (b.branch ?? -1, b.substep))
+            ? (a, b) : (b, a)
         switch (first.branch, second.branch) {
         case (nil, nil) where second.step == first.step + 1:
             return steps[second.step].transition
-        case let (x?, y?) where x == y && first.step == second.step && second.substep == first.substep + 1:
+        case (let x?, let y?) where x == y && first.step == second.step && second.substep == first.substep + 1:
             return step(at: second).transition
         case (nil, _?) where a == first && first.step == second.step && second.substep == 0:
             return step(at: second).transition

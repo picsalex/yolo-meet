@@ -29,7 +29,9 @@ public nonisolated enum Predictors {
 public nonisolated enum ModelError: LocalizedError {
     case invalid(String)
     public var errorDescription: String? {
-        switch self { case .invalid(let reason): "Invalid model: \(reason)" }
+        switch self {
+        case .invalid(let reason): "Invalid model: \(reason)"
+        }
     }
 }
 
@@ -44,14 +46,17 @@ nonisolated enum ModelAsset {
 
     /// Total size of the folder in bytes.
     static func size(of url: URL) -> Int {
-        guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        guard let files = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return 0
+        }
         return files.reduce(0) { total, file in
             total + (((file as? URL).flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize }) ?? 0)
         }
     }
 
     static func info(
-        at url: URL, metadata: [String: String], family: String, architecture: String?, isDynamic: Bool, precision: String
+        at url: URL, metadata: [String: String], family: String, architecture: String?, isDynamic: Bool,
+        precision: String
     ) -> ModelInfo {
         ModelInfo(
             family: family, architecture: architecture, parameters: metadata["params"].flatMap(Int.init),

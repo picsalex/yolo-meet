@@ -10,7 +10,11 @@ import YoloMeetCore
 /// debug) and the bottom bar (the story's steps, the stage's speed); the rest is split into tabs, one-time setup
 /// (pen pairing, clicker keys, storage) in Settings.
 struct ControlPanel: View {
-    enum Tab: String, CaseIterable { case stage = "Stage", models = "Models", settings = "Settings" }
+    enum Tab: String, CaseIterable {
+        case stage = "Stage"
+        case models = "Models"
+        case settings = "Settings"
+    }
 
     @Environment(AppModel.self) private var model
     @AppStorage("panelTab") private var tab = Tab.stage
@@ -71,7 +75,9 @@ private struct StageTab: View {
                 Toggle("Camera", isOn: $model.cameraOn)
                 if model.cameraOn {
                     Picker("Device", selection: $model.camera.selectedID) {
-                        ForEach(model.camera.devices, id: \.uniqueID) { Text($0.localizedName).tag(Optional($0.uniqueID)) }
+                        ForEach(model.camera.devices, id: \.uniqueID) {
+                            Text($0.localizedName).tag(Optional($0.uniqueID))
+                        }
                     }
                     Toggle("Mirror", isOn: $model.mirror)
                 }
@@ -98,7 +104,9 @@ private struct StageTab: View {
                     Button("Choose…") { tab = .models }
                 } label: {
                     Text("Models on stage")
-                    Text(model.displayModels.isEmpty ? "None: click a downloaded model in Models" : model.displayModels.joined(separator: ", "))
+                    Text(
+                        model.displayModels.isEmpty
+                            ? "None: click a downloaded model in Models" : model.displayModels.joined(separator: ", "))
                 }
             case .story: storyControls
             }
@@ -128,10 +136,14 @@ private struct StageTab: View {
         DisclosureGroup(isExpanded: $stepsExpanded) {
             ForEach(model.story.places, id: \.self) { place in
                 let current = place == model.place
-                Button { model.place = place } label: {
+                Button {
+                    model.place = place
+                } label: {
                     HStack {
-                        Text(place.branch == nil ? "\(place.step + 1)" : "").monospacedDigit().foregroundStyle(.secondary)
-                            .frame(minWidth: 20, alignment: .trailing)
+                        Text(place.branch == nil ? "\(place.step + 1)" : "").monospacedDigit().foregroundStyle(
+                            .secondary
+                        )
+                        .frame(minWidth: 20, alignment: .trailing)
                         Text(model.story.step(at: place).title)
                             .padding(.leading, place.branch == nil ? 0 : 16)
                             .foregroundStyle(place.branch == nil ? .primary : .secondary)
@@ -161,7 +173,9 @@ private struct BottomBar: View {
             if model.mode == .story {
                 let (story, place) = (model.story, model.place)
                 // A branch's step after the step it branches from: "13 of 14 · Task quiz › Detect".
-                let title = place.branch == nil ? story.steps[place.step].title
+                let title =
+                    place.branch == nil
+                    ? story.steps[place.step].title
                     : "\(story.steps[place.step].title) › \(story.step(at: place).title)"
                 Button("Previous Step", systemImage: "chevron.left") { model.previous() }
                     .disabled(story.place(before: place) == nil)
@@ -188,11 +202,16 @@ private struct BottomBar: View {
         let outputs = model.pipeline.latestOutputs.values.sorted { $0.modelID < $1.modelID }
         let errors = model.pipeline.errors.sorted { $0.key < $1.key }
         HStack(spacing: 6) {
-            Text((["\(model.renderFPS) fps"] + (outputs.map(\.latency).max().map { [String(format: "%.0f ms", $0 * 1000)] } ?? []))
-                .joined(separator: " · "))
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .help((["Stage: \(model.renderFPS) fps"] + outputs.map { String(format: "%@: %.1f ms", $0.modelID, $0.latency * 1000) })
+            Text(
+                (["\(model.renderFPS) fps"]
+                    + (outputs.map(\.latency).max().map { [String(format: "%.0f ms", $0 * 1000)] } ?? []))
+                    .joined(separator: " · ")
+            )
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .help(
+                (["Stage: \(model.renderFPS) fps"]
+                    + outputs.map { String(format: "%@: %.1f ms", $0.modelID, $0.latency * 1000) })
                     .joined(separator: "\n"))
             if !errors.isEmpty {
                 Button("Errors", systemImage: "exclamationmark.triangle.fill") { showsErrors.toggle() }
@@ -224,7 +243,9 @@ private struct ModelsTab: View {
                     Button("Switch to Display") { model.mode = .display }
                 } label: {
                     Label("Story mode", systemImage: "info.circle")
-                    Text("You're in Story mode, where each step picks its models. To choose which models to show, switch back to Display mode.")
+                    Text(
+                        "You're in Story mode, where each step picks its models. To choose which models to show, switch back to Display mode."
+                    )
                 }
             }
         }
@@ -236,10 +257,14 @@ private struct ModelsTab: View {
                 let settings = model.inference
                 LabeledContent("Inference") {
                     Text(
-                        [settings.imgsz.map { "\($0) px" }, "Conf \(settings.confidence.formatted(.number.precision(.fractionLength(2))))",
-                         "IoU \(settings.iou.formatted(.number.precision(.fractionLength(2))))"]
-                            .compactMap(\.self).joined(separator: " · "))
-                        .monospacedDigit()
+                        [
+                            settings.imgsz.map { "\($0) px" },
+                            "Conf \(settings.confidence.formatted(.number.precision(.fractionLength(2))))",
+                            "IoU \(settings.iou.formatted(.number.precision(.fractionLength(2))))",
+                        ]
+                        .compactMap(\.self).joined(separator: " · ")
+                    )
+                    .monospacedDigit()
                 }
             }
         }
@@ -254,9 +279,11 @@ struct PenToggle: View {
         @Bindable var pen = model.pen
         Toggle(isOn: $pen.isOn) {
             Text("iPad pen")
-            Text(!pen.isOn
-                ? "Draw with an Apple Pencil, from the yolo-meet pen app"
-                : pen.pad.map { "Connected to \($0)" } ?? "Waiting for the yolo-meet pen app · pairing code in Settings")
+            Text(
+                !pen.isOn
+                    ? "Draw with an Apple Pencil, from the yolo-meet pen app"
+                    : pen.pad.map { "Connected to \($0)" }
+                        ?? "Waiting for the yolo-meet pen app · pairing code in Settings")
         }
     }
 }
@@ -287,11 +314,16 @@ private struct DrawControls: View {
                         Spacer()
                         HStack(spacing: 6) {
                             ForEach(Drawing.colors, id: \.1) { name, hex in
-                                Button { (drawing.color, drawing.erases) = (hex, false) } label: {
+                                Button {
+                                    (drawing.color, drawing.erases) = (hex, false)
+                                } label: {
                                     Circle().fill(Color(nsColor: .hex(hex))).frame(width: 18, height: 18)
                                         .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
                                         .padding(3)
-                                        .overlay(Circle().stroke(Color.accentColor, lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
+                                        .overlay(
+                                            Circle().stroke(
+                                                Color.accentColor,
+                                                lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(name)
@@ -313,7 +345,10 @@ private struct DrawControls: View {
                         }
                     } label: {
                         Text("Fading ink")
-                        Text(drawing.fades ? "Fades after \(Int(drawing.fadeAfter)) s" : "Strokes stay until undone, erased or cleared")
+                        Text(
+                            drawing.fades
+                                ? "Fades after \(Int(drawing.fadeAfter)) s"
+                                : "Strokes stay until undone, erased or cleared")
                     }
                 }
             } header: {
@@ -321,7 +356,8 @@ private struct DrawControls: View {
                     Text("Ink")
                     Spacer()
                     Group {
-                        Button("Undo", systemImage: "arrow.uturn.backward") { drawing.undo() }.help("Undo the last stroke (⌫ on stage)")
+                        Button("Undo", systemImage: "arrow.uturn.backward") { drawing.undo() }.help(
+                            "Undo the last stroke (⌫ on stage)")
                         Button("Clear", systemImage: "trash") { drawing.clear() }.help("Clear all strokes (C on stage)")
                     }
                     .labelStyle(.iconOnly)
@@ -346,7 +382,11 @@ private struct LibraryStrip: View {
             HStack {
                 if none { tile(nil) }
                 ForEach(library.items, id: \.self, content: tile)
-                Button { importing = true } label: { Image(systemName: "plus").frame(width: 80, height: 45) }
+                Button {
+                    importing = true
+                } label: {
+                    Image(systemName: "plus").frame(width: 80, height: 45)
+                }
             }
             .padding(.vertical, 4)
         }
@@ -357,12 +397,15 @@ private struct LibraryStrip: View {
 
     private func tile(_ url: URL?) -> some View {
         let selected = library.selected == url
-        return Button { library.selected = url } label: {
+        return Button {
+            library.selected = url
+        } label: {
             Group {
                 if let url, let image = library.thumbnails[url] {
                     Image(nsImage: image).resizable().scaledToFill()
                 } else {
-                    Text(url?.deletingPathExtension().lastPathComponent ?? "None").font(.caption).lineLimit(2).padding(4)
+                    Text(url?.deletingPathExtension().lastPathComponent ?? "None").font(.caption).lineLimit(2).padding(
+                        4)
                 }
             }
             .frame(width: 80, height: 45)
@@ -372,8 +415,12 @@ private struct LibraryStrip: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.accentColor : .secondary.opacity(0.3), lineWidth: selected ? 3 : 1))
-            .contentShape(RoundedRectangle(cornerRadius: 6))  // a plain button only hits its drawn pixels, e.g. "None"'s text
+            .overlay(
+                RoundedRectangle(cornerRadius: 6).stroke(
+                    selected ? Color.accentColor : .secondary.opacity(0.3), lineWidth: selected ? 3 : 1)
+            )
+            // a plain button only hits its drawn pixels, e.g. "None"'s text
+            .contentShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
         .help(url?.lastPathComponent ?? "No background")
@@ -401,14 +448,17 @@ private struct MediaSourceView: View {
                 if let progress {
                     ProgressView(value: progress).frame(width: 60)
                     Text(progress.formatted(.percent.precision(.fractionLength(0))))
-                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 34, alignment: .trailing)
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(
+                            width: 34, alignment: .trailing)
                 } else {
                     ProgressView().controlSize(.small)  // getting yt-dlp, or waiting for the first progress line
                 }
-                Button("Cancel Download", systemImage: "xmark.circle.fill") { model.links.cancel(in: model.media.directory) }
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .help("Cancel the download")
+                Button("Cancel Download", systemImage: "xmark.circle.fill") {
+                    model.links.cancel(in: model.media.directory)
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .help("Cancel the download")
             } else {
                 Button("Download", action: download).disabled(link.isEmpty)
             }
@@ -417,12 +467,21 @@ private struct MediaSourceView: View {
         if let error { Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled) }
         if model.player.isVideo {
             HStack {
-                Button(model.player.isPlaying ? "Pause" : "Play", systemImage: model.player.isPlaying ? "pause.fill" : "play.fill") {
+                Button(
+                    model.player.isPlaying ? "Pause" : "Play",
+                    systemImage: model.player.isPlaying ? "pause.fill" : "play.fill"
+                ) {
                     model.player.isPlaying.toggle()
                 }
                 .labelStyle(.iconOnly)
                 .buttonStyle(.borderless)
-                Slider(value: Binding { scrub ?? model.player.time } set: { scrub = $0 }, in: 0...max(model.player.duration, 1)) {
+                Slider(
+                    value: Binding {
+                        scrub ?? model.player.time
+                    } set: {
+                        scrub = $0
+                    }, in: 0...max(model.player.duration, 1)
+                ) {
                     EmptyView()
                 } onEditingChanged: { editing in
                     guard !editing, let scrub else { return }
@@ -459,7 +518,11 @@ private struct InferenceSettingsView: View {
         // One row: the models' training size, or an override set with the slider the switch reveals.
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             let training = model.pipeline.trainingSizes
-            let size = Binding { imgsz ?? Double(model.inference.imgsz ?? training.first ?? 640) } set: { imgsz = $0 }
+            let size = Binding {
+                imgsz ?? Double(model.inference.imgsz ?? training.first ?? 640)
+            } set: {
+                imgsz = $0
+            }
             LabeledContent {
                 HStack {
                     if model.inference.imgsz != nil {
@@ -471,18 +534,25 @@ private struct InferenceSettingsView: View {
                             self.imgsz = nil
                         }
                     }
-                    Toggle("Override", isOn: Binding { model.inference.imgsz != nil } set: {
-                        model.inference.imgsz = $0 ? training.first ?? 640 : nil
-                    })
+                    Toggle(
+                        "Override",
+                        isOn: Binding {
+                            model.inference.imgsz != nil
+                        } set: {
+                            model.inference.imgsz = $0 ? training.first ?? 640 : nil
+                        }
+                    )
                     .toggleStyle(.checkbox)  // HIG: a checkbox for a setting that adjusts another; box before label
                     .fixedSize()
                     .help("Override the training image size")
                 }
             } label: {
                 Text("Image size")
-                Text(model.inference.imgsz == nil
-                    ? "Training · " + (training.isEmpty ? "per model" : training.map { "\($0) px" }.joined(separator: " / "))
-                    : "\(Int(size.wrappedValue)) px")
+                Text(
+                    model.inference.imgsz == nil
+                        ? "Training · "
+                            + (training.isEmpty ? "per model" : training.map { "\($0) px" }.joined(separator: " / "))
+                        : "\(Int(size.wrappedValue)) px")
             }
         }
         LabeledContent {

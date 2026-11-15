@@ -15,10 +15,15 @@ final class Drawing {
     enum Source { case mouse, pen }
     /// What the pen's pad is told (`changed`): the ink's settings changed, or strokes it drew (their ids) left the
     /// stage.
-    enum Change { case settings, removed([Int]) }
+    enum Change {
+        case settings
+        case removed([Int])
+    }
 
     /// Ink colors (Ultralytics' brand skeleton colors, white and the annotation palette's red), as names and hex.
-    static let colors = [("Yellow", "E1FF25"), ("Aqua", "00FFFF"), ("Pink", "FF64DA"), ("White", "FFFFFF"), ("Red", "FF3838")]
+    static let colors = [
+        ("Yellow", "E1FF25"), ("Aqua", "00FFFF"), ("Pink", "FF64DA"), ("White", "FFFFFF"), ("Red", "FF3838"),
+    ]
     /// Fading ink fades out over this many seconds, once it has stayed `fadeAfter`.
     static let fadeTime = 1.0
 
@@ -61,7 +66,9 @@ final class Drawing {
         }
     }
     /// The ink's settings as the pen's pad has them.
-    var settings: InkSettings { InkSettings(color: color, width: width, fades: fades, fadeAfter: fadeAfter, erases: erases) }
+    var settings: InkSettings {
+        InkSettings(color: color, width: width, fades: fades, fadeAfter: fadeAfter, erases: erases)
+    }
     /// Strokes on stage, for the panel's Undo and Clear.
     private(set) var strokeCount = 0
 
@@ -158,7 +165,8 @@ final class Drawing {
         for stroke in strokes {
             stroke.redraw(unit: frame.stage.unit)
             let age = fades ? stroke.endedAt.map { frame.time - $0 - fadeAfter } : nil
-            stroke.node.alpha = 1 - min(max((age ?? 0) / Self.fadeTime, 0), 1)  // opaque again when fading is turned off
+            // opaque again when fading is turned off
+            stroke.node.alpha = 1 - min(max((age ?? 0) / Self.fadeTime, 0), 1)
             stroke.isFading = stroke.node.alpha < 1
         }
         let faded = strokes.filter { $0.node.alpha == 0 }
@@ -172,15 +180,20 @@ final class Drawing {
                 rings[source]?.isHidden = true
                 continue
             }
-            let ring = rings[source] ?? {
-                let ring = SKShapeNode()
-                (ring.strokeColor, ring.fillColor, ring.lineWidth, ring.zPosition) = (.white, .white.withAlphaComponent(0.15), 1.5, 1)
-                node.addChild(ring)
-                rings[source] = ring
-                return ring
-            }()
+            let ring =
+                rings[source]
+                ?? {
+                    let ring = SKShapeNode()
+                    (ring.strokeColor, ring.fillColor, ring.lineWidth, ring.zPosition) = (
+                        .white, .white.withAlphaComponent(0.15), 1.5, 1
+                    )
+                    node.addChild(ring)
+                    rings[source] = ring
+                    return ring
+                }()
             let radius = settings.eraserRadius
-            ring.path = CGPath(ellipseIn: CGRect(x: -radius, y: -radius, width: 2 * radius, height: 2 * radius), transform: nil)
+            ring.path = CGPath(
+                ellipseIn: CGRect(x: -radius, y: -radius, width: 2 * radius, height: 2 * radius), transform: nil)
             (ring.position, ring.isHidden) = (place, false)
         }
         // The nib hides while the pen draws: the line's end shows where it is.
@@ -190,7 +203,8 @@ final class Drawing {
             nib.node.position = hovering.point
             nib.dot.setScale(CGFloat(width) / 2)
             nib.dot.fillColor = ink
-            nib.ring.path = CGPath(ellipseIn: CGRect(x: -radius, y: -radius, width: 2 * radius, height: 2 * radius), transform: nil)
+            nib.ring.path = CGPath(
+                ellipseIn: CGRect(x: -radius, y: -radius, width: 2 * radius, height: 2 * radius), transform: nil)
             nib.ring.strokeColor = ink.withAlphaComponent(0.9 - 0.5 * hovering.height)
         }
     }
@@ -284,15 +298,20 @@ private final class Stroke {
         }
         func distance(from point: CGPoint, to line: (CGPoint, CGPoint)) -> CGFloat {
             let (dx, dy) = (line.1.x - line.0.x, line.1.y - line.0.y)
-            let along = dx * dx + dy * dy > 0 ? ((point.x - line.0.x) * dx + (point.y - line.0.y) * dy) / (dx * dx + dy * dy) : 0
+            let along =
+                dx * dx + dy * dy > 0
+                ? ((point.x - line.0.x) * dx + (point.y - line.0.y) * dy) / (dx * dx + dy * dy) : 0
             let nearest = min(max(along, 0), 1)
             return hypot(point.x - line.0.x - nearest * dx, point.y - line.0.y - nearest * dy)
         }
-        if side(first.0, of: second) * side(first.1, of: second) < 0, side(second.0, of: first) * side(second.1, of: first) < 0 {
+        if side(first.0, of: second) * side(first.1, of: second) < 0,
+            side(second.0, of: first) * side(second.1, of: first) < 0
+        {
             return 0
         }
         return min(
-            distance(from: first.0, to: second), distance(from: first.1, to: second), distance(from: second.0, to: first),
+            distance(from: first.0, to: second), distance(from: first.1, to: second),
+            distance(from: second.0, to: first),
             distance(from: second.1, to: first))
     }
 
@@ -315,16 +334,24 @@ private final class Stroke {
         // The curve around the point before, between the midpoints on either side of it: corners between points are
         // rounded.
         let (before, control, after) = (points[points.count - 3], points[points.count - 2], points[points.count - 1])
-        func middle(_ a: Sample, _ b: Sample) -> Sample { (CGPoint(x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2), (a.width + b.width) / 2) }
+        func middle(_ a: Sample, _ b: Sample) -> Sample {
+            (CGPoint(x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2), (a.width + b.width) / 2)
+        }
         let (start, end) = (points.count == 3 ? before : middle(before, control), middle(control, after))
-        let length = hypot(control.at.x - start.at.x, control.at.y - start.at.y) + hypot(end.at.x - control.at.x, end.at.y - control.at.y)
+        let length =
+            hypot(control.at.x - start.at.x, control.at.y - start.at.y)
+            + hypot(end.at.x - control.at.x, end.at.y - control.at.y)
         let pieces = max(Int((length / Self.spacing).rounded(.up)), 1)
         for piece in 1...pieces {
             let t = CGFloat(piece) / CGFloat(pieces)
             let (a, b, c) = ((1 - t) * (1 - t), 2 * t * (1 - t), t * t)
-            line.append((
-                CGPoint(x: a * start.at.x + b * control.at.x + c * end.at.x, y: a * start.at.y + b * control.at.y + c * end.at.y),
-                a * start.width + b * control.width + c * end.width))
+            line.append(
+                (
+                    CGPoint(
+                        x: a * start.at.x + b * control.at.x + c * end.at.x,
+                        y: a * start.at.y + b * control.at.y + c * end.at.y),
+                    a * start.width + b * control.width + c * end.width
+                ))
         }
     }
 
@@ -352,7 +379,8 @@ private final class Stroke {
         // joins the drawn area. The last piece, to the last point, is drawn apart: it changes with the next point.
         while covered.count < line.count {
             let before = covered.heading
-            covered.heading = Self.cover(from: line[covered.count - 1], to: line[covered.count], after: before, in: growing)
+            covered.heading = Self.cover(
+                from: line[covered.count - 1], to: line[covered.count], after: before, in: growing)
             (covered.count, covered.pieces) = (covered.count + 1, covered.pieces + 1)
             if covered.pieces == Self.segment {
                 growingImage?.removeFromParent()
@@ -382,16 +410,22 @@ private final class Stroke {
     /// Adds an image of `areas` (one per layer of the `look`) to the node, over the others. The translucent layers
     /// leave out the area of the `drawn` segments it overlaps: only those near it cost anything.
     @discardableResult
-    private func draw(_ areas: [CGPath], leavingOut drawn: ArraySlice<(areas: [CGPath], bounds: [CGRect])>) -> SKSpriteNode? {
+    private func draw(_ areas: [CGPath], leavingOut drawn: ArraySlice<(areas: [CGPath], bounds: [CGRect])>)
+        -> SKSpriteNode?
+    {
         // Around the widest layer and its edge's smoothing, on whole pixels of the stroke's scale: the images line up.
         let bounds = areas[0].boundingBoxOfPath.insetBy(dx: -2, dy: -2)
         guard !bounds.isEmpty else { return nil }
         let (left, bottom) = ((bounds.minX * scale).rounded(.down), (bounds.minY * scale).rounded(.down))
-        let (width, height) = (Int((bounds.maxX * scale).rounded(.up) - left), Int((bounds.maxY * scale).rounded(.up) - bottom))
-        let frame = CGRect(x: left / scale, y: bottom / scale, width: CGFloat(width) / scale, height: CGFloat(height) / scale)
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        let (width, height) = (
+            Int((bounds.maxX * scale).rounded(.up) - left), Int((bounds.maxY * scale).rounded(.up) - bottom)
+        )
+        let frame = CGRect(
+            x: left / scale, y: bottom / scale, width: CGFloat(width) / scale, height: CGFloat(height) / scale)
+        guard
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
         else { return nil }
         context.scaleBy(x: scale, y: scale)
         context.translateBy(x: -frame.minX, y: -frame.minY)
@@ -420,7 +454,9 @@ private final class Stroke {
     /// Adds the piece of line from `point` to `next` to each layer's area, closing the gap on the outside of the turn
     /// from the `heading` of the piece before, or with a disc on `point` where the line starts. Returns the piece's
     /// heading.
-    private static func cover(from point: Sample, to next: Sample, after heading: CGFloat?, in areas: [CGMutablePath]) -> CGFloat? {
+    private static func cover(from point: Sample, to next: Sample, after heading: CGFloat?, in areas: [CGMutablePath])
+        -> CGFloat?
+    {
         let (dx, dy) = (next.at.x - point.at.x, next.at.y - point.at.y)
         let length = hypot(dx, dy)
         guard length > 0 else { return heading }

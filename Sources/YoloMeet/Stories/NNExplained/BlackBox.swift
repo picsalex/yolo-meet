@@ -9,7 +9,8 @@ extension NetworkLayout {
     /// slowly. A fist releases the particles, and letting go moves on to the next step (`releases`), the brain.
     static func blackBox() -> NetworkLayout {
         let layout = NetworkLayout(
-            title: "Black box", subtitle: "a neural network, seen from outside", neurons: [], synapses: [], neuronSize: 0.02,
+            title: "Black box", subtitle: "a neural network, seen from outside", neurons: [], synapses: [],
+            neuronSize: 0.02,
             restingTilt: 0.42)
         (layout.restingTurn, layout.spins, layout.releases) = (0.6, true, true)
         let corners = blackBoxCorners

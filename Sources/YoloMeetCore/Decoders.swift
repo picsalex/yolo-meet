@@ -31,7 +31,8 @@ nonisolated extension YOLOModel {
                 return detection
             }
         case .obb:
-            output.detections = boxes(head, classes: head.shape[1] - 5, geometry: geometry, rotated: true).map(\.detection)
+            output.detections = boxes(head, classes: head.shape[1] - 5, geometry: geometry, rotated: true).map(
+                \.detection)
         case .classify:
             output.topClasses = head.values.indices.sorted { head.values[$0] > head.values[$1] }.prefix(5)
                 .map { ($0, head.values[$0]) }
@@ -61,7 +62,9 @@ nonisolated extension YOLOModel {
         head.values.withUnsafeBufferPointer { values in
             best.withUnsafeMutableBufferPointer { best in
                 for c in 0..<classes {
-                    vDSP_vmax(best.baseAddress!, 1, values.baseAddress! + (4 + c) * anchors, 1, best.baseAddress!, 1, vDSP_Length(anchors))
+                    vDSP_vmax(
+                        best.baseAddress!, 1, values.baseAddress! + (4 + c) * anchors, 1, best.baseAddress!, 1,
+                        vDSP_Length(anchors))
                 }
             }
         }
@@ -107,7 +110,9 @@ nonisolated extension YOLOModel {
         // masks[n, ph*pw] = coefficients[n, dims] x protos[dims, ph*pw]
         var coefficients = [Float](repeating: 0, count: n * dims)
         for (i, candidate) in kept.enumerated() {
-            for d in 0..<dims { coefficients[i * dims + d] = head.values[(coefficientRow + d) * anchors + candidate.anchor] }
+            for d in 0..<dims {
+                coefficients[i * dims + d] = head.values[(coefficientRow + d) * anchors + candidate.anchor]
+            }
         }
         var masks = [Float](repeating: 0, count: n * ph * pw)
         vDSP_mmul(coefficients, 1, protos.values, 1, &masks, 1, vDSP_Length(n), vDSP_Length(ph * pw), vDSP_Length(dims))
@@ -129,8 +134,14 @@ nonisolated extension YOLOModel {
         for (i, candidate) in kept.enumerated().reversed() {
             // Pixels whose centers are in the box, within the crop.
             let region = candidate.inputBox.applying(CGAffineTransform(scaleX: scale, y: scale))
-            let xs = max(Int((region.minX - 0.5).rounded(.up)), crop.x)..<min(Int((region.maxX - 0.5).rounded(.up)), crop.x + w)
-            let ys = max(Int((region.minY - 0.5).rounded(.up)), crop.y)..<min(Int((region.maxY - 0.5).rounded(.up)), crop.y + h)
+            let xs =
+                max(
+                    Int((region.minX - 0.5).rounded(.up)), crop.x)..<min(
+                    Int((region.maxX - 0.5).rounded(.up)), crop.x + w)
+            let ys =
+                max(
+                    Int((region.minY - 0.5).rounded(.up)), crop.y)..<min(
+                    Int((region.maxY - 0.5).rounded(.up)), crop.y + h)
             guard !xs.isEmpty, !ys.isEmpty else { continue }
             let (r, g, b) = palette[candidate.detection.classIndex % palette.count]
             for py in ys {
@@ -167,11 +178,14 @@ nonisolated extension YOLOModel {
             guard score >= confidence else { continue }
             let b = boxes.values[(q * 4)..<(q * 4 + 4)].map { $0 }
             let (cx, cy, bw, bh) = (b[0] * w, b[1] * h, b[2] * w, b[3] * h)
-            kept.append(Candidate(
-                detection: Detection(
-                    box: geometry.rect(cx: cx, cy: cy, w: bw, h: bh), confidence: score, classIndex: best - q * classes),
-                anchor: q,
-                inputBox: CGRect(x: CGFloat(cx - bw / 2), y: CGFloat(cy - bh / 2), width: CGFloat(bw), height: CGFloat(bh))))
+            kept.append(
+                Candidate(
+                    detection: Detection(
+                        box: geometry.rect(cx: cx, cy: cy, w: bw, h: bh), confidence: score,
+                        classIndex: best - q * classes),
+                    anchor: q,
+                    inputBox: CGRect(
+                        x: CGFloat(cx - bw / 2), y: CGFloat(cy - bh / 2), width: CGFloat(bw), height: CGFloat(bh))))
         }
         kept = Array(kept.sorted { $0.detection.confidence > $1.detection.confidence }.prefix(Self.maxDetections))
 
@@ -214,7 +228,9 @@ nonisolated extension YOLOModel {
         logits.values.withUnsafeBufferPointer { values in
             best.withUnsafeMutableBufferPointer { best in
                 pixels.withUnsafeMutableBufferPointer { pixels in
-                    let (top, pixel) = (UnsafeMutableRawPointer(best.baseAddress!), UnsafeMutableRawPointer(pixels.baseAddress!))
+                    let (top, pixel) = (
+                        UnsafeMutableRawPointer(best.baseAddress!), UnsafeMutableRawPointer(pixels.baseAddress!)
+                    )
                     for c in 0..<classes {
                         let row = values.baseAddress! + c * mh * mw + y0 * mw
                         let color = colors[c % colors.count]
@@ -222,11 +238,17 @@ nonisolated extension YOLOModel {
                             let logit = UnsafeRawPointer(row).loadUnaligned(fromByteOffset: o, as: SIMD16<Float>.self)
                             let current = top.loadUnaligned(fromByteOffset: o, as: SIMD16<Float>.self)
                             let higher = logit .> current
-                            top.storeBytes(of: current.replacing(with: logit, where: higher), toByteOffset: o, as: SIMD16<Float>.self)
+                            top.storeBytes(
+                                of: current.replacing(with: logit, where: higher), toByteOffset: o,
+                                as: SIMD16<Float>.self)
                             let shown = pixel.loadUnaligned(fromByteOffset: o, as: SIMD16<Int32>.self)
-                            pixel.storeBytes(of: shown.replacing(with: color, where: higher), toByteOffset: o, as: SIMD16<Int32>.self)
+                            pixel.storeBytes(
+                                of: shown.replacing(with: color, where: higher), toByteOffset: o, as: SIMD16<Int32>.self
+                            )
                         }
-                        for p in count / 16 * 16..<count where row[p] > best[p] { (best[p], pixels[p]) = (row[p], color) }
+                        for p in count / 16 * 16..<count where row[p] > best[p] {
+                            (best[p], pixels[p]) = (row[p], color)
+                        }
                     }
                 }
             }
@@ -235,7 +257,8 @@ nonisolated extension YOLOModel {
         rgba.withUnsafeMutableBytes { rgba in
             pixels.withUnsafeBytes { pixels in
                 for y in 0..<h {
-                    rgba.baseAddress!.advanced(by: y * w * 4).copyMemory(from: pixels.baseAddress! + (y * mw + x0) * 4, byteCount: w * 4)
+                    rgba.baseAddress!.advanced(by: y * w * 4).copyMemory(
+                        from: pixels.baseAddress! + (y * mw + x0) * 4, byteCount: w * 4)
                 }
             }
         }
@@ -251,7 +274,9 @@ nonisolated extension YOLOModel {
         // The model outputs distance (larger is farther); gradient step per pixel: 0 for the farthest, 255 for the nearest.
         let steps = DepthSteps(
             width: mw, height: mh,
-            values: vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values)).map { 255 - UInt8(min(max($0.rounded(), 0), 255)) })
+            values: vDSP.multiply(255 / (high - low), vDSP.add(-low, depth.values)).map {
+                255 - UInt8(min(max($0.rounded(), 0), 255))
+            })
         guard let image = steps.image(Palette.ultralyticsGradient) else { return nil }
         return (image, steps)
     }
@@ -270,15 +295,18 @@ public nonisolated func corners(of detection: Detection) -> [CGPoint] {
 
 private nonisolated func area(_ polygon: [CGPoint]) -> CGFloat {
     guard polygon.count > 2 else { return 0 }
-    return abs(polygon.indices.reduce(0) { sum, i in
-        let (a, b) = (polygon[i], polygon[(i + 1) % polygon.count])
-        return sum + a.x * b.y - b.x * a.y
-    }) / 2
+    return abs(
+        polygon.indices.reduce(0) { sum, i in
+            let (a, b) = (polygon[i], polygon[(i + 1) % polygon.count])
+            return sum + a.x * b.y - b.x * a.y
+        }) / 2
 }
 
 /// Sutherland–Hodgman clip of `subject` by the convex polygon `clipper`.
 private nonisolated func clip(_ subject: [CGPoint], by clipper: [CGPoint]) -> [CGPoint] {
-    func cross(_ a: CGPoint, _ b: CGPoint, _ p: CGPoint) -> CGFloat { (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) }
+    func cross(_ a: CGPoint, _ b: CGPoint, _ p: CGPoint) -> CGFloat {
+        (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
+    }
     let orientation: CGFloat = cross(clipper[0], clipper[1], clipper[2]) >= 0 ? 1 : -1
     var output = subject
     for i in clipper.indices where !output.isEmpty {

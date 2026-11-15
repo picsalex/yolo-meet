@@ -35,7 +35,8 @@ final class ObjectTitle: SKNode {
         let right = rect.maxX + 24 * u + width < frame.stage.viewSize.width - 24 * u
         for label in [title, subtitle] { label.set(\.horizontalAlignmentMode, right ? .left : .right) }
         // Kept on stage: with no room on either side, it moves in over the object's top.
-        let target = CGPoint(x: right ? rect.maxX + 24 * u : max(rect.minX - 24 * u, 24 * u + width), y: rect.maxY + 30 * u)
+        let target = CGPoint(
+            x: right ? rect.maxX + 24 * u : max(rect.minX - 24 * u, 24 * u + width), y: rect.maxY + 30 * u)
         place(at: target, visible: visible, frame: frame)
     }
 
@@ -59,7 +60,8 @@ final class ObjectTitle: SKNode {
     static func top(over x: CGFloat, width: CGFloat, frame: StageFrame) -> CGPoint {
         let (u, size) = (frame.stage.unit, frame.stage.viewSize)
         let half = width / 2 + 24 * u
-        return CGPoint(x: frame.cameraHidden ? size.width / 2 : min(max(x, half), size.width - half), y: size.height - 30 * u)
+        return CGPoint(
+            x: frame.cameraHidden ? size.width / 2 : min(max(x, half), size.width - half), y: size.height - 30 * u)
     }
 
     /// A title shown by something else at `point` (its top center, e.g. a label flown to the top of the stage): the
@@ -110,7 +112,10 @@ final class Callouts: SKNode {
     private let size: CGFloat
 
     /// `size`: the text's size at unit 1; `line`: the color of the lines and their dots.
-    init(_ texts: [String], font: String = "GeistMono-Medium", size: CGFloat = 16, line: NSColor = NSColor(white: 1, alpha: 0.6)) {
+    init(
+        _ texts: [String], font: String = "GeistMono-Medium", size: CGFloat = 16,
+        line: NSColor = NSColor(white: 1, alpha: 0.6)
+    ) {
         items = texts.map { text in
             let label = ShadowedLabel(text, font: font)
             label.label.verticalAlignmentMode = .center
@@ -131,12 +136,15 @@ final class Callouts: SKNode {
 
     /// The side a description goes on beside `rect` (true: left): its anchor's side (or `left`), or the other one when
     /// it wouldn't fit on stage there; nil when it fits on neither.
-    func side(of index: Int, anchor: CGPoint, around rect: CGRect, left forced: Bool? = nil, frame: StageFrame) -> Bool? {
+    func side(of index: Int, anchor: CGPoint, around rect: CGRect, left forced: Bool? = nil, frame: StageFrame) -> Bool?
+    {
         let u = frame.stage.unit
         items[index].label.set(\.fontSize, size * u)
         let (width, margin) = (items[index].label.frame.width, 16 * u)
         let fits = { (left: Bool) in
-            left ? rect.minX - 40 * u - width >= margin : rect.maxX + 40 * u + width <= frame.stage.viewSize.width - margin
+            left
+                ? rect.minX - 40 * u - width >= margin
+                : rect.maxX + 40 * u + width <= frame.stage.viewSize.width - margin
         }
         let preferred = forced ?? (anchor.x < rect.midX)
         return fits(preferred) ? preferred : fits(!preferred) ? !preferred : nil
@@ -154,7 +162,9 @@ final class Callouts: SKNode {
         alpha = alpha.approaching(visible ? 1 : 0, fade(frame))
         let margin = 16 * u  // kept from the stage's edges
         let onLeft = items.indices.map { i in
-            anchors[i].map { side(of: i, anchor: $0, around: rect, left: forced, frame: frame) ?? forced ?? ($0.x < rect.midX) }
+            anchors[i].map {
+                side(of: i, anchor: $0, around: rect, left: forced, frame: frame) ?? forced ?? ($0.x < rect.midX)
+            }
         }
         // Each side's labels from top to bottom, at their anchors' heights, at least `gap` apart, centered on them.
         var targets = [CGPoint?](repeating: nil, count: items.count)
@@ -164,7 +174,8 @@ final class Callouts: SKNode {
                 .sorted { anchors[$0]!.y > anchors[$1]!.y }
             var ys: [CGFloat] = []
             for i in side { ys.append(min(anchors[i]!.y, (ys.last ?? .infinity) - gap)) }
-            let shift = side.isEmpty ? 0 : (side.map { anchors[$0]!.y }.reduce(0, +) - ys.reduce(0, +)) / CGFloat(side.count)
+            let shift =
+                side.isEmpty ? 0 : (side.map { anchors[$0]!.y }.reduce(0, +) - ys.reduce(0, +)) / CGFloat(side.count)
             let x = left ? rect.minX - 40 * u : rect.maxX + 40 * u
             for (i, y) in zip(side, ys) { targets[i] = CGPoint(x: x, y: y + shift) }
         }
@@ -180,7 +191,8 @@ final class Callouts: SKNode {
             let width = item.label.frame.width
             let x = left ? max(target.x, margin + width) : min(target.x, frame.stage.viewSize.width - margin - width)
             // Fading in, a label starts right at its place rather than sliding there from where it last was.
-            let shown = appearing || item.text.isHidden
+            let shown =
+                appearing || item.text.isHidden
                 ? CGPoint(x: x, y: target.y)
                 : items[i].shown?.approaching(CGPoint(x: x, y: target.y), frame.smoothing) ?? CGPoint(x: x, y: target.y)
             items[i].shown = shown

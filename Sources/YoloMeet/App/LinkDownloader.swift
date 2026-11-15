@@ -20,7 +20,8 @@ final class LinkDownloader {
 
     /// Downloads `link` into `folder` and returns the file.
     func download(_ link: String, into folder: URL) async throws -> URL {
-        guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)), url.scheme?.hasPrefix("http") == true
+        guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+            url.scheme?.hasPrefix("http") == true
         else { throw LinkError.failed("Not a link: \(link)") }
         progress = .some(nil)
         cancelled = false
@@ -28,13 +29,17 @@ final class LinkDownloader {
         try await installTool()
         if cancelled { throw CancellationError() }
         status = "Downloading…"
-        let output = try await run(tool, [
-            "--newline", "--progress", "--no-playlist", "--no-mtime",  // --print alone silences progress
-            "-f", "bv*[ext=mp4][vcodec^=avc1][height<=1080]/b[ext=mp4][height<=1080]/b[ext=mp4]",
-            "-o", folder.appending(path: "%(title).80s.%(ext)s").path,
-            "--print", "after_move:filepath", url.absoluteString,
-        ])
-        guard let path = output.last(where: { $0.hasPrefix("/") }) else { throw LinkError.failed("yt-dlp saved no file") }
+        let output = try await run(
+            tool,
+            [
+                "--newline", "--progress", "--no-playlist", "--no-mtime",  // --print alone silences progress
+                "-f", "bv*[ext=mp4][vcodec^=avc1][height<=1080]/b[ext=mp4][height<=1080]/b[ext=mp4]",
+                "-o", folder.appending(path: "%(title).80s.%(ext)s").path,
+                "--print", "after_move:filepath", url.absoluteString,
+            ])
+        guard let path = output.last(where: { $0.hasPrefix("/") }) else {
+            throw LinkError.failed("yt-dlp saved no file")
+        }
         return URL(filePath: path)
     }
 
@@ -43,7 +48,9 @@ final class LinkDownloader {
         cancelled = true
         process?.terminate()
         let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
-        for file in files where ["part", "ytdl"].contains(file.pathExtension) { try? FileManager.default.removeItem(at: file) }
+        for file in files where ["part", "ytdl"].contains(file.pathExtension) {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     private func installTool() async throws {
@@ -55,7 +62,8 @@ final class LinkDownloader {
         async let sums = URLSession.shared.data(from: URL(string: "\(Self.release)/SHA2-256SUMS")!)
         let (file, _) = try await binary
         let listing = String(decoding: try await sums.0, as: UTF8.self)
-        let expected = listing.split(separator: "\n").first { $0.hasSuffix(" yt-dlp_macos") }?.split(separator: " ").first
+        let expected = listing.split(separator: "\n").first { $0.hasSuffix(" yt-dlp_macos") }?.split(separator: " ")
+            .first
         let actual = SHA256.hash(data: try Data(contentsOf: file)).map { String(format: "%02x", $0) }.joined()
         guard let expected, expected == actual else { throw LinkError.failed("yt-dlp download failed its checksum") }
         _ = try FileManager.default.replaceItemAt(tool, withItemAt: file)
@@ -72,7 +80,9 @@ final class LinkDownloader {
         let lines = Lines()
         out.fileHandleForReading.readabilityHandler = { [weak self] handle in
             for line in lines.append(handle.availableData) {
-                guard let match = line.firstMatch(of: /\[download\]\s+([\d.]+)%/), let value = Double(match.1) else { continue }
+                guard let match = line.firstMatch(of: /\[download\]\s+([\d.]+)%/), let value = Double(match.1) else {
+                    continue
+                }
                 Task { @MainActor in self?.progress = .some(value / 100) }
             }
         }

@@ -31,7 +31,9 @@ nonisolated enum Brain {
     }
     private static let lobes = hemispheres.flatMap { $0 }
     private static let cerebellum = Ellipsoid(center: [-0.48, -0.38, 0], radii: [0.36, 0.21, 0.5])
-    private static let stem: (top: SIMD3<Float>, bottom: SIMD3<Float>, radius: Float) = ([-0.25, -0.28, 0], [-0.4, -0.72, 0], 0.09)
+    private static let stem: (top: SIMD3<Float>, bottom: SIMD3<Float>, radius: Float) = (
+        [-0.25, -0.28, 0], [-0.4, -0.72, 0], 0.09
+    )
 
     /// The brain's surface as a particle shape (it doesn't explode).
     static func shape(_ count: Int) -> ParticleShape {
@@ -46,9 +48,15 @@ nonisolated enum Brain {
                 // the surface is sampled once), its points crowding along winding lines (where a smooth wave pattern
                 // crosses zero): the folds of the cortex.
                 var a = Float.random(in: 0..<lobeArea)
-                let lobe = lobes.first { a -= $0.area; return a < 0 } ?? lobes[0]
+                let lobe =
+                    lobes.first {
+                        a -= $0.area
+                        return a < 0
+                    } ?? lobes[0]
                 let p = onCerebrum(lobe.point(d))
-                let g = sin(6 * p.x + 2 * sin(5 * p.z) + 2.5 * sin(4 * p.y)) + 0.8 * sin(6 * p.y + 2.5 * sin(5 * p.x) + 2 * sin(6 * p.z))
+                let g =
+                    sin(6 * p.x + 2 * sin(5 * p.z) + 2.5 * sin(4 * p.y)) + 0.8
+                    * sin(6 * p.y + 2.5 * sin(5 * p.x) + 2 * sin(6 * p.z))
                 guard Float.random(in: 0...1) < 0.05 + 0.95 * exp(-g * g / 0.06), abs(cerebrum(p)) < 0.01,
                     lobes.min(by: { $0.distance(p) < $1.distance(p) })!.center == lobe.center, !cerebellum.contains(p)
                 else { continue }
@@ -61,7 +69,8 @@ nonisolated enum Brain {
                 points.append(p)
             } else {
                 // The stem: a tube down from under the hemispheres, in front of the cerebellum.
-                let t = Float.random(in: 0...1), angle = Float.random(in: 0...(2 * .pi))
+                let t = Float.random(in: 0...1)
+                let angle = Float.random(in: 0...(2 * .pi))
                 let p = stem.top + (stem.bottom - stem.top) * t + stem.radius * SIMD3(cos(angle), 0, sin(angle))
                 guard cerebrum(p) > 0, !cerebellum.contains(p) else { continue }
                 points.append(p)

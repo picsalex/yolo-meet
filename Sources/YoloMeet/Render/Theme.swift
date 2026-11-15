@@ -37,7 +37,8 @@ struct Theme {
         joint: .hex("E1FF25"), jointOutline: .hex("111F68"), labelSize: 20, decimalConfidence: true)
 
     static let roboflow = Theme(
-        classes: Palette.roboflow.map { NSColor($0) }, labelFont: "GeistMono-Medium", lineWidth: 2, darkText: .hex("161026"),
+        classes: Palette.roboflow.map { NSColor($0) }, labelFont: "GeistMono-Medium", lineWidth: 2,
+        darkText: .hex("161026"),
         leftLimb: .hex("C29AF6"), rightLimb: .hex("8033EB"), centerLimb: .hex("E8DAF7"),
         joint: .hex("F4F2EC"), jointOutline: .hex("161026"))
 

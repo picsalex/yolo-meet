@@ -8,7 +8,9 @@ import Testing
 /// `YOLO_MEET_IMAGE` to Ultralytics' `bus.jpg` (4 people and a bus).
 @Suite struct YOLOModelTests {
     static let models = ProcessInfo.processInfo.environment["YOLO_MEET_MODELS"].map { URL(filePath: $0) }
-    static let image = ProcessInfo.processInfo.environment["YOLO_MEET_IMAGE"].flatMap { CIImage(contentsOf: URL(filePath: $0)) }
+    static let image = ProcessInfo.processInfo.environment["YOLO_MEET_IMAGE"].flatMap {
+        CIImage(contentsOf: URL(filePath: $0))
+    }
     static let enabled = models != nil && image != nil
 
     func predict(_ id: String) async throws -> ModelOutput {
@@ -47,7 +49,8 @@ import Testing
         #expect(output.topClasses[0].confidence > 0.1)
     }
 
-    @Test(.enabled(if: enabled), arguments: ["yolo26n-obb", "yolo11n-obb", "yolov8n-obb", "yolo26n-sem", "yolo26n-depth"])
+    @Test(
+        .enabled(if: enabled), arguments: ["yolo26n-obb", "yolo11n-obb", "yolov8n-obb", "yolo26n-sem", "yolo26n-depth"])
     func runs(_ id: String) async throws {
         let output = try await predict(id)
         #expect(output.latency > 0)
@@ -116,14 +119,17 @@ import Testing
         #expect(CustomModels(directory: directory).models[0].name == "My detector")
         custom.delete(id)
         #expect(custom.models.count == 1)
-        await #expect(throws: CustomModelError.self) { try await custom.importModel(from: URL(filePath: "/tmp/best.pt")) }
+        await #expect(throws: CustomModelError.self) {
+            try await custom.importModel(from: URL(filePath: "/tmp/best.pt"))
+        }
     }
 
     /// Converts a `.pt` with an existing Python environment (`YOLO_MEET_PYTHON`, `YOLO_MEET_WEIGHTS`), then imports it.
     @Test(.enabled(if: enabled && ProcessInfo.processInfo.environment["YOLO_MEET_PYTHON"] != nil))
     @MainActor func convertPyTorch() async throws {
         let environment = ProcessInfo.processInfo.environment
-        let script = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../../scripts/export_models.py")
+        let script = URL(filePath: #filePath).deletingLastPathComponent().appending(
+            path: "../../scripts/export_models.py")
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let converter = PTConverter(
@@ -160,8 +166,11 @@ import Testing
     /// The stage shows the newest frame with results carried forward to its capture time.
     @Test func predicted() {
         func output(at time: Double, x: CGFloat) -> ModelOutput {
-            var output = ModelOutput(modelID: "m", task: .pose, names: [], info: ModelInfo(
-                family: "YOLO", architecture: nil, parameters: nil, gflops: nil, isDynamic: true, precision: "FP16", bytes: 0),
+            var output = ModelOutput(
+                modelID: "m", task: .pose, names: [],
+                info: ModelInfo(
+                    family: "YOLO", architecture: nil, parameters: nil, gflops: nil, isDynamic: true, precision: "FP16",
+                    bytes: 0),
                 frameSize: CGSize(width: 100, height: 100))
             output.time = time
             var detection = Detection(box: CGRect(x: x, y: 0, width: 10, height: 10), confidence: 0.9, classIndex: 0)

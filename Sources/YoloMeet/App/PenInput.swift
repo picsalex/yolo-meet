@@ -78,7 +78,9 @@ final class PenInput {
     /// The pad changed the ink's settings. What it asks is kept to what the panel could set, and it only hears back
     /// when that differs: its own controls are ahead of an answer while they move.
     private func apply(_ wanted: InkSettings) {
-        func kept(_ value: Double, in range: ClosedRange<Double>) -> Double { min(max(value.rounded(), range.lowerBound), range.upperBound) }
+        func kept(_ value: Double, in range: ClosedRange<Double>) -> Double {
+            min(max(value.rounded(), range.lowerBound), range.upperBound)
+        }
         isApplying = true
         if Drawing.colors.contains(where: { $0.1 == wanted.color }) { drawing.color = wanted.color }
         drawing.width = kept(wanted.width, in: InkSettings.widths)
@@ -100,7 +102,8 @@ final class PenInput {
         case .hoverEnded: drawing.hover(at: nil)
         case .down(let id, let x, let y, let force):
             drawing.pressed(at: point(x, y), press: PenLink.press(force: force), from: .pen, id: id)
-        case .move(let x, let y, let force): drawing.moved(to: point(x, y), press: PenLink.press(force: force), from: .pen)
+        case .move(let x, let y, let force):
+            drawing.moved(to: point(x, y), press: PenLink.press(force: force), from: .pen)
         case .up: drawing.released(.pen, time: CACurrentMediaTime())
         case .undo: drawing.undo()
         case .clear: drawing.clear()

@@ -1,6 +1,6 @@
 import SpriteKit
-import simd
 import YoloMeetCore
+import simd
 
 /// What YOLO outputs for each of its tasks, shown on the cat picture: the particles become one large picture (the
 /// results), recolored per task (a mask, class colors, depth), and `TaskOutputEffect` draws the rest in 2D over it
@@ -37,7 +37,8 @@ extension NetworkLayout {
         let cellOf = pictureCells(of: from, corners: corners, cells: cells).cellOf
         let colors = catDrawing(cells)
         let points = cellOf.map { c -> SIMD3<Float> in
-            let x = (Float(c % cells) + .random(in: 0..<1)) / Float(cells), y = (Float(c / cells) + .random(in: 0..<1)) / Float(cells)
+            let x = (Float(c % cells) + .random(in: 0..<1)) / Float(cells)
+            let y = (Float(c / cells) + .random(in: 0..<1)) / Float(cells)
             return [(x - 0.5) * resultSide, (0.5 - y) * resultSide, .random(in: -0.004...0.004)]
         }
         layout.shape = ParticleShape(
@@ -55,7 +56,8 @@ extension NetworkLayout {
         _ results: NetworkLayout, _ title: String, _ subtitle: String, tilt: Float = 0, turn: Float = 0,
         color: ((Int, SIMD3<Float>) -> SIMD3<Float>)? = nil, depth: ((Int) -> Float)? = nil
     ) -> NetworkLayout {
-        let layout = NetworkLayout(title: title, subtitle: subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: tilt)
+        let layout = NetworkLayout(
+            title: title, subtitle: subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: tilt)
         (layout.base, layout.restingTurn, layout.outline) = (results, turn, results.outline)
         guard var shape = results.settled else { return layout }
         for i in shape.points.indices {
@@ -88,7 +90,9 @@ extension NetworkLayout {
         return (0..<n * n).map { cell in
             let cx = w.minX + (CGFloat(cell % n) + 0.5) / CGFloat(n) * w.width
             let cy = w.maxY - (CGFloat(cell / n) + 0.5) / CGFloat(n) * w.height
-            let (x, y) = (min(Int(cx / 100 * CGFloat(big)), big - 1), min(Int((100 - cy) / 100 * CGFloat(big)), big - 1))
+            let (x, y) = (
+                min(Int(cx / 100 * CGFloat(big)), big - 1), min(Int((100 - cy) / 100 * CGFloat(big)), big - 1)
+            )
             return TaskOutputEffect.semanticClass(classes[y * big + x])
         }
     }()
@@ -124,19 +128,22 @@ extension NetworkLayout {
         let fill: Float = 0.9
         // A point of pixel `c` at (fx, fy) in its square (0...1 each, from its top left), toward the viewer by `z`.
         let place = { (c: Int, fx: Float, fy: Float, z: Float) -> SIMD3<Float> in
-            let x = (Float(c % cells) + 0.5 + (fx - 0.5) * fill) / Float(cells), y = (Float(c / cells) + 0.5 + (fy - 0.5) * fill) / Float(cells)
+            let x = (Float(c % cells) + 0.5 + (fx - 0.5) * fill) / Float(cells)
+            let y = (Float(c / cells) + 0.5 + (fy - 0.5) * fill) / Float(cells)
             return [(x - 0.5) * side, (0.5 - y) * side, z + .random(in: -0.004...0.004)]
         }
         var points = previous.points
         for (c, ids) in members.enumerated() where !ids.isEmpty {
             // On an even grid of their own, top to bottom in rows, each row left to right: as they sit.
-            let slots = Int(Float(ids.count).squareRoot().rounded(.up)), rows = (ids.count + slots - 1) / slots
+            let slots = Int(Float(ids.count).squareRoot().rounded(.up))
+            let rows = (ids.count + slots - 1) / slots
             let byHeight = ids.sorted { previous.points[$0].y > previous.points[$1].y }
             let sorted = stride(from: 0, to: byHeight.count, by: slots).flatMap {
                 byHeight[$0..<min($0 + slots, byHeight.count)].sorted { previous.points[$0].x < previous.points[$1].x }
             }
             for (k, i) in sorted.enumerated() {
-                points[i] = place(c, (Float(k % slots) + 0.5) / Float(slots), (Float(k / slots) + 0.5) / Float(rows), 0.01)
+                points[i] = place(
+                    c, (Float(k % slots) + 0.5) / Float(slots), (Float(k / slots) + 0.5) / Float(rows), 0.01)
             }
         }
         // The rest: into the pixel of the grid (as large as the picture) they're over once the picture closes the
@@ -149,11 +156,16 @@ extension NetworkLayout {
             let d = SIMD2(previous.points[i].x - center.x, previous.points[i].y - center.y)
             let r = max(abs(d.x), abs(d.y))  // square rings: the window's edge is one
             let u = d / max(r, 1e-6)
-            let reach = [u.x > 0 ? (edge - center.x) / u.x : u.x < 0 ? (-edge - center.x) / u.x : .infinity,
-                         u.y > 0 ? (edge - center.y) / u.y : u.y < 0 ? (-edge - center.y) / u.y : .infinity].min()!
+            let reach = [
+                u.x > 0 ? (edge - center.x) / u.x : u.x < 0 ? (-edge - center.x) / u.x : .infinity,
+                u.y > 0 ? (edge - center.y) / u.y : u.y < 0 ? (-edge - center.y) / u.y : .infinity,
+            ].min()!
             let closed = reach * ((r * r - hole * hole) / max(reach * reach - hole * hole, 1e-6)).squareRoot()
             let q = SIMD2(center.x, center.y) + u * min(max(closed, 0), reach)
-            let (fx, fy) = (min(max(q.x / side + 0.5, 0), 0.9999) * Float(cells), min(max(0.5 - q.y / side, 0), 0.9999) * Float(cells))
+            let (fx, fy) = (
+                min(max(q.x / side + 0.5, 0), 0.9999) * Float(cells),
+                min(max(0.5 - q.y / side, 0), 0.9999) * Float(cells)
+            )
             cellOf[i] = Int(fy) * cells + Int(fx)
             points[i] = place(cellOf[i], fx - fx.rounded(.down), fy - fy.rounded(.down), 0)
         }
@@ -175,11 +187,13 @@ extension NetworkLayout {
         let n = resultCells
         let classes = catClasses(n)
         let cat = TaskOutputEffect.catColor.rgb * resultBrightness
-        let segment = task(results, "Instance segmentation", "a mask per object · its outline as a polygon") { cell, color in
+        let segment = task(results, "Instance segmentation", "a mask per object · its outline as a polygon") {
+            cell, color in
             classes[cell] == Scene.cat.rawValue ? color + (cat - color) * 0.6 : color
         }
         await pause()
-        let semantic = task(results, "Semantic segmentation", "a class for every pixel · no separate objects") { cell, _ in
+        let semantic = task(results, "Semantic segmentation", "a class for every pixel · no separate objects") {
+            cell, _ in
             TaskOutputEffect.semanticClasses[TaskOutputEffect.semanticClass(classes[cell])].color.rgb * resultBrightness
         }
         await pause()
@@ -220,8 +234,10 @@ struct TaskLayouts {
     let detect, segment, semantic, semanticZoom, classify, pose, obb, depth: NetworkLayout
     /// The seven tasks, with their names.
     var all: [(name: String, layout: NetworkLayout)] {
-        [("Detect", detect), ("Segment", segment), ("Semantic", semantic), ("Classify", classify), ("Pose", pose),
-         ("OBB", obb), ("Depth", depth)]
+        [
+            ("Detect", detect), ("Segment", segment), ("Semantic", semantic), ("Classify", classify), ("Pose", pose),
+            ("OBB", obb), ("Depth", depth),
+        ]
     }
 }
 
@@ -244,21 +260,27 @@ extension NetworkLayout {
             title: "Conclusion", subtitle: "one image in · one YOLO model · 7 tasks out",
             neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
         layout.splits = true
-        let picture = recapPicture, model = recapModel, side = recapThumbSide
+        let picture = recapPicture
+        let model = recapModel
+        let side = recapThumbSide
         // The model's extent, shrunk, for the arrows.
         let ys = architecture.outline.map { $0.y * model.scale + model.center.y }
         let (modelTop, modelBottom) = (ys.max()!, ys.min()!)
         let modelRight = architecture.outline.map { $0.x * model.scale + model.center.x }.max()!
         let pictureBottom = picture.center.y - picture.side / 2
-        layout.arrows = [("", [0, pictureBottom - 0.05, 0], [0, modelTop + 0.06, 0])]
+        layout.arrows =
+            [("", [0, pictureBottom - 0.05, 0], [0, modelTop + 0.06, 0])]
             + (0..<7).map { k in ("", [0, modelBottom - 0.05, 0], recapThumb(k) + [0, side / 2 + 0.05, 0]) }
-        layout.headers = tasks.all.enumerated().map { k, task in (task.name, recapThumb(k) - [0, side / 2 + 0.05, 0], []) }
+        layout.headers =
+            tasks.all.enumerated().map { k, task in (task.name, recapThumb(k) - [0, side / 2 + 0.05, 0], []) }
             // Beside the model, centered on it (headers hang from their point, so a little above the middle).
             + [("YOLO", [modelRight + 0.3, (modelTop + modelBottom) / 2 + 0.03, model.center.z], [])]
         layout.brace = (modelRight + 0.05, modelTop + 0.02, modelBottom - 0.02, model.center.z)
         layout.headerSize = 19
-        layout.outline = [picture.center + [picture.side / 2, picture.side / 2, 0], recapThumb(0) - [side / 2, side / 2 + 0.15, 0],
-                          recapThumb(6) + [side / 2, -side / 2 - 0.15, 0], picture.center - [picture.side / 2, -picture.side / 2, 0]]
+        layout.outline = [
+            picture.center + [picture.side / 2, picture.side / 2, 0], recapThumb(0) - [side / 2, side / 2 + 0.15, 0],
+            recapThumb(6) + [side / 2, -side / 2 - 0.15, 0], picture.center - [picture.side / 2, -picture.side / 2, 0],
+        ]
         guard let from = tasks.depth.settled, let blocks = architecture.shape else { return layout }
         let n = from.points.count
         // Light adds up: denser copies get dimmer colors, so they look as bright as the large picture.
@@ -276,14 +298,18 @@ extension NetworkLayout {
             q.z = .random(in: -0.002...0.002)
             return picture.center + q
         }
-        let prelude = NetworkLayout(title: layout.title, subtitle: layout.subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
+        let prelude = NetworkLayout(
+            title: layout.title, subtitle: layout.subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
         (prelude.splits, prelude.splitsFrom, prelude.outline) = (true, tasks.depth, layout.outline)
-        let inputColors = (tasks.detect.settled ?? tasks.detect.shape)?.colors.map { $0.map { $0 * dim(n, picture.side) * 1.3 } }
+        let inputColors = (tasks.detect.settled ?? tasks.detect.shape)?.colors.map {
+            $0.map { $0 * dim(n, picture.side) * 1.3 }
+        }
         prelude.shape = ParticleShape(
             points: from.points, offsets: zip(input, from.points).map { $0 - $1 }, parts: [],
             colors: inputColors ?? Array(repeating: nil, count: n))
         (layout.prelude, layout.splitsFrom) = (prelude, prelude)
-        var points = input, colors = [SIMD3<Float>?](repeating: nil, count: n)
+        var points = input
+        var colors = [SIMD3<Float>?](repeating: nil, count: n)
         for (copy, source) in sources.enumerated() {
             guard let shape = source.settled ?? source.shape else { continue }
             let scale = sides[copy] / resultSide
@@ -338,8 +364,10 @@ final class TaskOutputEffect: Effect {
     ]
     /// The cat's keypoints on the canvas and the limbs joining them.
     static let keypoints: [CGPoint] = [
-        CGPoint(x: 24, y: 88), CGPoint(x: 76, y: 88), CGPoint(x: 38, y: 65), CGPoint(x: 62, y: 65),  // ear tips, ear bases
-        CGPoint(x: 39, y: 48.5), CGPoint(x: 61, y: 48.5), CGPoint(x: 50, y: 33), CGPoint(x: 50, y: 15),  // eyes, nose, chin
+        // ear tips, ear bases
+        CGPoint(x: 24, y: 88), CGPoint(x: 76, y: 88), CGPoint(x: 38, y: 65), CGPoint(x: 62, y: 65),
+        // eyes, nose, chin
+        CGPoint(x: 39, y: 48.5), CGPoint(x: 61, y: 48.5), CGPoint(x: 50, y: 33), CGPoint(x: 50, y: 15),
     ]
     static let limbs = [(0, 2), (1, 3), (2, 3), (2, 4), (3, 5), (4, 6), (5, 6), (6, 7)]
 
@@ -367,7 +395,8 @@ final class TaskOutputEffect: Effect {
 
     /// A canvas point turned by `tilt` around the cat's center.
     static func turned(_ p: CGPoint, by a: CGFloat) -> CGPoint {
-        let c = NetworkLayout.catCenter, (dx, dy) = (p.x - c.x, p.y - c.y)
+        let c = NetworkLayout.catCenter
+        let (dx, dy) = (p.x - c.x, p.y - c.y)
         return CGPoint(x: c.x + dx * cos(a) - dy * sin(a), y: c.y + dx * sin(a) + dy * cos(a))
     }
 
@@ -401,13 +430,14 @@ final class TaskOutputEffect: Effect {
         node.addChild(content)
         content.alpha = 0
         for child in [shape, dots, gradient, box, oriented] as [SKNode] { content.addChild(child) }
-        let names: [String] = switch output {
-        case .semantic: Self.semanticClasses.map(\.name)
-        case .pixelClasses: Self.semanticClasses.enumerated().map { "\($0.offset)  \($0.element.name)" }
-        case .classes: Self.topClasses.map { "\($0.name) \(Int($0.confidence * 100))%" }
-        case .depth: ["near", "far"]
-        default: []
-        }
+        let names: [String] =
+            switch output {
+            case .semantic: Self.semanticClasses.map(\.name)
+            case .pixelClasses: Self.semanticClasses.enumerated().map { "\($0.offset)  \($0.element.name)" }
+            case .classes: Self.topClasses.map { "\($0.name) \(Int($0.confidence * 100))%" }
+            case .depth: ["near", "far"]
+            default: []
+            }
         for name in names {
             let text = ShadowedLabel(name, font: output == .classes ? Theme.ultralytics.labelFont : "GeistMono-Medium")
             (text.label.verticalAlignmentMode, text.label.horizontalAlignmentMode) = (.center, .left)
@@ -433,7 +463,9 @@ final class TaskOutputEffect: Effect {
         if output == .pixelClasses {
             for cell in NetworkLayout.zoomClasses {
                 let id = SKLabelNode(fontNamed: "GeistMono-Medium")
-                (id.text, id.verticalAlignmentMode, id.horizontalAlignmentMode, id.alpha) = ("\(cell)", .center, .center, 0)
+                (id.text, id.verticalAlignmentMode, id.horizontalAlignmentMode, id.alpha) = (
+                    "\(cell)", .center, .center, 0
+                )
                 ids.append(id)
                 content.addChild(id)
             }
@@ -454,7 +486,8 @@ final class TaskOutputEffect: Effect {
         let system = network.system
         if start == nil { start = frame.time }
         // Once the picture has formed (and arrived, gliding), not while it's scattered.
-        let ready = network.formed === layout && system.mode == .form && frame.time - start! > 0.9
+        let ready =
+            network.formed === layout && system.mode == .form && frame.time - start! > 0.9
             && (!layout.splits || network.split >= 1)
         // Its own fade, on a node of its own: the stage fades `node` in as the step starts.
         content.alpha = content.alpha.approaching(ready ? 1 : 0, CGFloat(1 - exp(-frame.dt * (ready ? 4 : 14))))
@@ -463,8 +496,11 @@ final class TaskOutputEffect: Effect {
         guard !content.isHidden else { return }
         if output == .pixelClasses { return pixelClasses(frame) }
         let stage = { (c: CGPoint) in system.shownPoint(NetworkLayout.resultPoint(c)).point }
-        let picture = CGRect(enclosing: [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 100)].map(stage))
-        let catBox = CGRect(enclosing: [Self.catBox.origin, CGPoint(x: Self.catBox.maxX, y: Self.catBox.maxY)].map(stage))
+        let picture = CGRect(
+            enclosing: [CGPoint(x: 0, y: 0), CGPoint(x: 100, y: 0), CGPoint(x: 0, y: 100), CGPoint(x: 100, y: 100)].map(
+                stage))
+        let catBox = CGRect(
+            enclosing: [Self.catBox.origin, CGPoint(x: Self.catBox.maxX, y: Self.catBox.maxY)].map(stage))
         let color = Theme.ultralyticsYellow
         shape.set(\.lineWidth, (output == .mask ? 2 : output == .keypoints ? 3 : 2.5) * u)
 
@@ -494,7 +530,9 @@ final class TaskOutputEffect: Effect {
             dots.set(\.lineWidth, 1.5 * u)
         case .oriented:
             let corners = Self.catBoxCorners(tilt: Self.tilt).map(stage)
-            oriented.update(to: corners, text: Theme.ultralytics.label("cat", 0.92), color: color, theme: .ultralytics, unit: u, k: 1)
+            oriented.update(
+                to: corners, text: Theme.ultralytics.label("cat", 0.92), color: color, theme: .ultralytics, unit: u,
+                k: 1)
         case .semantic, .classes, .depth:
             column(beside: picture, frame: frame)
         case .pixelClasses:
@@ -524,7 +562,8 @@ final class TaskOutputEffect: Effect {
         scan.isHidden = current >= ids.count
         if !scan.isHidden {
             let c = system.shownPoint(NetworkLayout.zoomPoint(current % n, current / n)).point
-            scan.path = CGPath(rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
+            scan.path = CGPath(
+                rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
         }
 
         // The pointed pixel: the fingertip's place in the grid (the picture faces the viewer, so a plane's corners do).
@@ -548,7 +587,8 @@ final class TaskOutputEffect: Effect {
         pointedChip.isHidden = hit == nil
         guard let hit else { return }
         let c = system.shownPoint(NetworkLayout.zoomPoint(hit % n, hit / n)).point
-        pointed.path = CGPath(rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
+        pointed.path = CGPath(
+            rect: CGRect(x: c.x - pitch / 2, y: c.y - pitch / 2, width: pitch, height: pitch), transform: nil)
         pointed.lineWidth = 3 * u
         let name = Self.semanticClasses[NetworkLayout.zoomClasses[hit]].name
         pointedInfo.label.set(\.text, "pixel (\(hit % n), \(hit / n)) → \(NetworkLayout.zoomClasses[hit]) \(name)")
@@ -559,27 +599,35 @@ final class TaskOutputEffect: Effect {
         pointedInfo.sync(unit: u)
         let size = pointedInfo.label.frame.size
         pointedChip.path = CGPath(
-            roundedRect: CGRect(x: c.x + pitch / 2 + 6 * u, y: c.y - size.height / 2 - pad / 2, width: size.width + 2 * pad, height: size.height + pad),
+            roundedRect: CGRect(
+                x: c.x + pitch / 2 + 6 * u, y: c.y - size.height / 2 - pad / 2, width: size.width + 2 * pad,
+                height: size.height + pad),
             cornerWidth: 5 * u, cornerHeight: 5 * u, transform: nil)
     }
 
     /// The cat box's corners on the canvas (0...100), turned by `tilt` around the cat's center
     /// (`NetworkLayout.catCenter`, as the tilted cat is drawn).
     static func catBoxCorners(tilt: CGFloat = 0) -> [CGPoint] {
-        [catBox.origin, CGPoint(x: catBox.maxX, y: catBox.minY), CGPoint(x: catBox.maxX, y: catBox.maxY), CGPoint(x: catBox.minX, y: catBox.maxY)]
-            .map { tilt == 0 ? $0 : turned($0, by: tilt) }
+        [
+            catBox.origin, CGPoint(x: catBox.maxX, y: catBox.minY), CGPoint(x: catBox.maxX, y: catBox.maxY),
+            CGPoint(x: catBox.minX, y: catBox.maxY),
+        ]
+        .map { tilt == 0 ? $0 : turned($0, by: tilt) }
     }
 
     /// The cat's pose skeleton, its canvas points placed by `place`: the limbs as lines, the joints as discs of radius
     /// `joint`. Shared by the pose step and the recap, so they draw the same cat.
     static func skeleton(_ place: (CGPoint) -> CGPoint, joint: CGFloat) -> (limbs: CGPath, joints: CGPath) {
         let points = keypoints.map(place)
-        let limbs = CGMutablePath(), joints = CGMutablePath()
+        let limbs = CGMutablePath()
+        let joints = CGMutablePath()
         for (a, b) in self.limbs {
             limbs.move(to: points[a])
             limbs.addLine(to: points[b])
         }
-        for p in points { joints.addEllipse(in: CGRect(x: p.x - joint, y: p.y - joint, width: 2 * joint, height: 2 * joint)) }
+        for p in points {
+            joints.addEllipse(in: CGRect(x: p.x - joint, y: p.y - joint, width: 2 * joint, height: 2 * joint))
+        }
         return (limbs, joints)
     }
 
@@ -612,13 +660,17 @@ final class TaskOutputEffect: Effect {
                 if output == .classes {
                     // A bar per class, as long as its confidence (out of 180 points), the name after it.
                     let length = max(Self.topClasses[k].confidence * 180 * u, 4 * u)
-                    bar.path = CGPath(roundedRect: CGRect(x: x, y: y - 11 * u, width: length, height: 22 * u), cornerWidth: 5 * u, cornerHeight: 5 * u, transform: nil)
+                    bar.path = CGPath(
+                        roundedRect: CGRect(x: x, y: y - 11 * u, width: length, height: 22 * u), cornerWidth: 5 * u,
+                        cornerHeight: 5 * u, transform: nil)
                     bar.fillColor = Self.catColor.withAlphaComponent(k == 0 ? 0.95 : 0.6)
                     text.label.set(\.fontSize, 16 * u)
                     text.position = CGPoint(x: x + length + 8 * u, y: y)
                 } else {
                     // A swatch per class, its name beside it.
-                    bar.path = CGPath(roundedRect: CGRect(x: x, y: y - 10 * u, width: 20 * u, height: 20 * u), cornerWidth: 4 * u, cornerHeight: 4 * u, transform: nil)
+                    bar.path = CGPath(
+                        roundedRect: CGRect(x: x, y: y - 10 * u, width: 20 * u, height: 20 * u), cornerWidth: 4 * u,
+                        cornerHeight: 4 * u, transform: nil)
                     bar.fillColor = Self.semanticClasses[k].color
                     text.label.set(\.fontSize, 16 * u)
                     text.position = CGPoint(x: x + 30 * u, y: y)
@@ -675,7 +727,9 @@ final class RecapEffect: Effect {
         // A point of the cat picture's canvas in output `k`'s small picture, on stage.
         let side = NetworkLayout.recapThumbSide
         let at = { (k: Int, c: CGPoint) -> CGPoint in
-            system.shownPoint(NetworkLayout.recapThumb(k) + [(Float(c.x) / 100 - 0.5) * side, (Float(c.y) / 100 - 0.5) * side, 0]).point
+            system.shownPoint(
+                NetworkLayout.recapThumb(k) + [(Float(c.x) / 100 - 0.5) * side, (Float(c.y) / 100 - 0.5) * side, 0]
+            ).point
         }
         // The detect box, and the OBB step's turned one.
         let paths = CGMutablePath()
@@ -690,9 +744,11 @@ final class RecapEffect: Effect {
 
         // A "}" spanning the model, its tip toward "YOLO".
         if let b = layout.brace {
-            let top = system.shownPoint([b.x, b.top, b.z]).point, bottom = system.shownPoint([b.x, b.bottom, b.z]).point
+            let top = system.shownPoint([b.x, b.top, b.z]).point
+            let bottom = system.shownPoint([b.x, b.bottom, b.z]).point
             let (w, mid) = (0.07 * (top.y - bottom.y), (top.y + bottom.y) / 2)
-            let r = min(w, (top.y - bottom.y) / 4), (x, spine) = (top.x, top.x + w / 2)
+            let r = min(w, (top.y - bottom.y) / 4)
+            let (x, spine) = (top.x, top.x + w / 2)
             let curl = CGMutablePath()
             curl.move(to: top)
             curl.addQuadCurve(to: CGPoint(x: spine, y: top.y - r), control: CGPoint(x: spine, y: top.y))

@@ -34,33 +34,49 @@ final class StatsEffect: Effect {
         let pad = 12 * u
         let size = label.frame.size
         label.position = CGPoint(
-            x: frame.stage.viewSize.width - size.width - 2 * pad - 16 * u, y: frame.stage.viewSize.height - pad - 16 * u)
+            x: frame.stage.viewSize.width - size.width - 2 * pad - 16 * u, y: frame.stage.viewSize.height - pad - 16 * u
+        )
         background.path = CGPath(
-            roundedRect: label.frame.insetBy(dx: -pad, dy: -pad), cornerWidth: 8 * u, cornerHeight: 8 * u, transform: nil)
+            roundedRect: label.frame.insetBy(dx: -pad, dy: -pad), cornerWidth: 8 * u, cornerHeight: 8 * u,
+            transform: nil)
     }
 
     private func text(_ frame: StageFrame) -> String {
         let camera = model.pipeline.camera
         var lines = [
-            row(model.source.rawValue, "\(Int(camera.size.width))×\(Int(camera.size.height)) @ \(Int(camera.fps.rounded())) fps"),
-            row("Stage", "\(Int(frame.stage.viewSize.width))×\(Int(frame.stage.viewSize.height)) @ \(model.renderFPS) fps"),
+            row(
+                model.source.rawValue,
+                "\(Int(camera.size.width))×\(Int(camera.size.height)) @ \(Int(camera.fps.rounded())) fps"),
+            row(
+                "Stage",
+                "\(Int(frame.stage.viewSize.width))×\(Int(frame.stage.viewSize.height)) @ \(model.renderFPS) fps"),
         ]
-        if model.source == .camera, model.backgrounds.selected != nil { lines.append(row("Background", "replaced (Vision)")) }
+        if model.source == .camera, model.backgrounds.selected != nil {
+            lines.append(row("Background", "replaced (Vision)"))
+        }
         for output in frame.outputs.values.sorted(by: { $0.modelID < $1.modelID }) {
             let info = output.info
             lines.append("")
-            lines.append([output.modelID, output.task.title, info.family, info.architecture].compactMap { $0 }.joined(separator: " · "))
+            lines.append(
+                [output.modelID, output.task.title, info.family, info.architecture].compactMap { $0 }.joined(
+                    separator: " · "))
             lines.append(row("  Speed", String(format: "%.0f fps · %.1f ms", output.fps, output.latency * 1000)))
-            lines.append(row("  Model", [
-                String(format: "%.1f MB", Double(info.bytes) / 1_000_000),
-                info.parameters.map { String(format: "%.1fM params", Double($0) / 1_000_000) },
-                info.gflops.map { String(format: "%.1f GFLOPs", $0) },
-            ].compactMap { $0 }.joined(separator: " · ")))
-            let input = "\(Int(output.inputSize.width))×\(Int(output.inputSize.height))\(info.isDynamic ? "" : " fixed")"
+            lines.append(
+                row(
+                    "  Model",
+                    [
+                        String(format: "%.1f MB", Double(info.bytes) / 1_000_000),
+                        info.parameters.map { String(format: "%.1fM params", Double($0) / 1_000_000) },
+                        info.gflops.map { String(format: "%.1f GFLOPs", $0) },
+                    ].compactMap { $0 }.joined(separator: " · ")))
+            let input =
+                "\(Int(output.inputSize.width))×\(Int(output.inputSize.height))\(info.isDynamic ? "" : " fixed")"
             lines.append(row("  Input", "\(input) \(info.precision) · Core AI"))
             switch output.task {
-            case .detect, .segment, .pose, .obb, .hand, .face: lines.append(row("  Objects", "\(output.detections.count)"))
-            case .classify: lines.append(row("  Top-1", output.topClasses.first.map { output.name(of: $0.index) } ?? "—"))
+            case .detect, .segment, .pose, .obb, .hand, .face:
+                lines.append(row("  Objects", "\(output.detections.count)"))
+            case .classify:
+                lines.append(row("  Top-1", output.topClasses.first.map { output.name(of: $0.index) } ?? "—"))
             case .semantic, .depth: break
             }
         }

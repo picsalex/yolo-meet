@@ -6,7 +6,8 @@ import RealityKit
 func radialGlow(size: Int = 128, stops: [(CGFloat, CGFloat)]) -> CGImage {
     let context = CGContext.bitmap(width: size, height: size)
     let gradient = CGGradient(
-        colorsSpace: context.colorSpace, colors: stops.map { CGColor(gray: 1, alpha: $0.1) } as CFArray, locations: stops.map(\.0))!
+        colorsSpace: context.colorSpace, colors: stops.map { CGColor(gray: 1, alpha: $0.1) } as CFArray,
+        locations: stops.map(\.0))!
     let center = CGPoint(x: size / 2, y: size / 2)
     context.drawRadialGradient(
         gradient, startCenter: center, startRadius: 0, endCenter: center, endRadius: CGFloat(size / 2), options: [])

@@ -22,7 +22,13 @@ struct PadScreen: View {
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)  // a stroke that starts at the screen's edge is a stroke
-        .sheet(isPresented: Binding { model.code == nil || showsPairing } set: { showsPairing = $0 }) {
+        .sheet(
+            isPresented: Binding {
+                model.code == nil || showsPairing
+            } set: {
+                showsPairing = $0
+            }
+        ) {
             PairingSheet(model: model).interactiveDismissDisabled(model.code == nil)
         }
     }
@@ -50,10 +56,14 @@ struct PadScreen: View {
         .pickerStyle(.segmented)
         .fixedSize()
         ForEach(model.colors, id: \.self) { color in
-            Button { model.pick(color) } label: {
+            Button {
+                model.pick(color)
+            } label: {
                 Circle().fill(Color(uiColor: UIColor(hex: color))).frame(width: 30, height: 30)
                     .padding(4)
-                    .overlay(Circle().stroke(.white, lineWidth: model.settings.color == color && !model.settings.erases ? 2 : 0))
+                    .overlay(
+                        Circle().stroke(
+                            .white, lineWidth: model.settings.color == color && !model.settings.erases ? 2 : 0))
             }
             .accessibilityLabel("Color \(color)")
         }
@@ -91,7 +101,8 @@ private struct InkPanel: View {
                 LabeledContent("Fades after") { Text("\(Int(model.settings.fadeAfter)) s") }
                 Slider(value: model.setting(\.fadeAfter), in: InkSettings.stays, step: 1)
             } else {
-                Text("Strokes stay until they are undone, erased or cleared").font(.footnote).foregroundStyle(.secondary)
+                Text("Strokes stay until they are undone, erased or cleared").font(.footnote).foregroundStyle(
+                    .secondary)
             }
         }
         .font(.body)
@@ -112,8 +123,10 @@ private struct PairingSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("Pair with yolo-meet").font(.title2.bold())
-            Text("On the Mac, turn on iPad pen in yolo-meet's Draw section and press Show next to Pairing code. Type the code here once. The link is encrypted with it: without the code, nobody nearby can connect, see the stage or draw on it.")
-                .foregroundStyle(.secondary)
+            Text(
+                "On the Mac, turn on iPad pen in yolo-meet's Draw section and press Show next to Pairing code. Type the code here once. The link is encrypted with it: without the code, nobody nearby can connect, see the stage or draw on it."
+            )
+            .foregroundStyle(.secondary)
             TextField("XXXX-XXXX-XXXX-XXXX-XXXX", text: $typed)
                 .font(.system(.title3, design: .monospaced))
                 .textFieldStyle(.roundedBorder)

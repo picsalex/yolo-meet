@@ -41,9 +41,12 @@ final class RealityLayer {
         let (width, height) = (256, 128)
         let context = CGContext.bitmap(width: width, height: height)
         let gradient = CGGradient(
-            colorsSpace: context.colorSpace, colors: [CGColor(gray: 0.15, alpha: 1), CGColor(gray: 0.5, alpha: 1), CGColor(gray: 1, alpha: 1)] as CFArray,
+            colorsSpace: context.colorSpace,
+            colors: [CGColor(gray: 0.15, alpha: 1), CGColor(gray: 0.5, alpha: 1), CGColor(gray: 1, alpha: 1)]
+                as CFArray,
             locations: [0, 0.5, 1])!
-        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: height), options: [])  // y up: top is bright
+        // y up: top is bright
+        context.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: height), options: [])
         return context.makeImage()!
     }()
 
@@ -64,7 +67,8 @@ final class RealityLayer {
         do {
             try renderer.updateAndRender(
                 deltaTime: dt, cameraOutput: .init(.singleProjection(colorTexture: texture)),
-                actionsBeforeRender: [.wait(for: event, value: videoDone)], actionsAfterRender: [.signal(event, value: layerDone)])
+                actionsBeforeRender: [.wait(for: event, value: videoDone)],
+                actionsAfterRender: [.signal(event, value: layerDone)])
             next.encodeWaitForEvent(event, value: layerDone)
         } catch {
             next.encodeWaitForEvent(event, value: videoDone)  // no 3D this frame

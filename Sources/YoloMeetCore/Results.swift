@@ -124,12 +124,14 @@ nonisolated public let poseSkeleton: [(Int, Int)] = [
     (15, 13), (13, 11), (16, 14), (14, 12), (11, 12), (5, 11), (6, 12), (5, 6), (5, 7), (6, 8),
     (7, 9), (8, 10), (1, 2), (0, 1), (0, 2), (1, 3), (2, 4), (3, 5), (4, 6),
 ]
+nonisolated
 
-public nonisolated extension [ModelOutput] {
+    extension [ModelOutput]
+{
     /// The latest results, with detections carried forward to `time` at the speed they moved between the last two
     /// model runs (matched by track ID), at most `maxLead` seconds ahead. The video shows the newest frame while results
     /// describe an older one; this keeps boxes and keypoints on fast-moving hands instead of trailing them.
-    func predicted(at time: Double, maxLead: Double = 0.15) -> ModelOutput? {
+    public func predicted(at time: Double, maxLead: Double = 0.15) -> ModelOutput? {
         guard count > 1, let b = last else { return last }
         let a = self[count - 2]
         guard b.time > a.time else { return b }
@@ -144,10 +146,14 @@ public nonisolated extension [ModelOutput] {
             var moved = detection
             moved.box = CGRect(
                 origin: mix(start.box.origin, detection.box.origin),
-                size: CGSize(width: Swift.max(mix(start.box.width, detection.box.width), 0), height: Swift.max(mix(start.box.height, detection.box.height), 0)))
+                size: CGSize(
+                    width: Swift.max(mix(start.box.width, detection.box.width), 0),
+                    height: Swift.max(mix(start.box.height, detection.box.height), 0)))
             moved.angle = Float(mix(CGFloat(start.angle), CGFloat(detection.angle)))
             if start.keypoints.count == detection.keypoints.count {
-                for (i, p) in start.keypoints.enumerated() { moved.keypoints[i].point = mix(p.point, moved.keypoints[i].point) }
+                for (i, p) in start.keypoints.enumerated() {
+                    moved.keypoints[i].point = mix(p.point, moved.keypoints[i].point)
+                }
             }
             return moved
         }

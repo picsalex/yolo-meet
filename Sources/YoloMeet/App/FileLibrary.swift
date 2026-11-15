@@ -1,8 +1,8 @@
 import AVFoundation
 import AppKit
 import ImageIO
-import UniformTypeIdentifiers
 import Observation
+import UniformTypeIdentifiers
 
 /// Files copied into a folder in Application Support (background images, media), with thumbnails and the current
 /// selection remembered across launches.
@@ -57,16 +57,21 @@ final class FileLibrary {
     }
 
     private func reload() {
-        let files = (try? FileManager.default.contentsOfDirectory(
-            at: directory, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
-        items = files.filter { !$0.lastPathComponent.hasSuffix(".part") }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
+        items = files.filter { !$0.lastPathComponent.hasSuffix(".part") }.sorted {
+            $0.lastPathComponent < $1.lastPathComponent
+        }
         thumbnails = Dictionary(uniqueKeysWithValues: items.compactMap { url in thumbnail(url).map { (url, $0) } })
         for url in items where thumbnails[url] == nil && Self.isVideo(url) {
             Task { thumbnails[url] = await Self.videoThumbnail(url) }
         }
     }
 
-    static func isVideo(_ url: URL) -> Bool { UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true }
+    static func isVideo(_ url: URL) -> Bool {
+        UTType(filenameExtension: url.pathExtension)?.conforms(to: .movie) == true
+    }
 
     /// Decodes an image once, upright, at the smallest size that still covers `size` (a 24 MP photo would otherwise
     /// stay file-backed at full size and be decoded again by each renderer).
@@ -79,26 +84,34 @@ final class FileLibrary {
         let rotated = (properties[kCGImagePropertyOrientation] as? UInt32 ?? 1) >= 5  // 90° turns swap the sides
         let (w, h) = rotated ? (height, width) : (width, height)
         let scale = min(max(size.width / w, size.height / h), 1)
-        return CGImageSourceCreateThumbnailAtIndex(source, 0, [
-            kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: Int((max(w, h) * scale).rounded(.up)), kCGImageSourceShouldCacheImmediately: true,
-        ] as CFDictionary).map { CIImage(cgImage: $0) }
+        return CGImageSourceCreateThumbnailAtIndex(
+            source, 0,
+            [
+                kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: Int((max(w, h) * scale).rounded(.up)),
+                kCGImageSourceShouldCacheImmediately: true,
+            ] as CFDictionary
+        ).map { CIImage(cgImage: $0) }
     }
 
     private static func videoThumbnail(_ url: URL) async -> NSImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 240, height: 240)
-        guard let image = try? await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image else { return nil }
+        guard let image = try? await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600)).image else {
+            return nil
+        }
         return NSImage(cgImage: image, size: .zero)
     }
 
     private func thumbnail(_ url: URL) -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 240,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-            ] as CFDictionary)
+            let image = CGImageSourceCreateThumbnailAtIndex(
+                source, 0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 240,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                ] as CFDictionary)
         else { return nil }
         return NSImage(cgImage: image, size: .zero)
     }

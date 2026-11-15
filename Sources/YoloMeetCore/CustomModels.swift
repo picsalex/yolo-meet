@@ -15,7 +15,9 @@ public enum CustomModelError: LocalizedError {
     case unsupported(String)
 
     public var errorDescription: String? {
-        switch self { case .unsupported(let reason): reason }
+        switch self {
+        case .unsupported(let reason): reason
+        }
     }
 }
 
@@ -55,8 +57,9 @@ public final class CustomModels {
         case "aimodel": asset = source
         case "zip":
             try await Self.unzip(source, to: unzipped)
-            guard let found = try FileManager.default.contentsOfDirectory(at: unzipped, includingPropertiesForKeys: nil)
-                .first(where: { $0.pathExtension == "aimodel" })
+            guard
+                let found = try FileManager.default.contentsOfDirectory(at: unzipped, includingPropertiesForKeys: nil)
+                    .first(where: { $0.pathExtension == "aimodel" })
             else { throw CustomModelError.unsupported("The zip has no .aimodel inside.") }
             asset = found
         case "pt", "pth":
@@ -67,7 +70,8 @@ public final class CustomModels {
             throw CustomModelError.unsupported(
                 "Core ML models can't be converted to Core AI. Re-export the original weights with format=coreai.")
         default:
-            throw CustomModelError.unsupported("Choose an .aimodel (or .aimodel.zip) exported by Ultralytics or RF-DETR.")
+            throw CustomModelError.unsupported(
+                "Choose an .aimodel (or .aimodel.zip) exported by Ultralytics or RF-DETR.")
         }
 
         let id = "custom-\(UUID().uuidString.prefix(8).lowercased())"
@@ -79,9 +83,10 @@ public final class CustomModels {
             if let names = Self.rfdetrNames(at: sidecar) { try Self.stampNames(names, into: destination) }
             let loaded = try await YOLOModel.load(from: destination)
             sizes[id] = loaded.info.bytes
-            models.append(CustomModel(
-                id: id, name: asset.deletingPathExtension().lastPathComponent, family: loaded.info.family,
-                task: loaded.task))
+            models.append(
+                CustomModel(
+                    id: id, name: asset.deletingPathExtension().lastPathComponent, family: loaded.info.family,
+                    task: loaded.task))
             save()
         } catch {
             try? FileManager.default.removeItem(at: destination)

@@ -90,6 +90,7 @@ extension Entity {
     /// seen straight on.
     var stageBounds: CGRect {
         let b = visualBounds(relativeTo: nil)
-        return CGRect(x: CGFloat(b.min.x), y: CGFloat(b.min.y), width: CGFloat(b.extents.x), height: CGFloat(b.extents.y))
+        return CGRect(
+            x: CGFloat(b.min.x), y: CGFloat(b.min.y), width: CGFloat(b.extents.x), height: CGFloat(b.extents.y))
     }
 }

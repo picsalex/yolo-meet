@@ -35,9 +35,12 @@ struct TaskQuiz {
         let view = KeyTurn.rotation(tilt: architecture.restingTilt, turn: architecture.restingTurn)
         let inShape = { (at: CGPoint) -> SIMD3<Float> in
             let (stage, size) = (Stage.unitSize, NetworkEffect.size)
-            return view.inverse.act([Float((at.x - 0.5) * stage.width / size), Float((at.y - 0.5) * stage.height / size), 0])
+            return view.inverse.act([
+                Float((at.x - 0.5) * stage.width / size), Float((at.y - 0.5) * stage.height / size), 0,
+            ])
         }
-        let middle = n[heads[1]].point, center = inShape(Self.blocksAt)
+        let middle = n[heads[1]].point
+        let center = inShape(Self.blocksAt)
         let place = { (p: SIMD3<Float>) in center + (p - middle) * Self.grow }
 
         let neurons = heads.map { h in
@@ -45,7 +48,8 @@ struct TaskQuiz {
                 point: place(n[h].point), box: n[h].box.map { $0 * Self.grow }, info: n[h].info, grid: n[h].grid)
         }
         layout = NetworkLayout(
-            title: "", subtitle: "", neurons: neurons, synapses: [], neuronSize: 0, restingTilt: architecture.restingTilt)
+            title: "", subtitle: "", neurons: neurons, synapses: [], neuronSize: 0,
+            restingTilt: architecture.restingTilt)
         (layout.restingTurn, layout.grown, layout.splitsFrom) = (architecture.restingTurn, 1.15, inference)
         layout.outline = neurons.flatMap { Box.corners($0.point, half: $0.box!) }
 
@@ -59,7 +63,8 @@ struct TaskQuiz {
             (rest, swirl) = ([], [])
             return
         }
-        let part = Dictionary(uniqueKeysWithValues: heads.enumerated().map { ($1 + 1, $0 + 1) })  // architecture's → ours
+        // architecture's → ours
+        let part = Dictionary(uniqueKeysWithValues: heads.enumerated().map { ($1 + 1, $0 + 1) })
         var (points, parts, colors) = ([SIMD3<Float>](), [Int](), [SIMD3<Float>?]())
         var (rest, swirl) = ([Int](), [(offset: SIMD3<Float>, axis: SIMD3<Float>, speed: Float, phase: Float)]())
         for i in from.points.indices {
@@ -135,7 +140,8 @@ final class TaskQuizEffect: Effect {
         let (system, inference, quiz) = (network.system, network.inference, network.taskQuiz)
         var arrowPoints: [CGPoint]?
         if network.formed === inference, let output = inference.arrows.last, let points = system.points(quiz.rest),
-            let colors = system.colors(quiz.rest) {
+            let colors = system.colors(quiz.rest)
+        {
             let shown = { (p: SIMD3<Float>) in system.shownPoint(p).point }
             let feeds = (inference.arrowFeeds[output.text] ?? []).flatMap { $0.map(shown) }
             arrowPoints = [shown(output.tail), shown(output.tip)] + feeds
@@ -219,7 +225,8 @@ final class TaskQuizEffect: Effect {
         for i in springs.indices { springs[i].step(toward: targets[i], dt: frame.dt) }
         arrowPoints = springs
         let points = springs.map { CGPoint(x: CGFloat($0.value.x), y: CGFloat($0.value.y)) }
-        let appear = glides ? 1 : smoothstep(CGFloat((t - 1) / 0.5))  // without a glide: once the blocks are about there
+        // without a glide: once the blocks are about there
+        let appear = glides ? 1 : smoothstep(CGFloat((t - 1) / 0.5))
         content.set(\.alpha, appear * (1 - (self.quiz?.leaving ?? 0)))
         var rest = points.dropFirst(2)
         let feeds = quiz.feeds.map { feed -> [CGPoint] in

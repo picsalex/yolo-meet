@@ -46,8 +46,10 @@ private final class StageMTKView: MTKView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         for area in trackingAreas { removeTrackingArea(area) }
-        addTrackingArea(NSTrackingArea(
-            rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        addTrackingArea(
+            NSTrackingArea(
+                rect: .zero, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        )
     }
 
     /// An event's location in stage points (drawable pixels, bottom-left origin).
@@ -96,7 +98,9 @@ private final class StageMTKView: MTKView {
 
     /// Command + scroll zooms; plain scrolling is left alone.
     override func scrollWheel(with event: NSEvent) {
-        guard event.modifierFlags.contains(.command), event.momentumPhase.isEmpty else { return super.scrollWheel(with: event) }
+        guard event.modifierFlags.contains(.command), event.momentumPhase.isEmpty else {
+            return super.scrollWheel(with: event)
+        }
         mouse?.scrolled(
             by: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, at: stagePoint(event),
             time: CACurrentMediaTime())
@@ -181,9 +185,10 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         // Camera: aspect-fill into the drawable on the GPU.
         let scale = max(size.width / frame.extent.width, size.height / frame.extent.height)
         let scaled = frame.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        let placed = scaled.transformed(by: CGAffineTransform(
-            translationX: (size.width - scaled.extent.width) / 2 - scaled.extent.minX,
-            y: (size.height - scaled.extent.height) / 2 - scaled.extent.minY))
+        let placed = scaled.transformed(
+            by: CGAffineTransform(
+                translationX: (size.width - scaled.extent.width) / 2 - scaled.extent.minX,
+                y: (size.height - scaled.extent.height) / 2 - scaled.extent.minY))
         // Metal textures are top-left origin; Core Image is bottom-left.
         let destination = CIRenderDestination(mtlTexture: drawable.texture, commandBuffer: commandBuffer)
         destination.isFlipped = true
@@ -195,8 +200,11 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         cameraFade = model.cameraHidden ? min(cameraFade + step, 1) : max(cameraFade - step, 0)
         let eased = smoothstep(cameraFade)
         let black = 1 - pow(1 - eased, 2.2)
-        let video = black == 0 ? placed
-            : CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: black)).cropped(to: bounds).composited(over: placed)
+        let video =
+            black == 0
+            ? placed
+            : CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: black)).cropped(to: bounds).composited(
+                over: placed)
         _ = try? context.startTask(toRender: video, from: bounds, to: destination, at: .zero)
 
         // Effects: rebuild on scene change, then update every frame.
@@ -209,7 +217,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         if stepStart == nil { stepStart = now }
         let elapsed = now - stepStart!
         if let loop = model.stepLoop, loop > 0 {
-            (stageFrame.stepTime, stageFrame.loopCount) = (elapsed.truncatingRemainder(dividingBy: loop), Int(elapsed / loop))
+            (stageFrame.stepTime, stageFrame.loopCount) = (
+                elapsed.truncatingRemainder(dividingBy: loop), Int(elapsed / loop)
+            )
         } else {
             stageFrame.stepTime = elapsed
         }
@@ -231,7 +241,8 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         stageFrame.click = mouse.takeClick()
         if model.mode == .story {
             stageFrame.branches = StageFrame.Branches(
-                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch, count: model.step.branches.count,
+                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch,
+                count: model.step.branches.count,
                 enter: { [model] branch in Task { model.enter(branch: branch) } })
         }
         for effect in effects { effect.update(stageFrame) }
@@ -253,7 +264,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         }
         let systems = effects.compactMap(\.particles)
         if !systems.isEmpty {
-            particles?.render(systems, over: drawable.texture, stage: stageFrame.stage, time: now, dt: dt, commandBuffer: commandBuffer)
+            particles?.render(
+                systems, over: drawable.texture, stage: stageFrame.stage, time: now, dt: dt,
+                commandBuffer: commandBuffer)
         }
 
         renderer.update(atTime: now)
@@ -279,7 +292,11 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private func swapEffects() {
         let fade = model.transition == .fade  // else none: an instant swap, the new effects continuing the old
         for effect in effects {
-            if fade { effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()])) } else { effect.node.removeFromParent() }
+            if fade {
+                effect.node.run(.sequence([.fadeOut(withDuration: 0.3), .removeFromParent()]))
+            } else {
+                effect.node.removeFromParent()
+            }
             reality?.entities.remove(effect.entity)
         }
         effects = model.makeEffects()

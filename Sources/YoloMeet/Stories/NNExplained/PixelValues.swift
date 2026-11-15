@@ -35,7 +35,8 @@ final class PixelValuesEffect: Effect {
     private static let gold = NNColors.gold
     /// Each channel's name and its color on stage (lighter than pure, so the blue reads on black).
     private static let channels: [(name: String, color: NSColor)] = [
-        ("R", NSColor(red: 1, green: 0.3, blue: 0.3, alpha: 1)), ("G", NSColor(red: 0.3, green: 1, blue: 0.4, alpha: 1)),
+        ("R", NSColor(red: 1, green: 0.3, blue: 0.3, alpha: 1)),
+        ("G", NSColor(red: 0.3, green: 1, blue: 0.4, alpha: 1)),
         ("B", NSColor(red: 0.35, green: 0.55, blue: 1, alpha: 1)),
     ]
 
@@ -82,7 +83,8 @@ final class PixelValuesEffect: Effect {
         guard !content.isHidden else { return }
 
         // The grid on stage: a pixel's corners from its column and row (the picture faces the viewer).
-        let n = grid.cells, pitch = grid.side / Float(n)
+        let n = grid.cells
+        let pitch = grid.side / Float(n)
         let corner = { (x: Float, y: Float) -> CGPoint in
             system.shownPoint(grid.center + SIMD3(-grid.side / 2 + x * pitch, grid.side / 2 - y * pitch, 0)).point
         }
@@ -91,7 +93,8 @@ final class PixelValuesEffect: Effect {
         // Space + point: the pixel under the fingertip.
         if frame.keys.held.contains("space") {
             for pointer in frame.pointers where picture.contains(pointer.location) {
-                let fx = (pointer.location.x - picture.minX) / picture.width, fy = (picture.maxY - pointer.location.y) / picture.height
+                let fx = (pointer.location.x - picture.minX) / picture.width
+                let fy = (picture.maxY - pointer.location.y) / picture.height
                 pixel = min(Int(fy * CGFloat(n)), n - 1) * n + min(Int(fx * CGFloat(n)), n - 1)
                 frame.pointing.mark(pointer.hand)
                 break
@@ -125,10 +128,14 @@ final class PixelValuesEffect: Effect {
         let flown = CGFloat(smoothstep(min(max((t - Self.flight.at) / Self.flight.duration, 0), 1)))
         let box = CGRect(
             x: cell.minX + (target.minX - cell.minX) * flown, y: cell.minY + (target.minY - cell.minY) * flown,
-            width: cell.width + (target.width - cell.width) * flown, height: cell.height + (target.height - cell.height) * flown)
+            width: cell.width + (target.width - cell.width) * flown,
+            height: cell.height + (target.height - cell.height) * flown)
         swatch.isHidden = t < Self.flight.at
         swatch.path = CGPath(rect: box, transform: nil)
-        swatch.set(\.fillColor, NSColor(srgbRed: CGFloat(value.x) / 255, green: CGFloat(value.y) / 255, blue: CGFloat(value.z) / 255, alpha: 1))
+        swatch.set(
+            \.fillColor,
+            NSColor(
+                srgbRed: CGFloat(value.x) / 255, green: CGFloat(value.y) / 255, blue: CGFloat(value.z) / 255, alpha: 1))
         swatch.set(\.lineWidth, 2 * u)
         // From the pixel's side facing the swatch to the swatch's near side.
         let right = box.midX > cell.midX
@@ -162,11 +169,15 @@ final class PixelValuesEffect: Effect {
             row.name.sync(unit: u)
             let r = track.height / 2
             row.track.path = CGPath(
-                roundedRect: CGRect(x: track.x, y: y - r, width: track.width, height: track.height), cornerWidth: r, cornerHeight: r, transform: nil)
+                roundedRect: CGRect(x: track.x, y: y - r, width: track.width, height: track.height), cornerWidth: r,
+                cornerHeight: r, transform: nil)
             let length = max(CGFloat(bars[c] * filled) * track.width, 0)
-            row.bar.path = length < 1 ? nil : CGPath(
-                roundedRect: CGRect(x: track.x, y: y - r, width: length, height: track.height),
-                cornerWidth: min(r, length / 2), cornerHeight: r, transform: nil)
+            row.bar.path =
+                length < 1
+                ? nil
+                : CGPath(
+                    roundedRect: CGRect(x: track.x, y: y - r, width: length, height: track.height),
+                    cornerWidth: min(r, length / 2), cornerHeight: r, transform: nil)
             row.value.label.set(\.text, "\(Int((bars[c] * 255 * filled).rounded()))")
             row.value.label.set(\.fontSize, 24 * u)
             row.value.position = CGPoint(x: track.x + track.width + 14 * u, y: y)

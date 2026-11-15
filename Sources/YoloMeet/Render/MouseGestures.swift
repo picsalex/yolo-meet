@@ -35,7 +35,7 @@ final class MouseGestures {
 
     func moved(to point: CGPoint?) {
         hover = point
-        if let point, case let .drag(start, _) = current?.kind, current?.ending == false {
+        if let point, case .drag(let start, _) = current?.kind, current?.ending == false {
             current?.kind = .drag(start: start, location: point)
         }
     }
@@ -83,7 +83,7 @@ final class MouseGestures {
     }
 
     private func scale(by factor: CGFloat) {
-        guard case let .zoom(scale, center) = current?.kind, current?.ending == false else { return }
+        guard case .zoom(let scale, let center) = current?.kind, current?.ending == false else { return }
         current?.kind = .zoom(scale: scale * factor, center: center)
     }
 

@@ -31,7 +31,9 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate {
         super.init(frame: .zero)
         backgroundColor = .black
         for view in [picture, ink] {
-            (view.frame, view.autoresizingMask, view.isUserInteractionEnabled) = (bounds, [.flexibleWidth, .flexibleHeight], false)
+            (view.frame, view.autoresizingMask, view.isUserInteractionEnabled) = (
+                bounds, [.flexibleWidth, .flexibleHeight], false
+            )
             addSubview(view)
         }
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered)))
@@ -167,7 +169,8 @@ extension UIColor {
     convenience init(hex: String) {
         let value = hex.count == 6 ? UInt32(hex, radix: 16) ?? 0xFFFFFF : 0xFFFFFF
         self.init(
-            red: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255,
+            red: CGFloat(value >> 16 & 0xFF) / 255, green: CGFloat(value >> 8 & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
             alpha: 1)
     }
 }

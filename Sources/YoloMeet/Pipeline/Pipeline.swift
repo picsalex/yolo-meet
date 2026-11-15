@@ -45,7 +45,9 @@ nonisolated final class Pipeline: @unchecked Sendable {
     var latestOutputs: [String: ModelOutput] { lock.withLock { state.history.compactMapValues(\.last) } }
     /// Training sizes of the loaded models that follow the image size setting (variable-size, not classify).
     var trainingSizes: [Int] {
-        lock.withLock { Set(state.models.filter { $0.info.isDynamic && $0.task != .classify }.map(\.trainingSize)).sorted() }
+        lock.withLock {
+            Set(state.models.filter { $0.info.isDynamic && $0.task != .classify }.map(\.trainingSize)).sorted()
+        }
     }
     var errors: [String: String] { lock.withLock { state.errors } }
     /// Active models with no result yet (loading, compiling for this Mac, first run) and no error.
@@ -152,7 +154,9 @@ nonisolated final class Pipeline: @unchecked Sendable {
         for entry in toLoad {
             Task.detached(priority: .userInitiated) {
                 let result: Result<any Predictor, any Error>
-                do { result = .success(try await Predictors.load(id: entry.id, from: entry.url)) } catch { result = .failure(error) }
+                do { result = .success(try await Predictors.load(id: entry.id, from: entry.url)) } catch {
+                    result = .failure(error)
+                }
                 self.lock.withLock {
                     self.state.loading.remove(entry.id)
                     switch result {
@@ -172,7 +176,9 @@ nonisolated final class Pipeline: @unchecked Sendable {
     }
 
     /// Runs one model (not reentrant: one run per instance at a time) and records its result.
-    private func infer(_ frame: CIImage, at time: TimeInterval, _ model: any Predictor, _ settings: InferenceSettings) async {
+    private func infer(_ frame: CIImage, at time: TimeInterval, _ model: any Predictor, _ settings: InferenceSettings)
+        async
+    {
         model.configure(imgsz: settings.imgsz, confidence: settings.confidence, iou: settings.iou)
         do {
             var output = try await model.predict(frame)
@@ -188,7 +194,8 @@ nonisolated final class Pipeline: @unchecked Sendable {
                 guard state.wanted.contains(model.id) else { return false }
                 let first = state.history[model.id] == nil
                 state.history[model.id, default: []].append(output)
-                state.history[model.id]!.removeFirst(max(state.history[model.id]!.count - 2, 0))  // prediction uses the last two
+                // prediction uses the last two
+                state.history[model.id]!.removeFirst(max(state.history[model.id]!.count - 2, 0))
                 return first
             }
             if first { onPendingChange() }  // its first result: no longer pending
@@ -208,7 +215,8 @@ nonisolated struct InferenceSettings: Codable, Equatable {
     var iou: Float = 0.45
 
     static var saved: InferenceSettings {
-        UserDefaults.standard.data(forKey: "inference").flatMap { try? JSONDecoder().decode(Self.self, from: $0) } ?? .init()
+        UserDefaults.standard.data(forKey: "inference").flatMap { try? JSONDecoder().decode(Self.self, from: $0) }
+            ?? .init()
     }
 
     func save() { UserDefaults.standard.set(try? JSONEncoder().encode(self), forKey: "inference") }
@@ -258,7 +266,10 @@ private nonisolated final class PersonSegmentation: @unchecked Sendable {
         nonisolated(unsafe) let buffer = buffer
         if lock.withLock({ mask == nil }) {
             queue.sync { segment(buffer) }  // first frame: wait for a mask, so the real room never shows
-        } else if lock.withLock({ () -> Bool in defer { busy = true }; return !busy }) {
+        } else if lock.withLock({ () -> Bool in
+            defer { busy = true }
+            return !busy
+        }) {
             queue.async {
                 self.segment(buffer)
                 self.lock.withLock { self.busy = false }
@@ -266,12 +277,16 @@ private nonisolated final class PersonSegmentation: @unchecked Sendable {
         }
         guard let mask = lock.withLock({ mask }) else { return camera }
         let maskImage = CIImage(cvPixelBuffer: mask)
-        let scaledMask = maskImage.transformed(by: CGAffineTransform(
-            scaleX: camera.extent.width / maskImage.extent.width, y: camera.extent.height / maskImage.extent.height))
-        return camera.applyingFilter("CIBlendWithMask", parameters: [
-            kCIInputBackgroundImageKey: fill(background, camera.extent),
-            kCIInputMaskImageKey: scaledMask.mirrored(mirror),
-        ])
+        let scaledMask = maskImage.transformed(
+            by: CGAffineTransform(
+                scaleX: camera.extent.width / maskImage.extent.width, y: camera.extent.height / maskImage.extent.height)
+        )
+        return camera.applyingFilter(
+            "CIBlendWithMask",
+            parameters: [
+                kCIInputBackgroundImageKey: fill(background, camera.extent),
+                kCIInputMaskImageKey: scaledMask.mirrored(mirror),
+            ])
     }
 
     /// On `queue`.
@@ -289,17 +304,19 @@ private nonisolated final class PersonSegmentation: @unchecked Sendable {
         return image
     }
 }
+nonisolated
 
-private nonisolated extension CIImage {
-    func mirrored(_ mirror: Bool) -> CIImage { mirror ? oriented(.upMirrored) : self }
+    extension CIImage
+{
+    fileprivate func mirrored(_ mirror: Bool) -> CIImage { mirror ? oriented(.upMirrored) : self }
 
     /// Scaled to cover `extent`, centered and cropped to it.
-    func filling(_ extent: CGRect) -> CIImage {
+    fileprivate func filling(_ extent: CGRect) -> CIImage {
         let scale = max(extent.width / self.extent.width, extent.height / self.extent.height)
         let scaled = transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        return scaled.transformed(by: CGAffineTransform(
-            translationX: extent.midX - scaled.extent.midX, y: extent.midY - scaled.extent.midY)
+        return scaled.transformed(
+            by: CGAffineTransform(
+                translationX: extent.midX - scaled.extent.midX, y: extent.midY - scaled.extent.midY)
         ).cropped(to: extent)
     }
 }
-

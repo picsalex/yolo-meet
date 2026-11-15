@@ -8,7 +8,8 @@ import Testing
     @Test func framesSplitAnywhere() {
         let sent: [PadMessage] = [
             .hello(name: "iPad"), .hover(x: 10, y: 20.5, height: 0.4), .down(id: 7, x: 1, y: 2, force: 0.8),
-            .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear, .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
+            .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear,
+            .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }
         // Whatever the size of the pieces the bytes arrive in, the messages come out whole and in order.
@@ -40,8 +41,10 @@ import Testing
     /// Frames that aren't a message for this end are skipped; a frame longer than any message breaks the stream.
     @Test func badFramesAreSkipped() {
         var frames = PenFrames()
-        let data = PenFrames.frame(.json, Data("nonsense".utf8)) + PenFrames.frame(.json, Data(#"{"fly":{}}"#.utf8))
-            + PenFrames.frame(kind: 9, Data([1, 2, 3])) + PenFrames.frame(HostMessage.picture(jpeg: Data([1]), through: 1))
+        let data =
+            PenFrames.frame(.json, Data("nonsense".utf8)) + PenFrames.frame(.json, Data(#"{"fly":{}}"#.utf8))
+            + PenFrames.frame(kind: 9, Data([1, 2, 3]))
+            + PenFrames.frame(HostMessage.picture(jpeg: Data([1]), through: 1))
             + PenFrames.frame(PadMessage.up)
         #expect(frames.take(data, as: PadMessage.self) == [.up])  // a picture isn't a pad's message
         #expect(!frames.isBroken)
@@ -56,8 +59,10 @@ import Testing
     /// else opens.
     @Test func sessionsSeal() throws {
         let (host, pad) = (PenSession(), PenSession())
-        var hostSide = try #require(host.ciphers(with: pad.publicKey, sending: HostMessage.self, receiving: PadMessage.self))
-        var padSide = try #require(pad.ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self))
+        var hostSide = try #require(
+            host.ciphers(with: pad.publicKey, sending: HostMessage.self, receiving: PadMessage.self))
+        var padSide = try #require(
+            pad.ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self))
         let messages = [Data("one".utf8), Data(), Data(repeating: 7, count: 100_000)]
         let sealed = messages.map { hostSide.seal.seal($0)! }
         #expect(sealed.map { padSide.open.open($0) } == messages)
@@ -73,7 +78,8 @@ import Testing
         var mirror = host.ciphers(with: pad.publicKey, sending: HostMessage.self, receiving: PadMessage.self)!
         #expect(mirror.open.open(sealed[0]) == nil)
         // Another connection's keys open nothing of this one.
-        var stranger = PenSession().ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self)!
+        var stranger = PenSession().ciphers(
+            with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self)!
         #expect(stranger.open.open(sealed[0]) == nil)
         #expect(host.ciphers(with: Data([1, 2, 3]), sending: HostMessage.self, receiving: PadMessage.self) == nil)
     }
@@ -82,7 +88,10 @@ import Testing
     @Test func padFramesAreSmall() {
         var frames = PenFrames(longest: PadMessage.largestFrame)
         #expect(frames.take(PenFrames.frame(PadMessage.up), as: PadMessage.self) == [.up])
-        #expect(frames.take(PenFrames.frame(.json, Data(repeating: 0x20, count: PadMessage.largestFrame + 1)), as: PadMessage.self).isEmpty)
+        #expect(
+            frames.take(
+                PenFrames.frame(.json, Data(repeating: 0x20, count: PadMessage.largestFrame + 1)), as: PadMessage.self
+            ).isEmpty)
         #expect(frames.isBroken)
     }
 
@@ -91,7 +100,8 @@ import Testing
     @Test func readerTakesKeyThenSealed() throws {
         let (host, pad) = (PenSession(), PenSession())
         var reader = PenReader<PadMessage, HostMessage>(session: host)
-        var padSide = try #require(pad.ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self))
+        var padSide = try #require(
+            pad.ciphers(with: host.publicKey, sending: PadMessage.self, receiving: HostMessage.self))
         let key = PenFrames.frame(.key, Data([PenLink.version]) + pad.publicKey)
         func sealed(_ frame: Data) -> Data { PenFrames.frame(.sealed, padSide.seal.seal(frame)!) }
         // The key and a message in one read; then a newer end's frame kind, and a message this end can't decode.
@@ -99,7 +109,8 @@ import Testing
         #expect(first.sealer != nil && first.messages == [.undo])
         let next = try reader.read(
             PenFrames.frame(kind: 9, Data([1])) + sealed(PenFrames.frame(.json, Data(#"{"fly":{}}"#.utf8)))
-                + sealed(PenFrames.frame(kind: 9, Data([2]))) + sealed(PenFrames.frame(PadMessage.up))).get()
+                + sealed(PenFrames.frame(kind: 9, Data([2]))) + sealed(PenFrames.frame(PadMessage.up))
+        ).get()
         #expect(next.sealer == nil && next.messages == [.up])
         // A changed message, a second key, or one that isn't sealed: the link is broken.
         var changed = sealed(PenFrames.frame(PadMessage.clear))
@@ -110,7 +121,9 @@ import Testing
         #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) { try again.read(key).get() }
         var plain = PenReader<PadMessage, HostMessage>(session: host)
         _ = try plain.read(key).get()
-        #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) { try plain.read(PenFrames.frame(PadMessage.up)).get() }
+        #expect(throws: PenReader<PadMessage, HostMessage>.Failure.broken) {
+            try plain.read(PenFrames.frame(PadMessage.up)).get()
+        }
     }
 
     /// An end of another version says so: a key of another version, no key first, or the JSON lines from before
@@ -119,7 +132,8 @@ import Testing
         let pad = PenSession()
         for first in [
             PenFrames.frame(.key, Data([PenLink.version &+ 1]) + pad.publicKey), PenFrames.frame(.key, pad.publicKey),
-            PenFrames.frame(.key, Data([PenLink.version]) + pad.publicKey.dropLast()),  // a key from before versions, starting with it
+            // a key from before versions, starting with it
+            PenFrames.frame(.key, Data([PenLink.version]) + pad.publicKey.dropLast()),
             PenFrames.frame(PadMessage.up), Data(#"{"hello":{"name":"iPad"}}"#.utf8) + Data([0x0A]),
         ] {
             var reader = PenReader<PadMessage, HostMessage>(session: PenSession())
@@ -135,7 +149,8 @@ import Testing
         }
         #expect(PenHost.makingRoom(for: "pad", among: []) == nil)
         #expect(PenHost.makingRoom(for: "a", among: waiting(["a", "pad", "a"])) == 0)  // its own oldest
-        #expect(PenHost.makingRoom(for: "a", among: waiting(["a", "pad", "a", "a"], code: [0])) == 2)  // not one past TLS
+        // not one past TLS
+        #expect(PenHost.makingRoom(for: "a", among: waiting(["a", "pad", "a", "a"], code: [0])) == 2)
         #expect(PenHost.makingRoom(for: "pad", among: waiting(["a", "pad"])) == nil)
         // Addresses with two each fill every place: the pad's new connection takes the oldest of one of them.
         let full = (0..<PenHost.waitingAtMost / 2).flatMap { ["x\($0)", "x\($0)"] }
@@ -152,7 +167,12 @@ import Testing
         // One connection from each of as many addresses as places: oldest first, but never the pad's once past TLS.
         let spread = (0..<PenHost.waitingAtMost).map { "y\($0)" }
         #expect(PenHost.makingRoom(for: "new", among: waiting(["pad"] + spread.dropFirst(), code: [0])) == 1)
-        #expect(PenHost.makingRoom(for: "new", among: waiting(Array(repeating: "pad", count: PenHost.waitingAtMost), code: Set(0..<PenHost.waitingAtMost))) == nil)
+        #expect(
+            PenHost.makingRoom(
+                for: "new",
+                among: waiting(
+                    Array(repeating: "pad", count: PenHost.waitingAtMost), code: Set(0..<PenHost.waitingAtMost))) == nil
+        )
     }
 
     /// Without a pad, a message is done at once: whoever waits for it to leave doesn't wait for good.
@@ -163,7 +183,8 @@ import Testing
     }
 
     @Test func eraserGrowsWithTheLine() {
-        var ink = InkSettings(color: "FFFFFF", width: InkSettings.widths.lowerBound, fades: false, fadeAfter: 4, erases: true)
+        var ink = InkSettings(
+            color: "FFFFFF", width: InkSettings.widths.lowerBound, fades: false, fadeAfter: 4, erases: true)
         let small = ink.eraserRadius
         ink.width = InkSettings.widths.upperBound
         #expect(small > InkSettings.widths.lowerBound / 2 && ink.eraserRadius > small)
@@ -211,8 +232,10 @@ import Testing
         let port = try #require(listener.port)
 
         /// How a pad with these parameters fares: whether it got ready, and whether it was refused for its code.
-        func pad(_ parameters: NWParameters, says message: PadMessage) async throws -> (isReady: Bool, wasRefused: Bool) {
-            let channel = PenChannel<HostMessage, PadMessage>(NWConnection(host: "127.0.0.1", port: port, using: parameters))
+        func pad(_ parameters: NWParameters, says message: PadMessage) async throws -> (isReady: Bool, wasRefused: Bool)
+        {
+            let channel = PenChannel<HostMessage, PadMessage>(
+                NWConnection(host: "127.0.0.1", port: port, using: parameters))
             var isReady: Bool?
             channel.changed = { isReady = isReady ?? $0 }
             channel.start()
@@ -241,7 +264,9 @@ import Testing
         listener.newConnectionHandler = { connection in
             MainActor.assumeIsolated { deaf.connections.append(connection) }
             connection.start(queue: .main)
-            connection.send(content: PenFrames.frame(.key, Data([PenLink.version]) + PenSession().publicKey), completion: .idempotent)
+            connection.send(
+                content: PenFrames.frame(.key, Data([PenLink.version]) + PenSession().publicKey),
+                completion: .idempotent)
         }
         listener.start(queue: .main)
         for _ in 0..<100 where (listener.port?.rawValue ?? 0) == 0 { try await Task.sleep(for: .milliseconds(20)) }
@@ -277,7 +302,9 @@ import Testing
         let style = HostMessage.settings(ink, colors: ["E1FF25", "00FFFF"])
         let picture = HostMessage.picture(jpeg: Data(repeating: 0x2F, count: 300_000), through: 1)
         var pictureLeft = false
-        let stroke: [PadMessage] = [.hello(name: "test"), .down(id: 1, x: 100, y: 200, force: 1), .move(x: 110, y: 205, force: 1.5), .up]
+        let stroke: [PadMessage] = [
+            .hello(name: "test"), .down(id: 1, x: 100, y: 200, force: 1), .move(x: 110, y: 205, force: 1.5), .up,
+        ]
         host.received = {
             fromPad.append($0)
             if $0 == .hello(name: "test") {
@@ -289,7 +316,9 @@ import Testing
         client.changed = { if case .connected = $0 { stroke.forEach(client.send) } }
         host.start(code: code)
         client.start(code: code)
-        for _ in 0..<150 where fromPad.count < stroke.count || fromHost.count < 2 { try await Task.sleep(for: .milliseconds(100)) }
+        for _ in 0..<150 where fromPad.count < stroke.count || fromHost.count < 2 {
+            try await Task.sleep(for: .milliseconds(100))
+        }
         client.stop()
         host.stop()
         #expect(fromPad == stroke)
@@ -311,7 +340,8 @@ import Testing
         let stalls = (0..<20).map { _ in NWConnection(host: "127.0.0.1", port: port, using: .tcp) }
         for stall in stalls { stall.start(queue: .main) }
         try await Task.sleep(for: .milliseconds(300))
-        let pad = PenChannel<HostMessage, PadMessage>(NWConnection(host: "127.0.0.1", port: port, using: .pen(code: code)))
+        let pad = PenChannel<HostMessage, PadMessage>(
+            NWConnection(host: "127.0.0.1", port: port, using: .pen(code: code)))
         pad.start()
         for _ in 0..<100 where !connected { try await Task.sleep(for: .milliseconds(20)) }
         #expect(connected)

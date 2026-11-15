@@ -48,7 +48,9 @@ public final class PTConverter {
 
     /// Returns the exported `.aimodel.zip`, in a temporary folder the caller removes.
     public func convert(_ weights: URL) async throws -> URL {
-        guard let script else { throw CustomModelError.unsupported("The converter script is missing from the app bundle.") }
+        guard let script else {
+            throw CustomModelError.unsupported("The converter script is missing from the app bundle.")
+        }
         defer { status = nil }
         let scoped = weights.startAccessingSecurityScopedResource()
         defer { if scoped { weights.stopAccessingSecurityScopedResource() } }
@@ -60,8 +62,9 @@ public final class PTConverter {
         let output = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
         do {
             try await run(python, [script.path, "--convert", weights.path, "--output", output.path], in: directory)
-            guard let zip = try FileManager.default.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
-                .first(where: { $0.lastPathComponent.hasSuffix(".aimodel.zip") })
+            guard
+                let zip = try FileManager.default.contentsOfDirectory(at: output, includingPropertiesForKeys: nil)
+                    .first(where: { $0.lastPathComponent.hasSuffix(".aimodel.zip") })
             else { throw CustomModelError.unsupported("The export produced no model.") }
             return zip
         } catch {
@@ -74,7 +77,9 @@ public final class PTConverter {
     private func environment() async throws -> URL {
         let python = venv.appending(path: "bin/python")
         let spec = Self.packages.joined(separator: " ")
-        if (try? String(contentsOf: marker, encoding: .utf8)) == spec, FileManager.default.fileExists(atPath: python.path) {
+        if (try? String(contentsOf: marker, encoding: .utf8)) == spec,
+            FileManager.default.fileExists(atPath: python.path)
+        {
             return python
         }
         let uv = try await uvExecutable()
@@ -96,7 +101,8 @@ public final class PTConverter {
         ]
         if let uv = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) { return uv }
         status = "Downloading uv…"
-        let url = URL(string: "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz")!
+        let url = URL(
+            string: "https://github.com/astral-sh/uv/releases/latest/download/uv-aarch64-apple-darwin.tar.gz")!
         let (archive, _) = try await URLSession.shared.download(from: url)
         try await run(URL(filePath: "/usr/bin/tar"), ["-xzf", archive.path, "-C", directory.path], in: directory)
         return candidates[candidates.count - 1]
@@ -151,7 +157,9 @@ private nonisolated final class LineBuffer: @unchecked Sendable {
             let lines = pending.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r" }.map(String.init)
             pending = lines.last ?? ""
             let complete = lines.dropLast().map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-            if let failure = complete.last(where: { $0.range(of: #"^\w*(Error|Exception):"#, options: .regularExpression) != nil }) {
+            if let failure = complete.last(where: {
+                $0.range(of: #"^\w*(Error|Exception):"#, options: .regularExpression) != nil
+            }) {
                 error = failure
             }
             return complete.last

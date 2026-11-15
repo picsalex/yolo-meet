@@ -79,7 +79,8 @@ public struct CatalogEntry: Identifiable, Hashable, Sendable {
 public enum ModelCatalog {
     static let release = "https://github.com/picsalex/yolo-meet/releases/download/models"
     static let suffixes: [YOLOTask: String] = [
-        .detect: "", .segment: "-seg", .pose: "-pose", .obb: "-obb", .classify: "-cls", .semantic: "-sem", .depth: "-depth",
+        .detect: "", .segment: "-seg", .pose: "-pose", .obb: "-obb", .classify: "-cls", .semantic: "-sem",
+        .depth: "-depth",
     ]
     static let rfdetrSizes = ["n": "nano", "s": "small", "m": "medium", "l": "large", "xl": "xlarge", "2xl": "2xlarge"]
 
@@ -88,7 +89,8 @@ public enum ModelCatalog {
             family.sizes.compactMap { size in
                 id(family, task, size).map {
                     CatalogEntry(
-                        id: $0, family: family, task: task, size: size, url: URL(string: "\(release)/\($0).aimodel.zip")!)
+                        id: $0, family: family, task: task, size: size,
+                        url: URL(string: "\(release)/\($0).aimodel.zip")!)
                 }
             }
         }
@@ -136,7 +138,9 @@ public final class ModelStore {
         progress[entry.id] = 0
         let task = URLSession.shared.downloadTask(with: entry.url) { [weak self] file, response, error in
             // The temporary file is deleted when this handler returns, so unzip here.
-            let result = Result { try Self.install(file: file, response: response, error: error, into: self?.directory) }
+            let result = Result {
+                try Self.install(file: file, response: response, error: error, into: self?.directory)
+            }
             Task { @MainActor in self?.finish(entry.id, result) }
         }
         observations[entry.id] = task.progress.observe(\.fractionCompleted) { [weak self] progress, _ in
@@ -171,15 +175,20 @@ public final class ModelStore {
         }
     }
 
-    private nonisolated static func install(file: URL?, response: URLResponse?, error: (any Error)?, into directory: URL?)
+    private nonisolated static func install(
+        file: URL?, response: URLResponse?, error: (any Error)?, into directory: URL?
+    )
         throws
     {
         if let error { throw error }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard let file, let directory, status == 200 else {
-            throw CocoaError(.fileReadUnknown, userInfo: [
-                NSLocalizedDescriptionKey: status == 404 ? "it is not on the models release." : "the server answered HTTP \(status).",
-            ])
+            throw CocoaError(
+                .fileReadUnknown,
+                userInfo: [
+                    NSLocalizedDescriptionKey: status == 404
+                        ? "it is not on the models release." : "the server answered HTTP \(status)."
+                ])
         }
         let unzip = Process()
         unzip.executableURL = URL(filePath: "/usr/bin/ditto")

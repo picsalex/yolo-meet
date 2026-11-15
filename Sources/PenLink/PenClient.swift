@@ -89,11 +89,18 @@ public final class PenClient {
     private func connect() {
         guard let code, channel == nil else { return }
         let hosts = (browser?.browseResults ?? []).map { result -> (name: String, endpoint: NWEndpoint) in
-            if case .service(let name, _, _, _) = result.endpoint { (name, result.endpoint) } else { ("yolo-meet", result.endpoint) }
+            if case .service(let name, _, _, _) = result.endpoint {
+                (name, result.endpoint)
+            } else {
+                ("yolo-meet", result.endpoint)
+            }
         }.sorted { $0.name < $1.name }
         let tried = refused.union(unanswered).union(outdated)
         guard let host = hosts.first(where: { !tried.contains($0.name) }) else {
-            guard !hosts.isEmpty else { return state = .searching }
+            guard !hosts.isEmpty else {
+                state = .searching
+                return
+            }
             state = !outdated.isEmpty ? .outdated : !refused.isEmpty ? .refused : .searching
             guard !isWaiting else { return }
             isWaiting = true

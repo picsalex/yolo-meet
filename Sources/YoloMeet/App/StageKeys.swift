@@ -6,7 +6,9 @@ import AppKit
 /// keys they are never read from other apps, where they would fire while typing in Meet's chat.
 final class StageKeys {
     /// Key codes by position (ANSI key codes are the same on AZERTY Macs).
-    private static let names: [UInt16: String] = [15: "r", 13: "z", 0: "q", 1: "s", 2: "d", 29: "0", 82: "0", 49: "space", 4: "h", 35: "p", 8: "c", 51: "delete"]
+    private static let names: [UInt16: String] = [
+        15: "r", 13: "z", 0: "q", 1: "s", 2: "d", 29: "0", 82: "0", 49: "space", 4: "h", 35: "p", 8: "c", 51: "delete",
+    ]
     private var held: Set<String> = []
     private var pressed: Set<String> = []
     private var released: Set<String> = []
@@ -17,7 +19,9 @@ final class StageKeys {
             self?.handle(event) ?? event
         }
         // Keys released in another app never come back up here.
-        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) {
             [weak self] _ in MainActor.assumeIsolated { self?.held = [] }
         }
     }
@@ -25,7 +29,8 @@ final class StageKeys {
     private func handle(_ event: NSEvent) -> NSEvent? {
         if event.type == .flagsChanged {
             // Command alone: with another modifier it's a shortcut. The event goes on (menus and shortcuts still work).
-            let down = event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
+            let down =
+                event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
                 && !(NSApp.keyWindow?.firstResponder is NSTextView)
             if down, held.insert("cmd").inserted { pressed.insert("cmd") }
             if !down, held.remove("cmd") != nil { released.insert("cmd") }

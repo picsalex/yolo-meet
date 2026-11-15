@@ -6,9 +6,15 @@ import YoloMeetCore
 /// App state shared by the control panel and the stage.
 @Observable
 final class AppModel {
-    enum Mode: String, CaseIterable { case display = "Display", story = "Story" }
+    enum Mode: String, CaseIterable {
+        case display = "Display"
+        case story = "Story"
+    }
     /// What the stage shows under the effects.
-    enum Source: String, CaseIterable { case camera = "Camera", media = "Media" }
+    enum Source: String, CaseIterable {
+        case camera = "Camera"
+        case media = "Media"
+    }
 
     let pipeline = Pipeline()
     let store = ModelStore()
@@ -20,7 +26,9 @@ final class AppModel {
     let links = LinkDownloader()
     @ObservationIgnored lazy var player = MediaPlayer { [pipeline] in pipeline.show($0, isNew: $1) }
     @ObservationIgnored lazy var camera = Camera { [pipeline] in pipeline.handle($0) }
-    @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in forward ? self?.next() : self?.previous() }
+    @ObservationIgnored private lazy var keys = ClickerKeys { [weak self] forward in
+        forward ? self?.next() : self?.previous()
+    }
     /// Keys for the stage's effects (`frame.keys`).
     @ObservationIgnored let stageKeys = StageKeys()
     /// Ink drawn on the stage with the mouse, or with the iPad pen app's Apple Pencil; both observe their own settings.
@@ -142,7 +150,9 @@ final class AppModel {
     func previous() { if mode == .story, let previous = story.place(before: place) { place = previous } }
     /// Enters a branch of the step on stage (`Story.Step.branches`), at its first step.
     func enter(branch: Int) {
-        guard mode == .story, place.branch == nil, story.steps[place.step].branches.indices.contains(branch) else { return }
+        guard mode == .story, place.branch == nil, story.steps[place.step].branches.indices.contains(branch) else {
+            return
+        }
         place = Story.Place(step: place.step, branch: branch)
     }
 
@@ -186,7 +196,9 @@ final class AppModel {
     func makeEffects() -> [Effect] {
         switch mode {
         case .display:
-            displayModels.flatMap { id in task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? [] }
+            displayModels.flatMap { id in
+                task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? []
+            }
         case .story:
             storyNeedsPreparing ? [loadingCard(story.title)] : step.effects()
         }
@@ -216,7 +228,9 @@ final class AppModel {
 
     /// Imports a Core AI model, converting PyTorch checkpoints (`.pt`/`.pth`) first.
     func importModel(from url: URL) async throws {
-        guard ["pt", "pth"].contains(url.pathExtension.lowercased()) else { return try await custom.importModel(from: url) }
+        guard ["pt", "pth"].contains(url.pathExtension.lowercased()) else {
+            return try await custom.importModel(from: url)
+        }
         let zip = try await converter.convert(url)
         defer { try? FileManager.default.removeItem(at: zip.deletingLastPathComponent()) }
         try await custom.importModel(from: zip)

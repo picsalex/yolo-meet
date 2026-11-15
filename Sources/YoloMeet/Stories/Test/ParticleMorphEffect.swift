@@ -51,21 +51,21 @@ final class ParticleMorphEffect: Effect {
         if let gesture = grip.update(frame, isOn: { home.distance(to: $0) < reach }) {
             if gesture.phase == .began { base = (explode, zoom, home) }
             switch gesture.kind {
-            case let .fist(location):
+            case .fist(let location):
                 if gesture.phase == .began { system.scatter(kick: formed ? 1 : 0.4) }
                 home = location
                 if gesture.phase == .ended {
                     system.form(ParticleShapes.cube(system.count))
                     (formed, explode, shown.explode) = (true, 0, 0)
                 }
-            case let .drag(start, location) where formed && gesture.hands == 2:
+            case .drag(let start, let location) where formed && gesture.hands == 2:
                 home = CGPoint(x: base.home.x + location.x - start.x, y: base.home.y + location.y - start.y)
-            case let .drag(start, location) where formed:
+            case .drag(let start, let location) where formed:
                 // Pulled one half-size further from the center: fully exploded.
                 let pulled = home.distance(to: location) - home.distance(to: start)
                 explode = min(max(base.explode + pulled / size, 0), 1)
                 if gesture.phase == .ended, explode < Self.keepExploded { explode = 0 }
-            case let .zoom(scale, _) where formed:
+            case .zoom(let scale, _) where formed:
                 zoom = min(max(base.zoom * scale, 0.4), 3)
             default: break
             }
@@ -85,7 +85,8 @@ final class ParticleMorphEffect: Effect {
 
         // The top face, once formed, facing the viewer and not being gathered by a fist.
         let top = ParticleShapes.CubeFace.top
-        let face = formed && !gathering && system.faces(top.center)
+        let face =
+            formed && !gathering && system.faces(top.center)
             ? top.corners(grownBy: Float(topFace.scale), exploded: system.explode).map(system.stagePoint) : nil
         if topFace.update(frame, isOn: face.map { face in { $0.isInside(face) } }), let face {
             action.pop(above: CGRect(enclosing: face), unit: u)

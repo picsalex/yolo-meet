@@ -24,9 +24,10 @@ nonisolated struct PenSession: Sendable {
         // Both keys, in the same order at both ends, so the keys belong to this exchange alone.
         let keys = [publicKey, peer].sorted { $0.lexicographicallyPrecedes($1) }.reduce(Data(), +)
         func cipher(for sender: String) -> PenCipher {
-            PenCipher(key: secret.hkdfDerivedSymmetricKey(
-                using: SHA256.self, salt: Data("yolo-meet pen session".utf8), sharedInfo: Data(sender.utf8) + keys,
-                outputByteCount: 32))
+            PenCipher(
+                key: secret.hkdfDerivedSymmetricKey(
+                    using: SHA256.self, salt: Data("yolo-meet pen session".utf8), sharedInfo: Data(sender.utf8) + keys,
+                    outputByteCount: 32))
         }
         return (cipher(for: Outgoing.sender), cipher(for: Incoming.sender))
     }

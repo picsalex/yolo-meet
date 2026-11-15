@@ -60,7 +60,8 @@ final class NetworkEffect: Effect {
     private let labels = SKNode()
     private let title: ObjectTitle
     /// The touched neuron's or block's description, in a column beside the whole layout, a line to it.
-    private let neuronInfo = Callouts([""], font: "Archivo-SemiBold", size: 20, line: NetworkEffect.gold.withAlphaComponent(0.85))
+    private let neuronInfo = Callouts(
+        [""], font: "Archivo-SemiBold", size: 20, line: NetworkEffect.gold.withAlphaComponent(0.85))
     /// The layout's headers (e.g. under its columns).
     private let headers: [ShadowedLabel]
     /// The layout's arrows (e.g. into its input).
@@ -103,7 +104,8 @@ final class NetworkEffect: Effect {
         (self.network, self.layout, self.at) = (network, layout, at)
         items = layout?.neurons.map { _ in Actionable(grown: layout!.grown) } ?? []
         turning = KeyTurn(
-            restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25, spinning: layout?.spins ?? false)
+            restingTilt: layout?.restingTilt ?? 0, restingTurn: layout?.restingTurn ?? 0, autoSpeed: 0.25,
+            spinning: layout?.spins ?? false)
         headers = layout?.headers.map { ShadowedLabel($0.text, font: Theme.titleFont) } ?? []
         arrows = layout?.arrows.map { Arrow($0.text, color: NetworkEffect.gold) } ?? []
         dimensions = layout?.dimensions.map { Dimension($0.text) } ?? []
@@ -122,7 +124,9 @@ final class NetworkEffect: Effect {
         weight.label.verticalAlignmentMode = .bottom
         weight.alpha = 0
         (result.label.horizontalAlignmentMode, result.label.verticalAlignmentMode, result.alpha) = (.left, .center, 0)
-        for child in [line, focus, outlines, neuronInfo, weight, result] + headers + arrows + dimensions { labels.addChild(child) }
+        for child in [line, focus, outlines, neuronInfo, weight, result] + headers + arrows + dimensions {
+            labels.addChild(child)
+        }
         labels.alpha = 0
         node.addChild(labels)
         node.addChild(title)
@@ -135,9 +139,12 @@ final class NetworkEffect: Effect {
         let stage = CGRect(origin: .zero, size: frame.stage.viewSize).insetBy(dx: 80 * u, dy: 80 * u)
         let middle = CGPoint(x: frame.stage.viewSize.width / 2, y: frame.stage.viewSize.height / 2)
         let parked = at.map { CGPoint(x: $0.x * frame.stage.viewSize.width, y: $0.y * frame.stage.viewSize.height) }
-        var home = frame.cameraHidden
+        var home =
+            frame.cameraHidden
             ? centered ?? parked ?? middle
-            : self.home ?? parked ?? network.home.map { CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY)) } ?? start
+            : self.home ?? parked ?? network.home.map {
+                CGPoint(x: min(max($0.x, stage.minX), stage.maxX), y: min(max($0.y, stage.minY), stage.maxY))
+            } ?? start
         let cloud = 220 * u
 
         if formNow, let shape = layout?.shape { form(shape, frame) }
@@ -148,13 +155,15 @@ final class NetworkEffect: Effect {
         }
         // A gesture takes hold anywhere on the formed layout as it shows on stage (with a margin), e.g. its picture or
         // a far block; on the cloud, within its radius.
-        let onLayout = formed != nil && !(layout?.outline.isEmpty ?? true)
-            ? CGRect(enclosing: layout!.outline.map { system.shownPoint($0).point }).insetBy(dx: -40 * u, dy: -40 * u) : nil
+        let onLayout =
+            formed != nil && !(layout?.outline.isEmpty ?? true)
+            ? CGRect(enclosing: layout!.outline.map { system.shownPoint($0).point }).insetBy(dx: -40 * u, dy: -40 * u)
+            : nil
         let reach = formed != nil ? 1.2 * Self.size * u * zoom : 1.1 * cloud
         if let gesture = grip.update(frame, isOn: { onLayout?.contains($0) ?? (home.distance(to: $0) < reach) }) {
             if gesture.phase == .began { base = (home, zoom) }
             switch gesture.kind {
-            case let .fist(location):
+            case .fist(let location):
                 if gesture.phase == .began {
                     // A layout that releases its particles (the black box) lets them go in the system's colors.
                     system.scatter(kick: formed != nil ? 1 : 0.4, plainColors: layout?.releases == true)
@@ -169,9 +178,9 @@ final class NetworkEffect: Effect {
                         form(shape, frame)  // at its zoom
                     }
                 }
-            case let .drag(start, location) where formed != nil:
+            case .drag(let start, let location) where formed != nil:
                 home = CGPoint(x: base.home.x + location.x - start.x, y: base.home.y + location.y - start.y)
-            case let .zoom(scale, center) where formed != nil:
+            case .zoom(let scale, let center) where formed != nil:
                 // Around the point between the hands, which stays where it is: zoom in on a part to look inside it.
                 zoom = min(max(base.zoom * scale, 0.5), 12)
                 let k = zoom / base.zoom
@@ -190,7 +199,8 @@ final class NetworkEffect: Effect {
         }
 
         let k = frame.smoothing
-        let now: (home: CGPoint, zoom: CGFloat) = shown.map { ($0.home.approaching(home, k), $0.zoom.approaching(zoom, k)) } ?? (home, zoom)
+        let now: (home: CGPoint, zoom: CGFloat) =
+            shown.map { ($0.home.approaching(home, k), $0.zoom.approaching(zoom, k)) } ?? (home, zoom)
         shown = now
         var gathering = false
         if grip.held, case .fist = frame.gesture?.kind { gathering = true }
@@ -209,7 +219,11 @@ final class NetworkEffect: Effect {
             let (points, colors, inside) = flow.frame(at: Float(frame.stepTime), again: frame.loopCount > 0)
             system.place(flow.particles, at: points, colors: colors)
             // Blocks light up gold as the pixels go through them (quickly), and cool down after (slowly).
-            if glow.count != flow.blocks.count { (glow, painted) = (Array(repeating: 0, count: flow.blocks.count), Array(repeating: -1, count: flow.blocks.count)) }
+            if glow.count != flow.blocks.count {
+                (glow, painted) = (
+                    Array(repeating: 0, count: flow.blocks.count), Array(repeating: -1, count: flow.blocks.count)
+                )
+            }
             let gold = NNColors.goldLight * 1.4
             for b in flow.blocks.indices {
                 let target = 1 - exp(-Float(inside[b]) / 120)
@@ -224,7 +238,8 @@ final class NetworkEffect: Effect {
         let splitting = formed != nil && layout?.splits == true
         let pace = Float(frame.dt) / 1.5
         network.split = splitting ? min(network.split + pace, 1) : max(network.split - 2 * pace, 0)
-        if staging, network.split >= 1, let shape = layout?.shape { form(shape, frame) }  // the prelude done: on to the layout
+        // the prelude done: on to the layout
+        if staging, network.split >= 1, let shape = layout?.shape { form(shape, frame) }
         // Arrived, the same points without offsets (nothing moves), so a block grows where it is when touched.
         if splitting, !staging, !settled, network.split >= 1, let shape = layout?.settled {
             system.form(shape, staggered: false)
@@ -258,7 +273,9 @@ final class NetworkEffect: Effect {
         let fading = CGFloat(1 - exp(-frame.dt * 6))
         for (arrow, ends) in zip(arrows, layout.arrows) {
             let feeds = (layout.arrowFeeds[ends.text] ?? []).map { $0.map { system.shownPoint($0).point } }
-            arrow.update(from: system.shownPoint(ends.tail).point, to: system.shownPoint(ends.tip).point, feeds: feeds, frame: frame)
+            arrow.update(
+                from: system.shownPoint(ends.tail).point, to: system.shownPoint(ends.tip).point, feeds: feeds,
+                frame: frame)
             arrow.alpha = arrow.alpha.approaching(1, fading)
         }
         // The flow's result past the output arrow's tip: in once the pixels are through, out as the timeline starts over.
@@ -272,10 +289,12 @@ final class NetworkEffect: Effect {
             result.sync(unit: u)
         }
         for (dimension, ends) in zip(dimensions, layout.dimensions) {
-            dimension.update(from: system.shownPoint(ends.from).point, to: system.shownPoint(ends.to).point, frame: frame)
+            dimension.update(
+                from: system.shownPoint(ends.from).point, to: system.shownPoint(ends.to).point, frame: frame)
         }
         for old in leaving {
-            old.arrow.update(from: system.shownPoint(old.tail).point, to: system.shownPoint(old.tip).point, frame: frame)
+            old.arrow.update(
+                from: system.shownPoint(old.tail).point, to: system.shownPoint(old.tip).point, frame: frame)
             old.arrow.alpha = old.arrow.alpha.approaching(0, fading)
             if old.arrow.alpha < 0.01 { old.arrow.removeFromParent() }
         }
@@ -293,7 +312,9 @@ final class NetworkEffect: Effect {
         let previous = network.formed
         // From the layout its prelude follows, the prelude first (e.g. some neurons moving out of the brain); the
         // layout itself forms from it once it's done (`update`).
-        if let prelude = layout?.prelude, let first = prelude.shape, system.mode == .form, previous != nil, previous === prelude.splitsFrom {
+        if let prelude = layout?.prelude, let first = prelude.shape, system.mode == .form, previous != nil,
+            previous === prelude.splitsFrom
+        {
             system.form(first, staggered: false)
             (network.formed, network.split, staging, settled) = (prelude, 0, true, false)
             (formed, formNow) = (frame.time, false)
@@ -328,7 +349,8 @@ final class NetworkEffect: Effect {
                 node.addChild(old)
                 leavingTitle = (old, true)
             }
-            let before = Set(previous?.arrows.map(\.text) ?? []), now = Set(layout.arrows.map(\.text))
+            let before = Set(previous?.arrows.map(\.text) ?? [])
+            let now = Set(layout.arrows.map(\.text))
             for (arrow, ends) in zip(arrows, layout.arrows) where !before.contains(ends.text) { arrow.alpha = 0 }
             for ends in previous?.arrows ?? [] where !now.contains(ends.text) {
                 let arrow = Arrow(ends.text, color: Self.gold)
@@ -348,15 +370,20 @@ final class NetworkEffect: Effect {
         // Blocks: their 8 corners on stage (at their grown size), and the outline around them, which the whole box
         // (front, sides, depth) is inside.
         let corners: [[CGPoint]?] = zip(layout.neurons, items).map { neuron, item in
-            neuron.box.map { box in Box.corners(neuron.point, half: box * Float(item.scale)).map { system.shownPoint($0).point } }
+            neuron.box.map { box in
+                Box.corners(neuron.point, half: box * Float(item.scale)).map { system.shownPoint($0).point }
+            }
         }
         let hulls = corners.map { $0.map(convexHull) }
 
         // Action mode: per fingertip, the nearest neuron (or block) its touch circle reaches, else the nearest synapse.
         let reach = Pointer.reach * u
         let touches = { (i: Int, p: CGPoint) -> Bool in
-            guard let hull = hulls[i] else { return self.onStage[i].point.distance(to: p) < self.onStage[i].radius + reach }
-            return p.isInside(hull) || hull.indices.contains { segmentDistance(p, hull[$0], hull[($0 + 1) % hull.count]) < reach }
+            guard let hull = hulls[i] else {
+                return self.onStage[i].point.distance(to: p) < self.onStage[i].radius + reach
+            }
+            return p.isInside(hull)
+                || hull.indices.contains { segmentDistance(p, hull[$0], hull[($0 + 1) % hull.count]) < reach }
         }
         var pointedNeurons = Set<Int>()
         var pointedSynapse: Int?
@@ -379,7 +406,8 @@ final class NetworkEffect: Effect {
                     pointedNeurons.insert(i)
                 } else if let s = layout.synapses.indices.filter({ layout.synapses[$0].weight != nil })
                     .min(by: { distance(pointer.location, $0) < distance(pointer.location, $1) }),
-                    distance(pointer.location, s) < reach {
+                    distance(pointer.location, s) < reach
+                {
                     pointedSynapse = s
                     frame.pointing.mark(pointer.hand)
                 }
@@ -390,7 +418,9 @@ final class NetworkEffect: Effect {
         }
         // The neuron grown most (one at a time) grows its particles.
         let grown = items.indices.max { items[$0].scale < items[$1].scale }  // nil: no neurons (e.g. a picture)
-        system.highlight = grown.flatMap { items[$0].scale > 1.001 ? ($0 + 1, layout.neurons[$0].point, Float(items[$0].scale)) : nil }
+        system.highlight = grown.flatMap {
+            items[$0].scale > 1.001 ? ($0 + 1, layout.neurons[$0].point, Float(items[$0].scale)) : nil
+        }
 
         // The touched neuron as a disc with its bias, popping in as it grows (and out as it shrinks back), at least
         // `focusRadius`; its description on the right, the line ending at the disc's edge. A block shows what it is.
@@ -421,22 +451,29 @@ final class NetworkEffect: Effect {
             left = neuronInfo.side(of: 0, anchor: center, around: bounds, left: kept, frame: frame)
             if left == nil {
                 let still = layout.neurons[i].box.map { box in
-                    CGRect(enclosing: Box.corners(layout.neurons[i].point, half: box * Float(item.grown)).map { system.shownPoint($0).point })
+                    CGRect(
+                        enclosing: Box.corners(layout.neurons[i].point, half: box * Float(item.grown)).map {
+                            system.shownPoint($0).point
+                        })
                 }
                 let rest = max(onStage[i].radius / item.scale * item.grown + 2 * u, Self.focusRadius * u)
                 around = still ?? CGRect(x: center.x - rest, y: center.y - rest, width: 2 * rest, height: 2 * rest)
-                left = neuronInfo.side(of: 0, anchor: center, around: around, left: kept, frame: frame)
+                left =
+                    neuronInfo.side(of: 0, anchor: center, around: around, left: kept, frame: frame)
                     ?? kept ?? (center.x > frame.stage.viewSize.width / 2)
             }
             let onLeft = left!
             labelSide = (i, onLeft)
-            anchor = corners[i].map { $0.min { onLeft ? $0.x < $1.x : $0.x > $1.x }! }
+            anchor =
+                corners[i].map { $0.min { onLeft ? $0.x < $1.x : $0.x > $1.x }! }
                 ?? CGPoint(x: center.x + (onLeft ? -radius : radius), y: center.y)
         }
         neuronInfo.update(anchors: [anchor], around: around, left: left, visible: !pointedNeurons.isEmpty, frame: frame)
 
         // Gold: a touched header, and the outlines of the touched blocks and of a touched header's.
-        for (h, label) in headers.enumerated() { label.label.set(\.fontColor, pointedHeaders.contains(h) ? Self.gold : .white) }
+        for (h, label) in headers.enumerated() {
+            label.label.set(\.fontColor, pointedHeaders.contains(h) ? Self.gold : .white)
+        }
         let outlined = pointedNeurons.union(pointedHeaders.flatMap { layout.headers[$0].members })
         let path = CGMutablePath()
         for i in outlined {
@@ -446,7 +483,8 @@ final class NetworkEffect: Effect {
                 path.addLine(to: corner[b])
             }
         }
-        if !path.isEmpty || outlines.path?.isEmpty == false { outlines.path = path }  // nothing outlined, before or now: no write
+        // nothing outlined, before or now: no write
+        if !path.isEmpty || outlines.path?.isEmpty == false { outlines.path = path }
         outlines.set(\.lineWidth, 2 * u)
 
         // The touched synapse lit, its weight over its middle.
@@ -486,7 +524,8 @@ private func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloa
 private func convexHull(_ points: [CGPoint]) -> [CGPoint] {
     let sorted = points.sorted { ($0.x, $0.y) < ($1.x, $1.y) }
     let cross = { (o: CGPoint, a: CGPoint, b: CGPoint) in (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x) }
-    var lower: [CGPoint] = [], upper: [CGPoint] = []
+    var lower: [CGPoint] = []
+    var upper: [CGPoint] = []
     for p in sorted {
         while lower.count >= 2, cross(lower[lower.count - 2], lower[lower.count - 1], p) <= 0 { lower.removeLast() }
         lower.append(p)

@@ -11,7 +11,10 @@ import simd
 /// radial spring with an orbit and a swirling flow, and forming is a staggered, critically damped spring to each
 /// particle's point of the shape.
 final class ParticleSystem {
-    enum Mode: Float { case cloud = 0, form = 1 }
+    enum Mode: Float {
+        case cloud = 0
+        case form = 1
+    }
 
     /// Stage points per world unit at stage unit 1.
     static let worldUnit: CGFloat = 200
@@ -145,7 +148,8 @@ final class ParticleSystem {
         let now = direct ? buffers[5].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         let before = direct ? buffers[6].contents().bindMemory(to: SIMD4<Float>.self, capacity: count) : nil
         for (k, i) in indices.enumerated() {
-            let point = SIMD4(points[k], shape!.points[i].w), color = SIMD4(colors[k], 1)
+            let point = SIMD4(points[k], shape!.points[i].w)
+            let color = SIMD4(colors[k], 1)
             (shape!.points[i], shape!.colors[i]) = (point, color)
             if direct { (targets![i], now![i], before![i]) = (point, color, color) }
         }
@@ -186,7 +190,8 @@ final class ParticleSystem {
             let seeds = (0..<count).map { _ in SIMD4(SIMD3<Float>.randomDirection(), .random(in: 0...1)) }
             let length = count * MemoryLayout<SIMD4<Float>>.stride
             guard let position = device.makeBuffer(bytes: positions, length: length),
-                let velocity = device.makeBuffer(length: length), let seed = device.makeBuffer(bytes: seeds, length: length),
+                let velocity = device.makeBuffer(length: length),
+                let seed = device.makeBuffer(bytes: seeds, length: length),
                 let target = device.makeBuffer(length: length), let offset = device.makeBuffer(length: length),
                 let color = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length),
                 let previous = device.makeBuffer(bytes: [SIMD4<Float>](repeating: .zero, count: count), length: length)
@@ -214,14 +219,18 @@ final class ParticleSystem {
         let r = simd_matrix3x3(rotation)
         defer { kick = 0 }  // one burst
         return ParticleUniforms(
-            time: [Float(min(dt, 0.1)), Float(time.truncatingRemainder(dividingBy: 1000)), Float(time - (formStart ?? time)), mode.rawValue],
+            time: [
+                Float(min(dt, 0.1)), Float(time.truncatingRemainder(dividingBy: 1000)),
+                Float(time - (formStart ?? time)), mode.rawValue,
+            ],
             center: [Float(center.x) / world, Float(center.y) / world, 0, Float(radius) / world],
             shape: [Float(size) / world, kick, pointSize * Float(stage.unit), world],
             view: [Float(stage.viewSize.width), Float(stage.viewSize.height), explode, Float(highlight?.part ?? -1)],
             highlight: highlight.map { SIMD4($0.center, $0.scale) } ?? [0, 0, 0, 1],
             color: SIMD4(color, brightness),
             // Rows of the rotation matrix (simd matrices are column-major).
-            rot0: [r[0][0], r[1][0], r[2][0], colorMix], rot1: [r[0][1], r[1][1], r[2][1], 0], rot2: [r[0][2], r[1][2], r[2][2], 0])
+            rot0: [r[0][0], r[1][0], r[2][0], colorMix], rot1: [r[0][1], r[1][1], r[2][1], 0],
+            rot2: [r[0][2], r[1][2], r[2][2], 0])
     }
 }
 
@@ -284,7 +293,8 @@ final class ParticleRenderer {
             compute.setBuffer(b[4], offset: 0, index: 5)
             compute.dispatchThreads(
                 MTLSize(width: system.count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: min(step.maxTotalThreadsPerThreadgroup, 256), height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: min(step.maxTotalThreadsPerThreadgroup, 256), height: 1, depth: 1)
+            )
         }
         compute.endEncoding()
 

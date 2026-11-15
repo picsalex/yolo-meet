@@ -27,8 +27,8 @@ struct HandGesture {
     /// position on `.began` so gestures only act on the object the hand is on.
     var location: CGPoint {
         switch kind {
-        case let .drag(_, location), let .fist(location): location
-        case let .zoom(_, center): center
+        case .drag(_, let location), .fist(let location): location
+        case .zoom(_, let center): center
         }
     }
 }
@@ -147,7 +147,8 @@ final class HandGestures {
         let output = Self.models.lazy.compactMap { frame.outputs[$0] }.first
         for detection in output?.detections ?? [] {
             guard let id = detection.trackID, detection.keypoints.count >= 21, let output else { continue }
-            hands[id] = measure(detection.keypoints.map(\.point), in: output.frameSize, previous: hands[id], frame: frame)
+            hands[id] = measure(
+                detection.keypoints.map(\.point), in: output.frameSize, previous: hands[id], frame: frame)
         }
         hands = hands.filter { frame.time - $0.value.lastSeen <= (frame.smooth ? Self.grace : 0) }
         consumed = consumed.filter { id, fist in hands[id].map { fist ? $0.fist : $0.pinching } ?? false }
@@ -165,14 +166,17 @@ final class HandGestures {
         if holds(current) {
             releasedAt = nil
             decide(frame)
-            guard let current = active, let kind = kind(of: current) else { return nil }  // two hands that haven't moved enough to tell
+            // two hands that haven't moved enough to tell
+            guard let current = active, let kind = kind(of: current) else { return nil }
             history.removeAll { $0.time < frame.time - 2 * Self.settle }
             history.append((frame.time, kind))
             defer { announced = true }
             return HandGesture(kind: kind, phase: announced ? .changed : .began, hands: count)
         }
         let released = releasedAt ?? frame.time
-        if announced, frame.smooth, frame.time - released < Self.hold, !turnsIntoAnother(current), let last = history.last {
+        if announced, frame.smooth, frame.time - released < Self.hold, !turnsIntoAnother(current),
+            let last = history.last
+        {
             releasedAt = released
             return HandGesture(kind: last.kind, phase: .changed, hands: count)
         }
@@ -182,7 +186,7 @@ final class HandGestures {
     /// The gesture to start now: a pair or a fist at once; a one-hand drag once its hand has stayed still (and kept
     /// pinching) for `charge`, meanwhile reported in `charging`.
     private func charged(_ candidate: Active?, _ frame: StageFrame) -> Active? {
-        guard case let .drag(id, location) = candidate else {
+        guard case .drag(let id, let location) = candidate else {
             pending = nil
             return candidate
         }
@@ -217,7 +221,8 @@ final class HandGestures {
         let centered = previous?.center.filtering(center, frame) ?? OneEuroFilter(center)
         let speed = hypot(centered.velocity.x, centered.velocity.y) / frame.stage.unit
         return Hand(
-            pinchRatio: pinchRatio, curl: curl, thumb: thumb, speed: speed, pinching: pinching, fist: fist, atEdge: atEdge,
+            pinchRatio: pinchRatio, curl: curl, thumb: thumb, speed: speed, pinching: pinching, fist: fist,
+            atEdge: atEdge,
             pinch: previous?.pinch.filtering(pinch, frame) ?? OneEuroFilter(pinch),
             center: centered,
             tip: previous?.tip.filtering(tip, frame) ?? OneEuroFilter(tip), lastSeen: frame.time)
@@ -226,15 +231,17 @@ final class HandGestures {
     /// Whether the gesture's hands still pinch (or make a fist).
     private func holds(_ active: Active) -> Bool {
         switch active {
-        case let .drag(id, _): hands[id]?.pinching == true && secondPinch(besides: id) == nil
-        case let .pair(a, b, _, _, _): hands[a]?.pinching == true && hands[b]?.pinching == true
-        case let .fist(id): hands[id]?.fist == true
+        case .drag(let id, _): hands[id]?.pinching == true && secondPinch(besides: id) == nil
+        case .pair(let a, let b, _, _, _): hands[a]?.pinching == true && hands[b]?.pinching == true
+        case .fist(let id): hands[id]?.fist == true
         }
     }
 
     /// Decides what a pair of hands does once they have moved enough (after settling).
     private func decide(_ frame: StageFrame) {
-        guard pairMode == nil, case let .pair(a, b, distance, center, since) = active, let (p, q) = pinches(a, b) else { return }
+        guard pairMode == nil, case .pair(let a, let b, let distance, let center, let since) = active,
+            let (p, q) = pinches(a, b)
+        else { return }
         if frame.time - since < Self.pairSettle {
             active = .pair(a, b, distance: max(p.distance(to: q), 1), center: p.midpoint(q), since: since)
             return
@@ -246,14 +253,14 @@ final class HandGestures {
     /// The gesture's current values (it holds); nil for a pair not decided yet.
     private func kind(of active: Active) -> HandGesture.Kind? {
         switch active {
-        case let .drag(id, start):
+        case .drag(let id, let start):
             return hands[id].map { .drag(start: start, location: $0.pinch.value) }
-        case let .pair(a, b, distance, center, _):
+        case .pair(let a, let b, let distance, let center, _):
             guard let mode = pairMode, let (p, q) = pinches(a, b) else { return nil }
             return mode == .zoom
                 ? .zoom(scale: p.distance(to: q) / distance, center: p.midpoint(q))
                 : .drag(start: center, location: p.midpoint(q))
-        case let .fist(id):
+        case .fist(let id):
             return hands[id].map { .fist(location: $0.center.value) }
         }
     }
@@ -265,7 +272,7 @@ final class HandGestures {
 
     /// A drag ends at once when a second hand pinches (both go on as a pair) or when its hand closes into a fist.
     private func turnsIntoAnother(_ active: Active) -> Bool {
-        guard case let .drag(id, _) = active else { return false }
+        guard case .drag(let id, _) = active else { return false }
         return secondPinch(besides: id) != nil || hands[id]?.fist == true
     }
 
@@ -273,7 +280,7 @@ final class HandGestures {
     private func end(at time: TimeInterval, hands count: Int) -> HandGesture? {
         // The hands of a drag that goes on as a pair, or as a fist, stay free.
         var free: Set<Int> = []
-        if case let .drag(id, _) = active {
+        if case .drag(let id, _) = active {
             if let other = secondPinch(besides: id) { free = [id, other] }
             if hands[id]?.fist == true { free = [id] }
         }
@@ -339,12 +346,17 @@ final class GestureDebugEffect: Effect {
         var lines = [title(frame)]
         for (id, hand) in gestures.hands.sorted(by: { $0.key < $1.key }) {
             let state = hand.atEdge ? "edge" : hand.fist ? "fist" : hand.pinching ? "pinch" : "open"
-            let measures = String(format: "pinch %.2f  curl %.2f  thumb %.2f  speed %3.0f", hand.pinchRatio, hand.curl, hand.thumb, hand.speed)
-            lines.append("Hand \(id)".padding(toLength: 9, withPad: " ", startingAt: 0)
-                + state.padding(toLength: 7, withPad: " ", startingAt: 0) + measures)
+            let measures = String(
+                format: "pinch %.2f  curl %.2f  thumb %.2f  speed %3.0f", hand.pinchRatio, hand.curl, hand.thumb,
+                hand.speed)
+            lines.append(
+                "Hand \(id)".padding(toLength: 9, withPad: " ", startingAt: 0)
+                    + state.padding(toLength: 7, withPad: " ", startingAt: 0) + measures)
         }
         if gestures.hands.isEmpty {
-            lines.append(HandGestures.models.contains(where: { frame.outputs[$0] != nil }) ? "No hands" : "No hand model in this scene")
+            lines.append(
+                HandGestures.models.contains(where: { frame.outputs[$0] != nil })
+                    ? "No hands" : "No hand model in this scene")
         }
         let u = frame.stage.unit
         let pad = 12 * u
@@ -352,7 +364,8 @@ final class GestureDebugEffect: Effect {
         label.set(\.fontSize, 13 * u)
         label.position = CGPoint(x: 16 * u + pad, y: frame.stage.viewSize.height - 16 * u - pad)
         background.path = CGPath(
-            roundedRect: label.frame.insetBy(dx: -pad, dy: -pad), cornerWidth: 8 * u, cornerHeight: 8 * u, transform: nil)
+            roundedRect: label.frame.insetBy(dx: -pad, dy: -pad), cornerWidth: 8 * u, cornerHeight: 8 * u,
+            transform: nil)
     }
 
     private func title(_ frame: StageFrame) -> String {
@@ -365,11 +378,13 @@ final class GestureDebugEffect: Effect {
         }
         let name: String
         switch gesture.kind {
-        case let .drag(start, location):
-            name = String(format: "Drag%@  Δ %+.0f, %+.0f", gesture.hands == 2 ? " (2 hands)" : "", location.x - start.x, location.y - start.y)
-        case let .zoom(scale, _):
+        case .drag(let start, let location):
+            name = String(
+                format: "Drag%@  Δ %+.0f, %+.0f", gesture.hands == 2 ? " (2 hands)" : "", location.x - start.x,
+                location.y - start.y)
+        case .zoom(let scale, _):
             name = String(format: "Zoom  ×%.2f", scale)
-        case let .fist(location):
+        case .fist(let location):
             name = String(format: "Fist  at %.0f, %.0f", location.x, location.y)
         }
         if gesture.phase == .ended { ended = (name, frame.time) }

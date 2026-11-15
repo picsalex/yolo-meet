@@ -93,7 +93,9 @@ final class PadModel {
             let number = pictures.received
             Task {
                 // Decoded off the main thread: the pen is read on it.
-                guard let image = await UIImage(data: jpeg)?.byPreparingForDisplay(), number > pictures.shown else { return }
+                guard let image = await UIImage(data: jpeg)?.byPreparingForDisplay(), number > pictures.shown else {
+                    return
+                }
                 (pictures.shown, picture) = (number, image)
                 guard let through, let last = strokes.firstIndex(where: { $0.id == through }),
                     strokes[...last].contains(where: { !$0.isPictured })
@@ -126,7 +128,8 @@ final class PadModel {
             // Erasing happens on stage: the pad only shows where the eraser is.
             (isErasing, eraser) = (true, point)
         } else {
-            strokes.append(Stroke(id: id, color: settings.color, points: [(point, settings.width * PenLink.press(force: force))]))
+            strokes.append(
+                Stroke(id: id, color: settings.color, points: [(point, settings.width * PenLink.press(force: force))]))
             isDrawing = true
             redraw?(CGRect(origin: point, size: .zero))
         }
@@ -181,7 +184,11 @@ final class PadModel {
 
     /// One of the settings, for a control.
     func setting<Value>(_ path: WritableKeyPath<InkSettings, Value>) -> Binding<Value> {
-        Binding { self.settings[keyPath: path] } set: { value in self.change { $0[keyPath: path] = value } }
+        Binding {
+            self.settings[keyPath: path]
+        } set: { value in
+            self.change { $0[keyPath: path] = value }
+        }
     }
 
     /// Picking a color takes the pencil back.

@@ -14,7 +14,8 @@ struct SettingsTab: View {
         Section("iPad Pen") {
             PenToggle()
             LabeledContent {
-                Text(showsCode ? PenCode.shown(pen.code) : "••••-••••-••••-••••-••••").monospaced().textSelection(.enabled)
+                Text(showsCode ? PenCode.shown(pen.code) : "••••-••••-••••-••••-••••").monospaced().textSelection(
+                    .enabled)
                 Button(showsCode ? "Hide" : "Show") { showsCode.toggle() }
                 Button("New") { pen.renewCode() }
                     .help("Makes another code: every iPad has to be given it")
@@ -43,12 +44,16 @@ struct SettingsTab: View {
                     .disabled(model.store.downloaded.isEmpty)
             } label: {
                 Text("Downloaded models")
-                Text(model.store.downloaded.isEmpty ? "None" : "\(model.store.downloaded.count) models and their compiled copies")
+                Text(
+                    model.store.downloaded.isEmpty
+                        ? "None" : "\(model.store.downloaded.count) models and their compiled copies")
             }
             .confirmationDialog("Delete all downloaded models?", isPresented: $confirmingDeleteAll) {
                 Button("Delete All", role: .destructive) { model.deleteAllModels() }
             } message: {
-                Text("Removes \(model.store.downloaded.count) models and their compiled copies. Imported models are kept.")
+                Text(
+                    "Removes \(model.store.downloaded.count) models and their compiled copies. Imported models are kept."
+                )
             }
         }
     }

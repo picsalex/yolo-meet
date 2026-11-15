@@ -40,13 +40,16 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         isDETR = metadata["family"] == "rfdetr" || outputs.isSuperset(of: ["dets", "labels"])
         guard
             let task = metadata["task"].flatMap(YOLOTask.init(rawValue:))
-                ?? (isDETR ? (outputs.contains("masks") ? .segment : outputs.contains("keypoints") ? .pose : .detect) : nil)
+                ?? (isDETR
+                    ? (outputs.contains("masks") ? .segment : outputs.contains("keypoints") ? .pose : .detect) : nil)
         else { throw ModelError.invalid("not an Ultralytics or RF-DETR export (no task in its metadata)") }
         if !isDETR, [.detect, .segment, .pose, .obb].contains(task),
-            case .ndArray(let head)? = descriptor.outputDescriptor(of: descriptor.outputNames[0]), head.shape.count == 3,
+            case .ndArray(let head)? = descriptor.outputDescriptor(of: descriptor.outputNames[0]),
+            head.shape.count == 3,
             (0..<head.shape[1]).contains(head.shape[2])  // [1, 300, 6]; raw heads have more (or variable, -1) anchors
         {
-            throw ModelError.invalid("end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
+            throw ModelError.invalid(
+                "end-to-end (nms) export; re-export with the default head: yolo export format=coreai")
         }
         self.id = url.deletingPathExtension().lastPathComponent
         self.task = task
@@ -55,13 +58,15 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         // RF-DETR expects ImageNet normalization; its raw export does not record it.
         let mean = Self.parseNumbers(metadata["mean"] ?? (isDETR ? "0.485, 0.456, 0.406" : ""))
         let std = Self.parseNumbers(metadata["std"] ?? (isDETR ? "0.229, 0.224, 0.225" : ""))
-        let range: (low: [Float], high: [Float]) = mean.count == 3 && std.count == 3
+        let range: (low: [Float], high: [Float]) =
+            mean.count == 3 && std.count == 3
             ? ((0..<3).map { -mean[$0] / std[$0] }, (0..<3).map { (1 - mean[$0]) / std[$0] })
             : ([0, 0, 0], [1, 1, 1])
         self.function = try ImageFunction(function, range: range)
         let shape = self.function.shape
         fixedSize = shape[2] > 0 && shape[3] > 0 ? (shape[3], shape[2]) : nil
-        trainingSize = fixedSize.map { max($0.width, $0.height) }
+        trainingSize =
+            fixedSize.map { max($0.width, $0.height) }
             ?? Int(Self.parseNumbers(metadata["imgsz"] ?? "").max() ?? 640)
         info = ModelAsset.info(
             at: url, metadata: metadata, family: isDETR ? "RF-DETR" : "YOLO", architecture: metadata["architecture"],
@@ -81,8 +86,9 @@ public nonisolated final class YOLOModel: @unchecked Sendable {
         let placed = frame.transformed(
             by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY)
                 .concatenating(CGAffineTransform(scaleX: geometry.gainX, y: geometry.gainY))
-                .concatenating(CGAffineTransform(
-                    translationX: geometry.padX, y: CGFloat(h) - geometry.padY - extent.height * geometry.gainY)),
+                .concatenating(
+                    CGAffineTransform(
+                        translationX: geometry.padX, y: CGFloat(h) - geometry.padY - extent.height * geometry.gainY)),
             highQualityDownsample: task == .classify && !isDETR)
         let tensors = try await function.run(
             placed, width: w, height: h, background: CIColor(red: 114 / 255, green: 114 / 255, blue: 114 / 255),
@@ -158,6 +164,7 @@ nonisolated struct Geometry {
     func rect(cx: Float, cy: Float, w: Float, h: Float) -> CGRect {
         let center = point(cx, cy)
         let size = CGSize(width: CGFloat(w) / gainX, height: CGFloat(h) / gainY)
-        return CGRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
+        return CGRect(
+            x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height)
     }
 }

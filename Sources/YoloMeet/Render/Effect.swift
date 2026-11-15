@@ -23,7 +23,8 @@ struct Stage {
 
     func rect(_ r: CGRect) -> CGRect {
         let (topLeft, bottomRight) = (point(CGPoint(x: r.minX, y: r.minY)), point(CGPoint(x: r.maxX, y: r.maxY)))
-        return CGRect(x: topLeft.x, y: bottomRight.y, width: bottomRight.x - topLeft.x, height: topLeft.y - bottomRight.y)
+        return CGRect(
+            x: topLeft.x, y: bottomRight.y, width: bottomRight.x - topLeft.x, height: topLeft.y - bottomRight.y)
     }
 
     var frameRect: CGRect { rect(CGRect(origin: .zero, size: frameSize)) }
@@ -121,7 +122,8 @@ struct Pointer {
     /// The touch circle's radius, in stage points at unit 1.
     static let reach: CGFloat = 18
     /// The circle's center and 8 points around it, at radius 1.
-    static let circle = [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
+    static let circle =
+        [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
     /// The `hand` of the mouse cursor's pointer (`MouseGestures`): no hand's track ID.
     static let mouse = -1
 
@@ -256,4 +258,3 @@ extension CGRect {
             width: width.approaching(target.width, k), height: height.approaching(target.height, k))
     }
 }
-

@@ -27,11 +27,14 @@ final class StagePicture {
     /// way or it's too soon after the last. `send` gets the JPEG on the main thread, and calls `done` when it left.
     func take(
         of texture: any MTLTexture, at time: TimeInterval, idle: Bool, with context: CIContext,
-        in commandBuffer: any MTLCommandBuffer, send: @escaping @MainActor (Data, _ done: @escaping @MainActor () -> Void) -> Void
+        in commandBuffer: any MTLCommandBuffer,
+        send: @escaping @MainActor (Data, _ done: @escaping @MainActor () -> Void) -> Void
     ) {
         guard !isBusy, time - lastTime >= 1 / (idle ? Self.idleRate : Self.rate), texture.height > 0 else { return }
         let scale = min(1, Self.height / CGFloat(texture.height))
-        let (width, height) = (Int((CGFloat(texture.width) * scale).rounded()), Int((CGFloat(texture.height) * scale).rounded()))
+        let (width, height) = (
+            Int((CGFloat(texture.width) * scale).rounded()), Int((CGFloat(texture.height) * scale).rounded())
+        )
         if copy?.width != width || copy?.height != height {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
@@ -42,7 +45,9 @@ final class StagePicture {
         }
         // Both textures have their first row at the top, so nothing flips on the way.
         let color = CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let copy, let pixels, let image = CIImage(mtlTexture: texture, options: [.colorSpace: color]) else { return }
+        guard let copy, let pixels, let image = CIImage(mtlTexture: texture, options: [.colorSpace: color]) else {
+            return
+        }
         let destination = CIRenderDestination(mtlTexture: copy, commandBuffer: commandBuffer)
         destination.colorSpace = color
         let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -54,7 +59,10 @@ final class StagePicture {
             let jpeg = Self.jpeg(of: drawn, through: buffer)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let jpeg else { return self.isBusy = false }
+                    guard let jpeg else {
+                        self.isBusy = false
+                        return
+                    }
                     send(jpeg) { self.isBusy = false }
                 }
             }
@@ -65,10 +73,13 @@ final class StagePicture {
     private nonisolated static func jpeg(of texture: any MTLTexture, through pixels: UnsafeMutableRawPointer) -> Data? {
         let (width, height, rowBytes) = (texture.width, texture.height, texture.width * 4)
         texture.getBytes(pixels, bytesPerRow: rowBytes, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
-        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        let info = CGBitmapInfo(
+            rawValue: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
         let data = NSMutableData()
         // The image reads the pixels where they are, until the JPEG is made below: they are kept for the next picture.
-        guard let provider = CGDataProvider(dataInfo: nil, data: pixels, size: rowBytes * height, releaseData: { _, _, _ in }),
+        guard
+            let provider = CGDataProvider(
+                dataInfo: nil, data: pixels, size: rowBytes * height, releaseData: { _, _, _ in }),
             let image = CGImage(
                 width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: rowBytes,
                 space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: info, provider: provider, decode: nil,

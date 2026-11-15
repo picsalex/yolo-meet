@@ -43,11 +43,11 @@ final class ManipulationEffect: Effect {
         if let gesture = grip.update(frame, isOn: { (self.shown?.position ?? target).distance(to: $0) < reach }) {
             if gesture.phase == .began { base = (target, zoom) }
             switch gesture.kind {
-            case let .drag(start, location):
+            case .drag(let start, let location):
                 target = CGPoint(x: base.position.x + location.x - start.x, y: base.position.y + location.y - start.y)
-            case let .zoom(scale, _):
+            case .zoom(let scale, _):
                 zoom = min(max(base.zoom * scale, 0.3), 5)
-            case let .fist(location):
+            case .fist(let location):
                 target = location
                 if gesture.phase == .ended { show((shapeIndex + 1) % Self.shapes.count) }
             }
@@ -69,6 +69,7 @@ final class ManipulationEffect: Effect {
     private func show(_ index: Int) {
         shapeIndex = index
         let (mesh, color) = Self.shapes[index]
-        shape.model = ModelComponent(mesh: mesh, materials: [SimpleMaterial(color: color, roughness: 0.3, isMetallic: false)])
+        shape.model = ModelComponent(
+            mesh: mesh, materials: [SimpleMaterial(color: color, roughness: 0.3, isMetallic: false)])
     }
 }

@@ -20,7 +20,8 @@ extension NWParameters {
         let tls = NWProtocolTLS.Options()
         let key = PenCode.key(for: code).withUnsafeBytes { DispatchData(bytes: $0) }
         let name = Data("yolo-meet pen".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
-        sec_protocol_options_add_pre_shared_key(tls.securityProtocolOptions, key as __DispatchData, name as __DispatchData)
+        sec_protocol_options_add_pre_shared_key(
+            tls.securityProtocolOptions, key as __DispatchData, name as __DispatchData)
         sec_protocol_options_append_tls_ciphersuite(
             tls.securityProtocolOptions, tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_256_GCM_SHA384))!)
         sec_protocol_options_set_min_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)
@@ -119,11 +120,13 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
     /// Seals a message and sends it.
     private func transmit(_ message: Outgoing, number: Int) {
         guard let sealed = sealer?.seal(PenFrames.frame(message)) else { return close() }
-        connection.send(content: PenFrames.frame(.sealed, sealed), completion: .contentProcessed { [weak self] _ in
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { _ = self?.waiting.removeValue(forKey: number)?() }
-            }
-        })
+        connection.send(
+            content: PenFrames.frame(.sealed, sealed),
+            completion: .contentProcessed { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { _ = self?.waiting.removeValue(forKey: number)?() }
+                }
+            })
     }
 
     private nonisolated enum Event: Sendable {
@@ -154,7 +157,9 @@ final class PenChannel<Incoming: PenMessage, Outgoing: PenMessage> {
             if case .failure(let failure) = read {
                 return deliver(.ended(wasRefused: wasRefused, wasIncompatible: failure == .incompatible))
             }
-            guard !isComplete, error == nil else { return deliver(.ended(wasRefused: wasRefused, wasIncompatible: false)) }
+            guard !isComplete, error == nil else {
+                return deliver(.ended(wasRefused: wasRefused, wasIncompatible: false))
+            }
             receive(connection, into: box, deliver: deliver)
         }
     }
@@ -196,7 +201,9 @@ nonisolated struct PenReader<Incoming: PenMessage, Outgoing: PenMessage>: Sendab
                 guard kind == .key, frame.payload.count == 33, frame.payload.first == PenLink.version else {
                     return .failure(.incompatible)
                 }
-                guard let ciphers = session.ciphers(with: frame.payload.dropFirst(), sending: Outgoing.self, receiving: Incoming.self)
+                guard
+                    let ciphers = session.ciphers(
+                        with: frame.payload.dropFirst(), sending: Outgoing.self, receiving: Incoming.self)
                 else { return .failure(.broken) }
                 (opener, sealer) = (ciphers.open, ciphers.seal)
                 continue

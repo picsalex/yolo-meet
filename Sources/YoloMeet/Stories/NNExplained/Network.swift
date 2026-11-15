@@ -191,7 +191,8 @@ final class NetworkLayout {
     /// Done once `shape` is set.
     private var ready: Task<Void, Never>?
 
-    init(title: String, subtitle: String, neurons: [Neuron], synapses: [Synapse], neuronSize: Float, restingTilt: Float) {
+    init(title: String, subtitle: String, neurons: [Neuron], synapses: [Synapse], neuronSize: Float, restingTilt: Float)
+    {
         (self.title, self.subtitle, self.neurons, self.synapses) = (title, subtitle, neurons, synapses)
         (self.neuronSize, self.restingTilt) = (neuronSize, restingTilt)
     }
@@ -216,7 +217,8 @@ final class NetworkLayout {
         layout.ready = Task {
             let surface = await surface.value
             layout.outline = stride(from: 0, to: surface.points.count, by: 200).map { surface.points[$0] }
-            layout.shape = layout.particles(around: surface.points, perNeuron: Array(repeating: 60 * NeuralNetwork.scale, count: neurons.count))
+            layout.shape = layout.particles(
+                around: surface.points, perNeuron: Array(repeating: 60 * NeuralNetwork.scale, count: neurons.count))
         }
         return layout
     }
@@ -251,8 +253,10 @@ final class NetworkLayout {
         layout.ready = Task {
             await brain.ready?.value
             guard let previous = brain.shape else { return }
-            var shape = layout.particles(around: dust, perNeuron: Array(repeating: 800 * NeuralNetwork.scale, count: neurons.count))
-                .following(previous, parts: parts)
+            var shape = layout.particles(
+                around: dust, perNeuron: Array(repeating: 800 * NeuralNetwork.scale, count: neurons.count)
+            )
+            .following(previous, parts: parts)
             // From the brain: first only the picked neurons glide out of it to their place here (each the same ball of
             // particles), the rest of the brain still; then everything glides on into the perceptron.
             let moved = previous.points.indices.map { k -> SIMD3<Float> in
@@ -261,7 +265,8 @@ final class NetworkLayout {
                 return neurons[mine - 1].point + (previous.points[k] - brain.neurons[part - 1].point)
             }
             let prelude = NetworkLayout(
-                title: layout.title, subtitle: layout.subtitle, neurons: [], synapses: [], neuronSize: brain.neuronSize, restingTilt: 0)
+                title: layout.title, subtitle: layout.subtitle, neurons: [], synapses: [], neuronSize: brain.neuronSize,
+                restingTilt: 0)
             (prelude.base, prelude.splits, prelude.splitsFrom) = (brain, true, brain)
             prelude.shape = ParticleShape(
                 points: previous.points, offsets: zip(moved, previous.points).map { $0 - $1 }, parts: previous.parts)
@@ -288,9 +293,13 @@ final class NetworkLayout {
             let amount = count >= 1_000_000 ? String(format: "%.1fM", Float(count) / 1e6) : "\(count / 1000)K"
             let what = channels == 3 ? "values" : "neurons"
             // Grids: 4 cells across at 20×20 up to 12 at 640×640; a slice per RGB channel, else 2 to 6 by depth.
-            let grid = (cells: min(4 + 2 * Int(log2(Float(size) / 20)), 12), slices: channels == 3 ? 3 : Int(log2(Float(channels))) - 4)
+            let grid = (
+                cells: min(4 + 2 * Int(log2(Float(size) / 20)), 12),
+                slices: channels == 3 ? 3 : Int(log2(Float(channels))) - 4
+            )
             return Neuron(
-                point: [x, y, 0], box: [side, side, depth], info: "\(name) · \(size)×\(size)×\(channels) · \(amount) \(what)",
+                point: [x, y, 0], box: [side, side, depth],
+                info: "\(name) · \(size)×\(size)×\(channels) · \(amount) \(what)",
                 grid: grid)
         }
         let neurons = [
@@ -308,8 +317,10 @@ final class NetworkLayout {
             block("Detect · medium objects", 40, 64, head, p4),  // 11
             block("Detect · large objects", 20, 64, head, p5),  // 12
         ]
-        let edges = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (4, 6), (6, 7), (3, 7), (7, 8), (6, 8), (8, 9), (5, 9),
-                     (7, 10), (8, 11), (9, 12)]
+        let edges = [
+            (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (4, 6), (6, 7), (3, 7), (7, 8), (6, 8), (8, 9), (5, 9),
+            (7, 10), (8, 11), (9, 12),
+        ]
         let layout = NetworkLayout(
             title: "YOLO architecture", subtitle: "CNN · image → backbone → neck → head → boxes",
             neurons: neurons, synapses: edges.map { Synapse(a: $0.0, b: $0.1) }, neuronSize: 0, restingTilt: 0.15)
@@ -335,7 +346,9 @@ final class NetworkLayout {
             let (slice, cell, cells) = (d / (grid.cells * grid.cells), d % (grid.cells * grid.cells), grid.cells)
             let at = { (index: Int, count: Int) in -1 + (2 * Float(index) + 1) / Float(count) }
             let jitter = SIMD3<Float>.random(in: -1...1) * 0.0025
-            return SIMD3(box.x * 0.85 * at(cell % cells, cells), box.y * 0.85 * at(cell / cells, cells), box.z * at(slice, grid.slices)) + jitter
+            return SIMD3(
+                box.x * 0.85 * at(cell % cells, cells), box.y * 0.85 * at(cell / cells, cells),
+                box.z * at(slice, grid.slices)) + jitter
         }
         return layout
     }
@@ -367,7 +380,8 @@ final class NetworkLayout {
         }
         let order = points.indices.shuffled()
         return ParticleShape(
-            points: order.map { points[$0] }, offsets: Array(repeating: .zero, count: points.count), parts: order.map { parts[$0] })
+            points: order.map { points[$0] }, offsets: Array(repeating: .zero, count: points.count),
+            parts: order.map { parts[$0] })
     }
 
     /// The part of the architecture's dust, so the next step can gather it (no neuron has it).
@@ -415,7 +429,10 @@ final class NetworkLayout {
             // A pixel each (row by row, from the top); the few left over on random pixels.
             let p = k < cells * cells ? k : Int.random(in: 0..<cells * cells)
             let (x, y) = (Float(p % cells) + 0.5, Float(p / cells) + 0.5)
-            shape.points[i] = center + [(x / Float(cells) - 0.5) * side, (0.5 - y / Float(cells)) * side, .random(in: -0.004...0.004)]
+            shape.points[i] =
+                center + [
+                    (x / Float(cells) - 0.5) * side, (0.5 - y / Float(cells)) * side, .random(in: -0.004...0.004),
+                ]
             shape.colors[i] = pixels[p] * 2  // brighter than full: particles are light added over the camera image
         }
         layout.shape = shape
@@ -436,10 +453,14 @@ final class NetworkLayout {
             title: "Pixels", subtitle: "\(cells) × \(cells) pixels · each a red, a green and a blue value",
             neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
         (layout.base, layout.splits, layout.splitsFrom) = (picture.base ?? picture, true, picture)
-        layout.outline = [[-side / 2, -side / 2, 0], [side / 2, side / 2, 0], [-side / 2, side / 2, 0], [side / 2, -side / 2, 0]]
+        layout.outline = [
+            [-side / 2, -side / 2, 0], [side / 2, side / 2, 0], [-side / 2, side / 2, 0], [side / 2, -side / 2, 0],
+        ]
         // Its width under it, its height on its left.
         let (h, g) = (side / 2, Float(0.08))
-        layout.dimensions = [("\(cells) px", [-h, -h - g, 0], [h, -h - g, 0]), ("\(cells) px", [-h - g, h, 0], [-h - g, -h, 0])]
+        layout.dimensions = [
+            ("\(cells) px", [-h, -h - g, 0], [h, -h - g, 0]), ("\(cells) px", [-h - g, h, 0], [-h - g, -h, 0]),
+        ]
         guard let previous = picture.shape, let corners = picture.pictureCorners else { return layout }
         let (cellOf, quota) = pictureCells(of: previous, corners: corners, cells: cells)
         let colors = catDrawing(cells)
@@ -451,7 +472,9 @@ final class NetworkLayout {
         let points = cellOf.map { c -> SIMD3<Float> in
             let slot = order[c][used[c]]
             used[c] += 1
-            let (sx, sy) = ((Float(slot % slots) + 0.5) / Float(slots) - 0.5, (Float(slot / slots) + 0.5) / Float(slots) - 0.5)
+            let (sx, sy) = (
+                (Float(slot % slots) + 0.5) / Float(slots) - 0.5, (Float(slot / slots) + 0.5) / Float(slots) - 0.5
+            )
             let x = (Float(c % cells) + 0.5 + sx * fill) / Float(cells)
             let y = (Float(c / cells) + 0.5 + sy * fill) / Float(cells)
             return [(x - 0.5) * side, (0.5 - y) * side, .random(in: -0.004...0.004)]
@@ -475,7 +498,8 @@ final class NetworkLayout {
         for i in 0..<n where shape.parts[i] == dustPart {
             let p = shape.points[i]
             let (fx, fy) = ((p.x - lo.x) / (hi.x - lo.x), (hi.y - p.y) / (hi.y - lo.y))
-            let c = min(max(Int(fy * Float(cells)), 0), cells - 1) * cells + min(max(Int(fx * Float(cells)), 0), cells - 1)
+            let c =
+                min(max(Int(fy * Float(cells)), 0), cells - 1) * cells + min(max(Int(fx * Float(cells)), 0), cells - 1)
             if counts[c] < quota { (cellOf[i], counts[c]) = (c, counts[c] + 1) }
         }
         var open = counts.indices.flatMap { Array(repeating: $0, count: quota - counts[$0]) }.shuffled()
@@ -486,7 +510,8 @@ final class NetworkLayout {
     /// `pixels` slid to the left, making room beside it for one pixel's values (`PixelValuesEffect`): the same squares,
     /// settled (no offsets left), so the particles glide over from `pixels` and the next layout splits from here.
     static func onePixel(of pixels: NetworkLayout) -> NetworkLayout {
-        let layout = variant(of: pixels, title: "One pixel", subtitle: "3 numbers · red, green and blue, each from 0 to 255")
+        let layout = variant(
+            of: pixels, title: "One pixel", subtitle: "3 numbers · red, green and blue, each from 0 to 255")
         let shift = SIMD3<Float>(-0.85, 0, 0)
         layout.pixelGrid = (shift, pixelSide, pixelCells)
         layout.outline = pixels.outline.map { $0 + shift }
@@ -534,7 +559,8 @@ final class NetworkLayout {
     /// vegetation is in near-infrared).
     static func multispectral(of pixels: NetworkLayout, after grayscale: NetworkLayout) -> NetworkLayout {
         layers(
-            "Multispectral", "\(pixelCells) × \(pixelCells) × 5 values · beyond what the eye sees", of: pixels, after: grayscale,
+            "Multispectral", "\(pixelCells) × \(pixelCells) × 5 values · beyond what the eye sees", of: pixels,
+            after: grayscale,
             bands: [
                 ("Blue", [0.25, 0.45, 1]), ("Green", [0.2, 1, 0.3]), ("Red", [1, 0.2, 0.15]),
                 ("Red edge", [1, 0.35, 0.6]), ("Near-IR", [0.75, 0.4, 1]),
@@ -555,8 +581,11 @@ final class NetworkLayout {
         bands: [(name: String, tint: SIMD3<Float>)], values: (SIMD3<Float>) -> [Float],
         scale: Float, depth: Float, aside: Float
     ) -> NetworkLayout {
-        let layout = NetworkLayout(title: title, subtitle: subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0.12)
-        (layout.restingTurn, layout.base, layout.splits, layout.splitsFrom) = (-0.9, pixels.base ?? pixels, true, previous)
+        let layout = NetworkLayout(
+            title: title, subtitle: subtitle, neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0.12)
+        (layout.restingTurn, layout.base, layout.splits, layout.splitsFrom) = (
+            -0.9, pixels.base ?? pixels, true, previous
+        )
         let n = bands.count
         let middle = Float(n - 1) / 2
         let offset = { (c: Int) in SIMD3<Float>(aside * (Float(c) - middle), 0, depth * (middle - Float(c))) }
@@ -566,7 +595,8 @@ final class NetworkLayout {
         layout.outline = bands.indices.flatMap { c in pixels.outline.map { $0 * scale + offset(c) } }
         guard let picture = pixels.shape, let from = previous.shape else { return layout }
         let start = from.arrived
-        var points = [SIMD3<Float>](), colors = [SIMD3<Float>?]()
+        var points = [SIMD3<Float>]()
+        var colors = [SIMD3<Float>?]()
         for i in picture.points.indices {
             let c = i % n
             points.append((picture.points[i] + picture.offsets[i]) * scale + offset(c))
@@ -580,9 +610,13 @@ final class NetworkLayout {
 
     /// `target` again, its particles gliding to it from where `previous` leaves them (`splits`); with `through`, they
     /// first glide to that layout, in its colors (its `prelude`: e.g. layers merging back into the picture), then on.
-    static func returning(to target: NetworkLayout, from previous: NetworkLayout, through stop: NetworkLayout? = nil) -> NetworkLayout {
+    static func returning(to target: NetworkLayout, from previous: NetworkLayout, through stop: NetworkLayout? = nil)
+        -> NetworkLayout
+    {
         let layout = variant(of: target)
-        (layout.arrows, layout.outline, layout.splits, layout.splitsFrom) = (target.arrows, target.outline, true, previous)
+        (layout.arrows, layout.outline, layout.splits, layout.splitsFrom) = (
+            target.arrows, target.outline, true, previous
+        )
         layout.arrowFeeds = target.arrowFeeds
         guard var shape = target.shape, var from = previous.shape else { return layout }
         if let stop, let there = stop.shape {
@@ -609,12 +643,15 @@ final class NetworkLayout {
         let layout = variant(of: picture, title: "Inference", subtitle: "also called prediction or forward propagation")
         (layout.arrows, layout.outline, layout.shape) = (picture.arrows, picture.outline, picture.shape)
         layout.arrowFeeds = picture.arrowFeeds
-        guard let shape = picture.shape, case let (lo, hi)? = picture.pictureCorners else { return layout }
+        guard let shape = picture.shape, case (let lo, let hi)? = picture.pictureCorners else { return layout }
         let blocks = architecture.neurons
         var next: [Int: [Int]] = [:]
         for s in architecture.synapses { next[s.a, default: []].append(s.b) }
         let (tail, tip) = (picture.arrows[0].tail, picture.arrows[0].tip)
-        var particles: [Int] = [], routes: [[SIMD3<Float>]] = [], colors: [SIMD3<Float>] = [], departures: [Float] = []
+        var particles: [Int] = []
+        var routes: [[SIMD3<Float>]] = []
+        var colors: [SIMD3<Float>] = []
+        var departures: [Float] = []
         var visits: [[Int]] = []
         for i in shape.points.indices where shape.parts[i] == dustPart {
             let start = shape.points[i]
@@ -624,15 +661,19 @@ final class NetworkLayout {
             var block = 0
             while true {
                 let box = blocks[block].box!
-                route.append(blocks[block].point + box * SIMD3(.random(in: -0.7...0.7), .random(in: -0.7...0.7), .random(in: -0.7...0.7)))
+                route.append(
+                    blocks[block].point + box
+                        * SIMD3(.random(in: -0.7...0.7), .random(in: -0.7...0.7), .random(in: -0.7...0.7)))
                 visit.append(block)
                 guard let pick = next[block]?.randomElement() else { break }
                 block = pick
             }
             // Out of the head: along its line into the output arrow, and along it.
-            if let output = picture.arrows.last, let feed = picture.arrowFeeds[output.text]?.first(where: {
-                simd_distance($0[0], blocks[block].point) < blocks[block].box!.x + 0.1
-            }) {
+            if let output = picture.arrows.last,
+                let feed = picture.arrowFeeds[output.text]?.first(where: {
+                    simd_distance($0[0], blocks[block].point) < blocks[block].box!.x + 0.1
+                })
+            {
                 let jitter = SIMD3<Float>(0, .random(in: -0.015...0.015), .random(in: -0.015...0.015))
                 route += feed.dropFirst().map { $0 + jitter } + [output.tip - [0.04, 0, 0] + jitter]
                 visit += Array(repeating: -1, count: feed.count)
@@ -649,7 +690,8 @@ final class NetworkLayout {
         }
         let members = blocks.indices.map { b in shape.parts.indices.filter { shape.parts[$0] == b + 1 } }
         layout.flow = Flow(
-            particles: particles, routes: routes, colors: colors, departures: departures, visits: visits, blocks: members)
+            particles: particles, routes: routes, colors: colors, departures: departures, visits: visits,
+            blocks: members)
         layout.flowResult = "Cat"
         return layout
     }
@@ -675,7 +717,8 @@ final class NetworkLayout {
         private let seeds: [Float]
 
         init(
-            particles: [Int], routes: [[SIMD3<Float>]], colors: [SIMD3<Float>], departures: [Float], visits: [[Int]], blocks: [[Int]]
+            particles: [Int], routes: [[SIMD3<Float>]], colors: [SIMD3<Float>], departures: [Float], visits: [[Int]],
+            blocks: [[Int]]
         ) {
             (self.particles, self.routes, self.colors, self.departures) = (particles, routes, colors, departures)
             (self.visits, self.blocks) = (visits, blocks)
@@ -694,7 +737,8 @@ final class NetworkLayout {
         func frame(at time: Float, again: Bool) -> (points: [SIMD3<Float>], colors: [SIMD3<Float>], inside: [Int]) {
             var inside = [Int](repeating: 0, count: blocks.count)
             let gold = NNColors.goldLight * 3.5
-            var points = [SIMD3<Float>](), colors = [SIMD3<Float>]()
+            var points = [SIMD3<Float>]()
+            var colors = [SIMD3<Float>]()
             points.reserveCapacity(particles.count)
             colors.reserveCapacity(particles.count)
             let shown = again ? min(time / Self.fadeIn, 1) : 1
@@ -712,7 +756,8 @@ final class NetworkLayout {
                     colors.append(.zero)
                     continue
                 }
-                let along = distances[k], d = s * along.last!
+                let along = distances[k]
+                let d = s * along.last!
                 var j = 1
                 while j < along.count - 1, along[j] < d { j += 1 }
                 let f = (d - along[j - 1]) / max(along[j] - along[j - 1], 1e-5)
@@ -720,10 +765,13 @@ final class NetworkLayout {
                 if at >= 0 { inside[at] += 1 }
                 // A crackle around the path, and bands of light running along it.
                 let seed = seeds[k]
-                let crackle = SIMD3<Float>(sin(time * 37 + seed), cos(time * 31 + seed * 1.7), sin(time * 23 + seed * 2.3)) * 0.012
+                let crackle =
+                    SIMD3<Float>(sin(time * 37 + seed), cos(time * 31 + seed * 1.7), sin(time * 23 + seed * 2.3))
+                    * 0.012
                 points.append(route[j - 1] + (route[j] - route[j - 1]) * min(f, 1) + crackle)
                 let wave = 0.5 + 0.5 * sin(2 * .pi * (s * 5 - time * 2))
-                let toGold = min(t / 0.3, 1), fade = s > 0.85 ? 1 - (s - 0.85) / 0.15 : 1
+                let toGold = min(t / 0.3, 1)
+                let fade = s > 0.85 ? 1 - (s - 0.85) / 0.15 : 1
                 colors.append((self.colors[k] + (gold * (0.5 + wave * wave) - self.colors[k]) * toGold) * fade)
             }
             return (points, colors, inside)
@@ -733,9 +781,12 @@ final class NetworkLayout {
     /// A new layout with `base`'s blocks, synapses, title (or its own), view and headers (its particles to set).
     static func variant(of base: NetworkLayout, title: String? = nil, subtitle: String? = nil) -> NetworkLayout {
         let layout = NetworkLayout(
-            title: title ?? base.title, subtitle: subtitle ?? base.subtitle, neurons: base.neurons, synapses: base.synapses,
+            title: title ?? base.title, subtitle: subtitle ?? base.subtitle, neurons: base.neurons,
+            synapses: base.synapses,
             neuronSize: base.neuronSize, restingTilt: base.restingTilt)
-        (layout.restingTurn, layout.grown, layout.base, layout.headers) = (base.restingTurn, base.grown, base.base ?? base, base.headers)
+        (layout.restingTurn, layout.grown, layout.base, layout.headers) = (
+            base.restingTurn, base.grown, base.base ?? base, base.headers
+        )
         return layout
     }
 
@@ -779,8 +830,16 @@ final class NetworkLayout {
         context.translateBy(x: -catCenter.x, y: -catCenter.y)
         // Ears, then the head over them.
         for (x, flip) in [(28.0, 1.0), (72.0, -1.0)] {
-            fill(.cat, 1, 0.55, 0.15) { context.addLines(between: [CGPoint(x: x - 12 * flip, y: 62), CGPoint(x: x - 4 * flip, y: 88), CGPoint(x: x + 12 * flip, y: 66)]) }
-            fill(.cat, 1, 0.6, 0.7) { context.addLines(between: [CGPoint(x: x - 7 * flip, y: 64), CGPoint(x: x - 3 * flip, y: 80), CGPoint(x: x + 6 * flip, y: 66)]) }
+            fill(.cat, 1, 0.55, 0.15) {
+                context.addLines(between: [
+                    CGPoint(x: x - 12 * flip, y: 62), CGPoint(x: x - 4 * flip, y: 88), CGPoint(x: x + 12 * flip, y: 66),
+                ])
+            }
+            fill(.cat, 1, 0.6, 0.7) {
+                context.addLines(between: [
+                    CGPoint(x: x - 7 * flip, y: 64), CGPoint(x: x - 3 * flip, y: 80), CGPoint(x: x + 6 * flip, y: 66),
+                ])
+            }
         }
         fill(.cat, 1, 0.55, 0.15) { context.addEllipse(in: CGRect(x: 20, y: 14, width: 60, height: 56)) }  // head
         fill(.cat, 1, 0.85, 0.6) { context.addEllipse(in: CGRect(x: 36, y: 16, width: 28, height: 24)) }  // muzzle
@@ -788,7 +847,9 @@ final class NetworkLayout {
             fill(.cat, 0.4, 1, 0.35) { context.addEllipse(in: CGRect(x: x, y: 42, width: 12, height: 13)) }  // eyes
             fill(.cat, 0, 0, 0) { context.addEllipse(in: CGRect(x: x + 4.5, y: 43, width: 3, height: 11)) }  // pupils
         }
-        fill(.cat, 1, 0.45, 0.6) { context.addLines(between: [CGPoint(x: 45, y: 36), CGPoint(x: 55, y: 36), CGPoint(x: 50, y: 30)]) }  // nose
+        fill(.cat, 1, 0.45, 0.6) {
+            context.addLines(between: [CGPoint(x: 45, y: 36), CGPoint(x: 55, y: 36), CGPoint(x: 50, y: 30)])
+        }  // nose
         if !classes {
             // Whiskers.
             context.setStrokeColor(red: 1, green: 1, blue: 1, alpha: 1)
@@ -811,9 +872,11 @@ final class NetworkLayout {
         (0..<count).map { _ in
             let even = SIMD3<Float>.random(in: -1...1) * core
             // Box–Muller: three normal draws.
-            let normal = SIMD3<Float>((0..<3).map { _ in
-                (-2 * log(Float.random(in: Float.ulpOfOne...1))).squareRoot() * cos(2 * .pi * Float.random(in: 0...1))
-            })
+            let normal = SIMD3<Float>(
+                (0..<3).map { _ in
+                    (-2 * log(Float.random(in: Float.ulpOfOne...1))).squareRoot()
+                        * cos(2 * .pi * Float.random(in: 0...1))
+                })
             return even + normal * softness
         }
     }

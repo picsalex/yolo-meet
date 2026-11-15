@@ -61,23 +61,32 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 // Tracked: the wrist, finger bases and lower joints, wrist toward the middle knuckles pointing up; 2x.
                 return Config(
                     detectorSize: 192, strides: [8, 16, 16, 16], keypoints: 7, landmarkSize: 224, landmarkCount: 21,
-                    stride: 3, maxResults: 2, detectorRange: unit, names: ["Left", "Right"], connections: MediaPipeConnections.hand,
+                    stride: 3, maxResults: 2, detectorRange: unit, names: ["Left", "Right"],
+                    connections: MediaPipeConnections.hand,
                     roi: { box, k in
-                        ROI(center: box.center, size: max(box.width, box.height), rotation: angle(k[0], k[2], target: .pi / 2))
-                            .shifted(y: -0.5, height: box.height).scaled(2.6)
+                        ROI(
+                            center: box.center, size: max(box.width, box.height),
+                            rotation: angle(k[0], k[2], target: .pi / 2)
+                        )
+                        .shifted(y: -0.5, height: box.height).scaled(2.6)
                     },
                     track: { k in
-                        let knuckles = CGPoint(x: ((k[5].x + k[13].x) / 2 + k[9].x) / 2, y: ((k[5].y + k[13].y) / 2 + k[9].y) / 2)
+                        let knuckles = CGPoint(
+                            x: ((k[5].x + k[13].x) / 2 + k[9].x) / 2, y: ((k[5].y + k[13].y) / 2 + k[9].y) / 2)
                         let rotation = angle(k[0], knuckles, target: .pi / 2)
-                        let (roi, height) = ROI.around([0, 1, 2, 3, 5, 6, 9, 10, 13, 14, 17, 18].map { k[$0] }, rotation: rotation)
+                        let (roi, height) = ROI.around(
+                            [0, 1, 2, 3, 5, 6, 9, 10, 13, 14, 17, 18].map { k[$0] }, rotation: rotation)
                         return roi.shifted(y: -0.1, height: height).scaled(2)
                     })
             case .pose:
                 // Body: centered on the hips (0), radius to the shoulders' point (1), pointing up; 1.25x.
                 // Tracked: the same rule on the landmark model's two extra points (33, 34).
                 let body = { (k: [CGPoint]) in
-                    ROI(center: k[0], size: 2 * hypot(k[1].x - k[0].x, k[1].y - k[0].y), rotation: angle(k[0], k[1], target: .pi / 2))
-                        .scaled(1.25)
+                    ROI(
+                        center: k[0], size: 2 * hypot(k[1].x - k[0].x, k[1].y - k[0].y),
+                        rotation: angle(k[0], k[1], target: .pi / 2)
+                    )
+                    .scaled(1.25)
                 }
                 return Config(
                     detectorSize: 224, strides: [8, 16, 32, 32, 32], keypoints: 4, landmarkSize: 256, landmarkCount: 33,
@@ -87,12 +96,16 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 // Face: level between the eyes (0, 1); 1.5x. Tracked: around all landmarks, level between the eye
                 // corners (33, 263).
                 let face = { (box: CGRect, eyes: [CGPoint]) in
-                    ROI(center: box.center, size: max(box.width, box.height), rotation: angle(eyes[0], eyes[1], target: 0)).scaled(1.5)
+                    ROI(
+                        center: box.center, size: max(box.width, box.height),
+                        rotation: angle(eyes[0], eyes[1], target: 0)
+                    ).scaled(1.5)
                 }
                 return Config(
                     detectorSize: 128, strides: [8, 16, 16, 16], keypoints: 6, landmarkSize: 256, landmarkCount: 478,
                     stride: 3, presenceIsLogit: true, detectorRange: signed, names: ["face"],
-                    connections: MediaPipeConnections.faceMesh, roi: face, track: { k in face(k.bounds, [k[33], k[263]]) })
+                    connections: MediaPipeConnections.faceMesh, roi: face,
+                    track: { k in face(k.bounds, [k[33], k[263]]) })
             default:
                 return nil
             }
@@ -127,7 +140,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
 
         /// Moves the center along the rotated vertical axis by `y` times `height`.
         func shifted(y: CGFloat, height: CGFloat) -> ROI {
-            ROI(center: CGPoint(x: center.x - height * y * sin(rotation), y: center.y + height * y * cos(rotation)),
+            ROI(
+                center: CGPoint(x: center.x - height * y * sin(rotation), y: center.y + height * y * cos(rotation)),
                 size: size, rotation: rotation)
         }
 
@@ -135,7 +149,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             let (dx, dy) = ((x - 0.5) * size, (y - 0.5) * size)
             return CGPoint(
-                x: center.x + dx * cos(rotation) - dy * sin(rotation), y: center.y + dx * sin(rotation) + dy * cos(rotation))
+                x: center.x + dx * cos(rotation) - dy * sin(rotation),
+                y: center.y + dx * sin(rotation) + dy * cos(rotation))
         }
 
         /// Places the region of `frame` into an `n` x `n` model input (Core Image coordinates).
@@ -162,7 +177,9 @@ public nonisolated final class Landmarker: @unchecked Sendable {
             try await ImageFunction.load(url.appending(path: "detector.aimodel")), range: config.detectorRange)
         var landmarks: [ImageFunction] = []
         for _ in 0..<config.maxResults {
-            landmarks.append(try ImageFunction(try await ImageFunction.load(url.appending(path: "landmarks.aimodel")), range: Config.unit))
+            landmarks.append(
+                try ImageFunction(
+                    try await ImageFunction.load(url.appending(path: "landmarks.aimodel")), range: Config.unit))
         }
         return try Landmarker(
             id: url.deletingPathExtension().lastPathComponent, task: task, config: config, detector: detector,
@@ -172,7 +189,9 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 precision: detector.precision))
     }
 
-    private init(id: String, task: YOLOTask, config: Config, detector: ImageFunction, landmarks: [ImageFunction], info: ModelInfo) throws {
+    private init(
+        id: String, task: YOLOTask, config: Config, detector: ImageFunction, landmarks: [ImageFunction], info: ModelInfo
+    ) throws {
         self.id = id
         self.task = task
         self.config = config
@@ -183,14 +202,19 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         guard let points = names.firstIndex(of: "Identity"), let presence = names.firstIndex(of: "Identity_1") else {
             throw ModelError.invalid("landmark model without points and presence")
         }
-        outputs = (points, presence, task == .hand ? names.firstIndex(of: "Identity_2") : nil, names.firstIndex(of: "Identity_3"))
+        outputs = (
+            points, presence, task == .hand ? names.firstIndex(of: "Identity_2") : nil,
+            names.firstIndex(of: "Identity_3")
+        )
         // SSD anchors with a fixed size: two per cell for each layer, layers of equal stride sharing a grid.
         var anchors: [CGPoint] = []
         var layer = 0
         while layer < config.strides.count {
             let stride = config.strides[layer]
             var sharing = 0
-            while layer < config.strides.count, config.strides[layer] == stride { (layer, sharing) = (layer + 1, sharing + 1) }
+            while layer < config.strides.count, config.strides[layer] == stride {
+                (layer, sharing) = (layer + 1, sharing + 1)
+            }
             let cells = Int((Double(config.detectorSize) / Double(stride)).rounded(.up))
             for y in 0..<cells {
                 for x in 0..<cells {
@@ -216,7 +240,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
             sinceDetection = 0
             // Detector on the letterboxed frame (black borders, as MediaPipe pads). Tracked results take precedence.
             let letterbox = ROI(
-                center: CGPoint(x: extent.width / 2, y: extent.height / 2), size: max(extent.width, extent.height), rotation: 0)
+                center: CGPoint(x: extent.width / 2, y: extent.height / 2), size: max(extent.width, extent.height),
+                rotation: 0)
             let raw = try await detector.run(
                 letterbox.crop(frame, config.detectorSize), width: config.detectorSize, height: config.detectorSize,
                 background: .black)
@@ -230,7 +255,9 @@ public nonisolated final class Landmarker: @unchecked Sendable {
         let n = config.landmarkSize
         let crops = try await withThrowingTaskGroup(of: (Int, [Tensor]).self) { group in
             for (i, (roi, function)) in zip(rois, landmarks).enumerated() {
-                group.addTask { (i, try await function.run(roi.crop(frame, n), width: n, height: n, background: .black)) }
+                group.addTask {
+                    (i, try await function.run(roi.crop(frame, n), width: n, height: n, background: .black))
+                }
             }
             return try await group.reduce(into: [Int: [Tensor]]()) { $0[$1.0] = $1.1 }
         }
@@ -249,7 +276,8 @@ public nonisolated final class Landmarker: @unchecked Sendable {
                 return Keypoint(point: roi.point(point.x, point.y), confidence: config.stride == 5 ? sigmoid(v(3)) : 1)
             }
             let next = config.track(points.map(\.point))
-            guard !tracked.contains(where: { $0.bounds.iou(next.bounds) > 0.5 }) else { continue }  // two crops, one object
+            // two crops, one object
+            guard !tracked.contains(where: { $0.bounds.iou(next.bounds) > 0.5 }) else { continue }
             tracked.append(next)
             points.removeLast(points.count - config.landmarkCount)  // pose's extra points only steer the crop
             var detection = Detection(box: .zero, confidence: presence, classIndex: 0)
@@ -295,7 +323,9 @@ public nonisolated final class Landmarker: @unchecked Sendable {
             let (cx, cy, w, h) = (v(0) + anchor.x, v(1) + anchor.y, v(2), v(3))
             let corner = letterbox.point(cx - w / 2, cy - h / 2)
             let box = CGRect(origin: corner, size: CGSize(width: w * letterbox.size, height: h * letterbox.size))
-            let keypoints = (0..<config.keypoints).map { k in letterbox.point(v(4 + 2 * k) + anchor.x, v(5 + 2 * k) + anchor.y) }
+            let keypoints = (0..<config.keypoints).map { k in
+                letterbox.point(v(4 + 2 * k) + anchor.x, v(5 + 2 * k) + anchor.y)
+            }
             candidates.append((box, keypoints, score))
         }
         // MediaPipe's weighted NMS: overlapping candidates (IoU > 0.3) merge into a score-weighted average.
@@ -308,16 +338,21 @@ public nonisolated final class Landmarker: @unchecked Sendable {
             func mean(_ value: (CGRect, [CGPoint]) -> CGFloat) -> CGFloat {
                 group.reduce(0) { $0 + value($1.box, $1.keypoints) * CGFloat($1.score) } / total
             }
-            merged.append((
-                CGRect(x: mean { b, _ in b.minX }, y: mean { b, _ in b.minY }, width: mean { b, _ in b.width },
-                       height: mean { b, _ in b.height }),
-                (0..<config.keypoints).map { k in CGPoint(x: mean { _, p in p[k].x }, y: mean { _, p in p[k].y }) },
-                best.score))
+            merged.append(
+                (
+                    CGRect(
+                        x: mean { b, _ in b.minX }, y: mean { b, _ in b.minY }, width: mean { b, _ in b.width },
+                        height: mean { b, _ in b.height }),
+                    (0..<config.keypoints).map { k in CGPoint(x: mean { _, p in p[k].x }, y: mean { _, p in p[k].y }) },
+                    best.score
+                ))
         }
         return merged
     }
 }
+nonisolated
 
-private nonisolated extension CGRect {
-    var center: CGPoint { CGPoint(x: midX, y: midY) }
+    extension CGRect
+{
+    fileprivate var center: CGPoint { CGPoint(x: midX, y: midY) }
 }

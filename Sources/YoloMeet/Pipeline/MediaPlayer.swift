@@ -59,12 +59,14 @@ final class MediaPlayer {
                     let (w, h) = (abs(upright.width), abs(upright.height))
                     let scale = min(max(Pipeline.workingSize.width / w, Pipeline.workingSize.height / h), 1)
                     // Sides as stored (the transform applies later), even for the 4:2:0 decoder.
-                    size = CVImageSize(width: Int(natural.width * scale / 2) * 2, height: Int(natural.height * scale / 2) * 2)
+                    size = CVImageSize(
+                        width: Int(natural.width * scale / 2) * 2, height: Int(natural.height * scale / 2) * 2)
                 }
                 guard player.currentItem === item else { return }  // another file meanwhile
-                let output = AVPlayerItemVideoOutput(pixelBufferAttributes: CVPixelBufferAttributes(
-                    pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)], size: size,
-                    compatibility: [.ioSurfaceCoreAnimation]))
+                let output = AVPlayerItemVideoOutput(
+                    pixelBufferAttributes: CVPixelBufferAttributes(
+                        pixelFormatTypes: [CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA)], size: size,
+                        compatibility: [.ioSurfaceCoreAnimation]))
                 item.add(output)
                 pump.set(output: output, image: nil)
             }
@@ -76,7 +78,8 @@ final class MediaPlayer {
 
     func seek(to seconds: Double) {
         time = seconds
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(
+            to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 }
 
@@ -93,7 +96,8 @@ private nonisolated final class FramePump: @unchecked Sendable {
     private var fresh: CFTimeInterval = 0
     private var ticks = 0
     private let onFrame: @Sendable (CIImage, Bool) -> Void
-    private let timer = DispatchSource.makeTimerSource(queue: DispatchQueue(label: "MediaPlayer", qos: .userInteractive))
+    private let timer = DispatchSource.makeTimerSource(
+        queue: DispatchQueue(label: "MediaPlayer", qos: .userInteractive))
 
     init(onFrame: @escaping @Sendable (CIImage, Bool) -> Void) {
         self.onFrame = onFrame
@@ -125,7 +129,9 @@ private nonisolated final class FramePump: @unchecked Sendable {
         let (output, image, fresh) = lock.withLock { (output, image, fresh) }
         if let output {
             let time = output.itemTime(forHostTime: now)
-            if output.hasNewPixelBuffer(forItemTime: time), let buffer = output.pixelBufferAndDisplayTime(forItemTime: time).0 {
+            if output.hasNewPixelBuffer(forItemTime: time),
+                let buffer = output.pixelBufferAndDisplayTime(forItemTime: time).0
+            {
                 let frame = buffer.withUnsafeBuffer { CIImage(cvPixelBuffer: $0) }
                 lock.withLock { (self.image, self.fresh) = (frame, now) }
                 sent = frame

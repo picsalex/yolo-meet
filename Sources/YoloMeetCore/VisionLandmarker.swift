@@ -55,7 +55,8 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
         // Vision's points are normalized with a bottom-left origin.
         func point(_ p: CGPoint) -> CGPoint { CGPoint(x: p.x * size.width, y: (1 - p.y) * size.height) }
         func keypoint(_ p: VNRecognizedPoint?) -> Keypoint {
-            p.map { Keypoint(point: point($0.location), confidence: $0.confidence) } ?? Keypoint(point: .zero, confidence: 0)
+            p.map { Keypoint(point: point($0.location), confidence: $0.confidence) }
+                ?? Keypoint(point: .zero, confidence: 0)
         }
         switch task {
         case .hand:
@@ -65,7 +66,8 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
             output.skeleton = MediaPipeConnections.hand
             output.detections = (request.results ?? []).map { hand in
                 let joints = (try? hand.recognizedPoints(.all)) ?? [:]
-                var detection = Detection(box: .zero, confidence: hand.confidence, classIndex: hand.chirality == .right ? 1 : 0)
+                var detection = Detection(
+                    box: .zero, confidence: hand.confidence, classIndex: hand.chirality == .right ? 1 : 0)
                 detection.keypoints = Self.hand.map { keypoint(joints[$0]) }
                 return detection.boxed(minConfidence: 0.1)
             }
@@ -85,7 +87,8 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
             if tracked {
                 request.inputFaceObservations = faces.map(\.face)
                 let results = (try? handler.perform([request], on: frame)) != nil ? request.results ?? [] : []
-                tracked = results.count == faces.count
+                tracked =
+                    results.count == faces.count
                     && results.allSatisfy { ($0.landmarks?.confidence ?? 0) >= trackedConfidence }
             }
             if tracked {
@@ -100,12 +103,16 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
             faces = results.enumerated().compactMap { i, face in
                 guard let region = face.landmarks?.allPoints else { return nil }
                 let box = face.boundingBox
-                let bounds = region.normalizedPoints.map { CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height) }.bounds
+                let bounds = region.normalizedPoints.map {
+                    CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height)
+                }.bounds
                 guard bounds.width > 0, bounds.height > 0 else { return nil }
                 let fit = tracked && faces.indices.contains(i) ? faces[i].fit : Fit(box, around: bounds)
-                return (VNFaceObservation(
-                    requestRevision: face.requestRevision, boundingBox: fit.box(around: bounds), roll: face.roll,
-                    yaw: face.yaw, pitch: face.pitch), fit)
+                return (
+                    VNFaceObservation(
+                        requestRevision: face.requestRevision, boundingBox: fit.box(around: bounds), roll: face.roll,
+                        yaw: face.yaw, pitch: face.pitch), fit
+                )
             }
             var skeleton: [(Int, Int)] = []
             output.detections = results.compactMap { face in
@@ -118,7 +125,7 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
                     (landmarks.rightEye, true), (landmarks.outerLips, true), (landmarks.innerLips, true),
                 ]
                 skeleton = []
-                for case let (region?, closed) in regions {
+                for case (let region?, let closed) in regions {
                     let first = detection.keypoints.count
                     detection.keypoints += region.pointsInImage(imageSize: size).map {
                         Keypoint(point: CGPoint(x: $0.x, y: size.height - $0.y), confidence: 1)
@@ -146,7 +153,9 @@ public nonisolated final class VisionLandmarker: @unchecked Sendable {
 
         func box(around bounds: CGRect) -> CGRect {
             let (w, h) = (width * bounds.width, height * bounds.height)
-            return CGRect(x: bounds.midX + dx * bounds.width - w / 2, y: bounds.midY + dy * bounds.height - h / 2, width: w, height: h)
+            return CGRect(
+                x: bounds.midX + dx * bounds.width - w / 2, y: bounds.midY + dy * bounds.height - h / 2, width: w,
+                height: h)
         }
     }
 }

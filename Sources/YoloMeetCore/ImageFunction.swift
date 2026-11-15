@@ -75,7 +75,8 @@ nonisolated final class ImageFunction: @unchecked Sendable {
         var outputs = try await function.run(inputs: [inputName: input!])
         return try outputNames.enumerated().map { i, name in
             guard let array = outputs.remove(name)?.ndArray else { throw ModelError.invalid("missing \(name)") }
-            return deferred.contains(name) ? Tensor(values: [], shape: array.shape, array: array) : try floats(of: array, into: i)
+            return deferred.contains(name)
+                ? Tensor(values: [], shape: array.shape, array: array) : try floats(of: array, into: i)
         }
     }
 
@@ -86,7 +87,9 @@ nonisolated final class ImageFunction: @unchecked Sendable {
         var source = vImage_Buffer(
             data: CVPixelBufferGetBaseAddress(staging), height: vImagePixelCount(height),
             width: vImagePixelCount(width), rowBytes: CVPixelBufferGetBytesPerRow(staging))
-        let (count, width, height, isHalf, range, normalized) = (width * height, width, height, scalarType == .float16, range, isNormalized)
+        let (count, width, height, isHalf, range, normalized) = (
+            width * height, width, height, scalarType == .float16, range, isNormalized
+        )
         try planes.withUnsafeMutableBytes { planes in
             func plane(_ i: Int) -> vImage_Buffer {
                 vImage_Buffer(
@@ -160,13 +163,17 @@ nonisolated final class ImageFunction: @unchecked Sendable {
     private func floats(of array: NDArray, into slot: Int) throws -> Tensor {
         let count = array.shape.reduce(1, *)
         if scratch[slot].count != count { scratch[slot] = [Float](repeating: 0, count: count) }
-        try scratch[slot].withUnsafeMutableBufferPointer { try Self.copy(array, from: 0, count: count, to: $0.baseAddress!) }
+        try scratch[slot].withUnsafeMutableBufferPointer {
+            try Self.copy(array, from: 0, count: count, to: $0.baseAddress!)
+        }
         return Tensor(values: scratch[slot], shape: array.shape)
     }
 
     /// The given slices along the second axis (e.g. RF-DETR's mask per query) of a deferred output, as Float32.
     static func planes(of tensor: Tensor, _ indices: [Int]) throws -> [Float] {
-        guard let array = tensor.array, tensor.shape.count > 2 else { throw ModelError.invalid("not a deferred output") }
+        guard let array = tensor.array, tensor.shape.count > 2 else {
+            throw ModelError.invalid("not a deferred output")
+        }
         let plane = tensor.shape[2...].reduce(1, *)
         var values = [Float](repeating: 0, count: indices.count * plane)
         try values.withUnsafeMutableBufferPointer { values in
@@ -178,7 +185,9 @@ nonisolated final class ImageFunction: @unchecked Sendable {
     }
 
     /// Copies `count` values of `array` from `offset` on as Float32.
-    private static func copy(_ array: NDArray, from offset: Int, count: Int, to destination: UnsafeMutablePointer<Float>) throws {
+    private static func copy(
+        _ array: NDArray, from offset: Int, count: Int, to destination: UnsafeMutablePointer<Float>
+    ) throws {
         let total = array.shape.reduce(1, *)
         guard offset >= 0, offset + count <= total else { throw ModelError.invalid("output range out of bounds") }
         switch array.scalarType {
@@ -195,7 +204,8 @@ nonisolated final class ImageFunction: @unchecked Sendable {
                 var src = vImage_Buffer(
                     data: UnsafeMutableRawPointer(mutating: source.baseAddress! + offset), height: 1,
                     width: vImagePixelCount(count), rowBytes: count * 2)
-                var dst = vImage_Buffer(data: destination, height: 1, width: vImagePixelCount(count), rowBytes: count * 4)
+                var dst = vImage_Buffer(
+                    data: destination, height: 1, width: vImagePixelCount(count), rowBytes: count * 4)
                 vImageConvert_Planar16FtoPlanarF(&src, &dst, vImage_Flags(kvImageNoFlags))
             }
         default:

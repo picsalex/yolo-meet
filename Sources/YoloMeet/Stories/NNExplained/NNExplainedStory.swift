@@ -4,8 +4,8 @@ import YoloMeetCore
 extension Story {
     /// How a neural network works: a black box made of particles opens, and its particles become a brain, with the
     /// neurons and weights inside it, then some of them are laid out as a multilayer perceptron, then YOLO's
-    /// architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, their red, green
-    /// and blue channels, and the same picture in grayscale (one channel) or multispectral (five); then the picture
+    /// architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, one pixel's
+    /// three values, their red, green and blue channels, and the same picture in grayscale (one channel) or multispectral (five); then the picture
     /// flows through the model; a quiz on its seven tasks, each revealed opening its output (a branch of the quiz's
     /// step); and a conclusion. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
@@ -36,7 +36,10 @@ extension Story {
                 nnStep("Pixels", caption: "Zoomed in: a grid of pixels, each one color") {
                     [NetworkEffect(network, network.pixels)]
                 },
-                nnStep("RGB channels", caption: "Each pixel is three numbers: red, green and blue") {
+                nnStep("One pixel", transition: .none, caption: "One pixel is three numbers: hold space and point at another") {
+                    [NetworkEffect(network, network.onePixel), PixelValuesEffect(network, network.onePixel)]
+                },
+                nnStep("RGB channels", caption: "Every pixel's red, green and blue values: three layers") {
                     [NetworkEffect(network, network.channels)]
                 },
                 nnStep("Grayscale", caption: "YOLO also takes grayscale images: a single channel") {

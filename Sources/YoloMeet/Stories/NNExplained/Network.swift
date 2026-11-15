@@ -27,6 +27,8 @@ final class NeuralNetwork {
     let picture: NetworkLayout
     /// The picture zoomed in: all the particles become its pixels, squares of one color each.
     let pixels: NetworkLayout
+    /// The same pixels slid aside, to show one pixel's red, green and blue values beside them (`PixelValuesEffect`).
+    let onePixel: NetworkLayout
     /// Its pixels split into three layers back to back, red, green and blue.
     let channels: NetworkLayout
     /// The same picture as one gray layer.
@@ -63,8 +65,9 @@ final class NeuralNetwork {
         await Self.breathe()
         picture = .picture(of: inputOutput)
         pixels = .pixels(of: picture)
+        onePixel = .onePixel(of: pixels)
         await Self.breathe()
-        channels = .channels(of: pixels)
+        channels = .channels(of: pixels, after: onePixel)
         await Self.breathe()
         grayscale = .grayscale(of: pixels, after: channels)
         await Self.breathe()
@@ -178,6 +181,9 @@ final class NetworkLayout {
     /// The picture's lower-left and upper-right corners, on the layout that shows it at the model's input
     /// (`picture(of:)`): the layouts made from it (pixels, flow, results) map its particles to pixels with them.
     var pictureCorners: (lo: SIMD3<Float>, hi: SIMD3<Float>)?
+    /// The pixel grid's center, side and pixels on a side, on a layout that shows one pixel's values
+    /// (`onePixel(of:)`, `PixelValuesEffect`), in the shape's units.
+    var pixelGrid: (center: SIMD3<Float>, side: Float, cells: Int)?
     /// A "}" beside part of the layout, with a label at its tip (the recap's model): its x, top, bottom and depth.
     var brace: (x: Float, top: Float, bottom: Float, z: Float)?
     /// The layout this one is a variant of (same blocks, some particles moved), if any.
@@ -477,11 +483,26 @@ final class NetworkLayout {
         return (cellOf, quota)
     }
 
+    /// `pixels` slid to the left, making room beside it for one pixel's values (`PixelValuesEffect`): the same squares,
+    /// settled (no offsets left), so the particles glide over from `pixels` and the next layout splits from here.
+    static func onePixel(of pixels: NetworkLayout) -> NetworkLayout {
+        let layout = variant(of: pixels, title: "One pixel", subtitle: "3 numbers · red, green and blue, each from 0 to 255")
+        let shift = SIMD3<Float>(-0.85, 0, 0)
+        layout.pixelGrid = (shift, pixelSide, pixelCells)
+        layout.outline = pixels.outline.map { $0 + shift }
+        layout.dimensions = pixels.dimensions.map { ($0.text, $0.from + shift, $0.to + shift) }
+        guard var shape = pixels.settled else { return layout }
+        shape.points = shape.points.map { $0 + shift }
+        layout.shape = shape
+        return layout
+    }
+
     /// `pixels` split into its red, green and blue layers back to back (red in front), each a third of every pixel's
-    /// particles in that color alone: from the front they add up to the picture, turned they come apart.
-    static func channels(of pixels: NetworkLayout) -> NetworkLayout {
+    /// particles in that color alone: from the front they add up to the picture, turned they come apart. They start
+    /// where `previous` leaves them (one pixel's values, the picture slid aside).
+    static func channels(of pixels: NetworkLayout, after previous: NetworkLayout) -> NetworkLayout {
         layers(
-            "RGB channels", "\(pixelCells) × \(pixelCells) × 3 values · red, green, blue", of: pixels, after: pixels,
+            "RGB channels", "\(pixelCells) × \(pixelCells) × 3 values · red, green, blue", of: pixels, after: previous,
             bands: [("Red", [1, 0, 0]), ("Green", [0, 1, 0]), ("Blue", [0, 0, 1])], values: { [$0.x, $0.y, $0.z] },
             scale: 0.75, depth: 1.2, aside: 0.35)
     }

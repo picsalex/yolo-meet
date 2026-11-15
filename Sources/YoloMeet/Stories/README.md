@@ -205,7 +205,10 @@ model's input and out of its output, and the last step gathers the architecture'
 at the input (`NetworkLayout.picture`: the same shape with only those particles moved, formed with
 `form(_:staggered: false)` so the others stay still; a shape colors its own points with `ParticleShape.colors`). Zoomed in, all the particles become that picture's
 pixels (`pixels`: 32 × 32 solid squares, every particle gliding there from where the previous step left it, so the
-picture grows instead of forming anew), which then split into red, green and blue layers back to back (`channels`:
+picture grows instead of forming anew); then the picture slides aside (`onePixel`, settled so the layers split from
+it; `pixelGrid` names its grid) and one pixel's values show beside it (`PixelValuesEffect`: outlined in gold, it flies
+out as a swatch of its color, then its R, G and B values fill bars out of 255 one after the other; Space + point
+shows another pixel's); its pixels then split into red, green and blue layers back to back (`channels`:
 each pixel's particles a third per channel, adding up to its color from the front; a layout that `splits` starts where
 the one it follows (`splitsFrom`) left the particles and moves on through `ParticleSystem.explode` and the shape's `offsets`, eased, while the view turns to
 its resting angle: the view always turns smoothly from the previous step's). Then only one layer stays, gray

@@ -132,7 +132,7 @@ private struct StageTab: View {
         }
         // The steps, collapsed by default (a story can have dozens); the bottom bar shows where the story is and
         // steps through it either way.
-        // A step's branches (`Story.Step.branches`) are indented under it, their steps unnumbered.
+        // A step's substeps and branches (`Story.Step.substeps`, `branches`) are indented under it, unnumbered.
         DisclosureGroup(isExpanded: $stepsExpanded) {
             ForEach(model.story.places, id: \.self) { place in
                 let current = place == model.place
@@ -140,13 +140,13 @@ private struct StageTab: View {
                     model.place = place
                 } label: {
                     HStack {
-                        Text(place.branch == nil ? "\(place.step + 1)" : "").monospacedDigit().foregroundStyle(
+                        Text(place.isStep ? "\(place.step + 1)" : "").monospacedDigit().foregroundStyle(
                             .secondary
                         )
                         .frame(minWidth: 20, alignment: .trailing)
                         Text(model.story.step(at: place).title)
-                            .padding(.leading, place.branch == nil ? 0 : 16)
-                            .foregroundStyle(place.branch == nil ? .primary : .secondary)
+                            .padding(.leading, place.isStep ? 0 : 16)
+                            .foregroundStyle(place.isStep ? .primary : .secondary)
                         Spacer()
                         if current {
                             Image(systemName: "play.fill").foregroundStyle(.tint).accessibilityLabel("Current step")
@@ -172,9 +172,9 @@ private struct BottomBar: View {
         HStack(spacing: 6) {
             if model.mode == .story {
                 let (story, place) = (model.story, model.place)
-                // A branch's step after the step it branches from: "13 of 14 · Task quiz › Detect".
+                // A substep, or a branch's step, after the step it belongs to: "13 of 14 · Task quiz › Detect".
                 let title =
-                    place.branch == nil
+                    place.isStep
                     ? story.steps[place.step].title
                     : "\(story.steps[place.step].title) › \(story.step(at: place).title)"
                 Button("Previous Step", systemImage: "chevron.left") { model.previous() }

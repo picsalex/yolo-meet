@@ -25,6 +25,8 @@ sources=(
 )
 # The live stage and what only it uses (the app model, the pen, stats): the harness stands in for them.
 skip=(StageView.swift Drawing.swift StatsEffect.swift StagePicture.swift)
+# The stories' assets, where `Story.asset` looks for them from the copied sources.
+ln -sfn $repo/Sources/YoloMeet/Stories/Assets $src/Assets
 stamp=$build/stamp
 fresh=1
 for f in $sources $here/RenderStory.swift; do

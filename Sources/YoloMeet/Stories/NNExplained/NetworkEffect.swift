@@ -260,14 +260,14 @@ final class NetworkEffect: Effect {
         let bounds = CGRect(enclosing: layout.outline.map { system.shownPoint($0).point })
         // At the top, out of the way: it stays when zoomed in. A layout with no title (e.g. the task quiz's) shows none.
         title.update(above: bounds, visible: (!labels.isHidden || titleAtOnce) && !layout.title.isEmpty, frame: frame)
-        guard !labels.isHidden else {
-            system.highlight = nil
-            return
-        }
         if let (old, first) = leavingTitle {
             old.update(above: bounds, visible: first, frame: frame)  // placed where it stood, then fading out
             leavingTitle = old.alpha < 0.01 ? nil : (old, false)
             if leavingTitle == nil { old.removeFromParent() }
+        }
+        guard !labels.isHidden else {
+            system.highlight = nil
+            return
         }
         // Arrows new to this step fade in (they start hidden only when continuing the previous step), old ones out.
         let fading = CGFloat(1 - exp(-frame.dt * 6))
@@ -318,6 +318,8 @@ final class NetworkEffect: Effect {
             system.form(first, staggered: false)
             (network.formed, network.split, staging, settled) = (prelude, 0, true, false)
             (formed, formNow) = (frame.time, false)
+            // No transition from the same object: its title stays while the prelude plays.
+            if continuing, let layout, let previous, layout.isVariant(of: previous) { keepTitle(of: previous, layout) }
             return
         }
         (staging, settled) = (false, false)
@@ -340,15 +342,9 @@ final class NetworkEffect: Effect {
             // No transition from the same object: its title and labels are already there and stay; only what this
             // step adds or drops fades (its arrows here).
             formed = frame.time - 1
-            // The same title stays; a new one fades in as the previous one fades out where it stood.
-            let sameTitle = previous.map { $0.title == layout.title && $0.subtitle == layout.subtitle } ?? true
-            (labels.alpha, title.alpha) = (1, sameTitle ? 1 : 0)
-            if !sameTitle, let previous {
-                let old = ObjectTitle(previous.title, subtitle: previous.subtitle)
-                old.alpha = 1
-                node.addChild(old)
-                leavingTitle = (old, true)
-            }
+            // Its labels show where they are; those of a layout that glides on wait for its particles (`splits`).
+            labels.alpha = layout.splits && network.split < 1 ? 0 : 1
+            keepTitle(of: previous, layout)
             let before = Set(previous?.arrows.map(\.text) ?? [])
             let now = Set(layout.arrows.map(\.text))
             for (arrow, ends) in zip(arrows, layout.arrows) where !before.contains(ends.text) { arrow.alpha = 0 }
@@ -357,6 +353,20 @@ final class NetworkEffect: Effect {
                 labels.addChild(arrow)
                 leaving.append((arrow, ends.tail, ends.tip))
             }
+        }
+    }
+
+    /// Following `previous` with no transition: the same title stays, also while the labels wait for the particles
+    /// (a prelude, a layout that glides on); a new one fades in as the previous one fades out where it stood.
+    private func keepTitle(of previous: NetworkLayout?, _ layout: NetworkLayout) {
+        titleAtOnce = true
+        let same = previous.map { $0.title == layout.title && $0.subtitle == layout.subtitle } ?? true
+        title.alpha = same ? 1 : 0
+        if !same, let previous, leavingTitle == nil {
+            let old = ObjectTitle(previous.title, subtitle: previous.subtitle)
+            old.alpha = 1
+            node.addChild(old)
+            leavingTitle = (old, true)
         }
     }
 

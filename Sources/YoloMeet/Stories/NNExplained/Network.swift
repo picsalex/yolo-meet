@@ -33,11 +33,16 @@ final class NeuralNetwork {
     let channels: NetworkLayout
     /// The same picture as one gray layer.
     let grayscale: NetworkLayout
+    /// The gray layer with a client's grayscale picture beside it (the grayscale step's substep).
+    let grayscaleExample: NetworkLayout
     /// The same picture as five bands back to back (blue, green, red, red edge, near-infrared).
     let multispectral: NetworkLayout
+    /// The bands smaller, with the ten layers of a client's wafer beside them, in an exploded view (the multispectral
+    /// step's substep).
+    let multispectralExample: NetworkLayout
     /// How far a splitting layout's parts have come apart (0...1, linear), shared so it goes back smoothly too.
     var split: Float = 0
-    /// The picture at the model's input again, the bands gliding back into it.
+    /// The picture at the model's input again, the bands and the wafer's layers gliding back into it.
     let pictureAgain: NetworkLayout
     /// The same, its pixels flowing through the model as pulses of light (`NetworkLayout.flow`), over and over.
     let inference: NetworkLayout
@@ -70,10 +75,13 @@ final class NeuralNetwork {
         channels = .channels(of: pixels, after: onePixel)
         await Self.breathe()
         grayscale = .grayscale(of: pixels, after: channels)
+        grayscaleExample = .grayscaleExample(after: grayscale)
         await Self.breathe()
-        multispectral = .multispectral(of: pixels, after: grayscale)
+        multispectral = .multispectral(of: pixels, after: grayscaleExample)
         await Self.breathe()
-        pictureAgain = .returning(to: picture, from: multispectral, through: pixels)
+        multispectralExample = .multispectralExample(of: pixels, after: multispectral)
+        await Self.breathe()
+        pictureAgain = .returning(to: picture, from: multispectralExample, through: pixels)
         await Self.breathe()
         inference = .flow(of: picture, through: architecture)
         await Self.breathe()
@@ -142,7 +150,7 @@ final class NetworkLayout {
     /// The headers' text size at 720 px of stage height.
     var headerSize: CGFloat = 24
     /// Measurements along the layout's sides (`Dimension`: its size, from, to), e.g. a picture's width and height.
-    private(set) var dimensions: [(text: String, from: SIMD3<Float>, to: SIMD3<Float>)] = []
+    var dimensions: [(text: String, from: SIMD3<Float>, to: SIMD3<Float>)] = []
     /// Drawn arrows, labelled, between points of the layout (e.g. into its input).
     var arrows: [(text: String, tail: SIMD3<Float>, tip: SIMD3<Float>)] = []
     /// Lines joining into an arrow's tail, by its text (points of the layout, each line ending at the tail).
@@ -442,7 +450,9 @@ final class NetworkLayout {
     /// Pixels on a side in `pixels`.
     nonisolated static let pixelCells = 32
     /// The picture's side in `pixels` and `channels`, in the shape's units.
-    private static let pixelSide: Float = 2.6
+    static let pixelSide: Float = 2.6
+    /// A multispectral band's size, of the picture's in `pixels`.
+    static let bandScale: Float = 0.6
 
     /// `picture` zoomed in: every particle becomes part of a pixel, a square of one color (the same share of particles
     /// each); the picture's particles keep their place in it, the architecture's fill in. It splits from `picture`:
@@ -532,18 +542,19 @@ final class NetworkLayout {
             scale: 0.75, depth: 1.2, aside: 0.35)
     }
 
-    /// `channels` down to one layer of brightness: the red layer turns gray where it is, and the green and blue ones
-    /// fade away (their particles go black, adding no light, and stay there).
+    /// `channels` down to one layer of brightness: the green layer, in the middle, turns gray where it is, and the red
+    /// and blue ones fade away (their particles go black, adding no light, and stay there).
     static func grayscale(of pixels: NetworkLayout, after channels: NetworkLayout) -> NetworkLayout {
         let layout = NetworkLayout(
             title: "Grayscale", subtitle: "\(pixelCells) × \(pixelCells) × 1 value · a brightness per pixel",
             neurons: [], synapses: [], neuronSize: 0.02, restingTilt: channels.restingTilt)
         (layout.restingTurn, layout.base) = (channels.restingTurn, channels.base)
-        layout.headers = channels.headers.prefix(1).map { ("Gray", $0.point, $0.members) }
-        layout.outline = Array(channels.outline.prefix(4))  // the first layer's corners
+        let (kept, count) = (1, channels.headers.count)  // the middle layer of the three, so it stays centered
+        layout.headers = [("Gray", channels.headers[kept].point, channels.headers[kept].members)]
+        layout.outline = Array(channels.outline[kept * 4..<kept * 4 + 4])  // that layer's corners
         guard let picture = pixels.shape, let from = channels.shape else { return layout }
         let colors = picture.points.indices.map { i -> SIMD3<Float>? in
-            guard i % 3 == 0 else { return .zero }
+            guard i % count == kept else { return .zero }
             let c = picture.colors[i] ?? .one
             // Brightness, with some contrast (white particles add up fast), for a third of the particles.
             return .one * 1.8 * pow(min(0.299 * c.x + 0.587 * c.y + 0.114 * c.z, 1), 1.6)
@@ -569,7 +580,7 @@ final class NetworkLayout {
                 let nir = min(max(0.15 + 1.1 * c.y - 0.6 * c.z, 0), 1)
                 return [c.z, c.y, c.x, (c.x + nir) / 2, nir]
             },
-            scale: 0.6, depth: 0.8, aside: 0.25)
+            scale: bandScale, depth: 0.8, aside: 0.25)
     }
 
     /// `pixels` as layers back to back (the first in front), each a band (name, tint) holding a share of every

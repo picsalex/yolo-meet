@@ -177,6 +177,12 @@ step adds or drops still fades in or out (CV onboarding: the arrows on the same 
 An effect can move the story on itself with `frame.nextStep()` (as the clicker's →), e.g. when a gesture completes
 its step.
 
+A step can have **substeps**, like the builds of a slide: `Step(…, substeps: [Step])`, steps that follow it before the
+next one (e.g. the same object, then an example beside it, usually with `transition: .none`). → goes through them in
+order and ← back through them; ← on the next step comes back to the last one. The panel lists them indented under
+their step, unnumbered, and the bottom bar shows "10 of 15 · Grayscale › Golf club" (`Story.Place.substep`, 1… on a
+substep with no branch; `isStep` on the step itself). The render script takes them as `S.N` (`10.1@3`).
+
 A step can have **branches**, like hyperlinks in a slide deck: `Step(…, branches: [[Step]])`, each a sequence of steps
 entered from it by an effect, `frame.branches.enter(i)` (e.g. a clicked item, `QuizEffect`). Inside a branch → and ←
 move through its steps, and past either end back to the step it branches from; → and ← on that step skip its
@@ -212,8 +218,20 @@ shows another pixel's); its pixels then split into red, green and blue layers ba
 each pixel's particles a third per channel, adding up to its color from the front; a layout that `splits` starts where
 the one it follows (`splitsFrom`) left the particles and moves on through `ParticleSystem.explode` and the shape's `offsets`, eased, while the view turns to
 its resting angle: the view always turns smoothly from the previous step's). Then only one layer stays, gray
-(`grayscale`: the red layer turns gray in place, the green and blue ones fade to black, which adds no light), and it
-fans out into five multispectral bands (`multispectral`: blue, green, red, red edge, near-infrared). Particles' colors
+(`grayscale`: the green layer, in the middle, turns gray in place, the red and blue ones fade to black, which adds no light), and it
+fans out into five multispectral bands (`multispectral`: blue, green, red, red edge, near-infrared). Each of these two steps
+has a **substep** (`Examples.swift`), a client's picture beside the cat's layers: drawn in code after the real one,
+with no file (`Drawings.swift`: `GrayPicture.golfClub` and `wafer`, as brightness; `SeededRandom` makes a drawing the
+same picture every run). Grayscale › Golf club: the faded layers' unseen
+particles fly to the right at once, lighting up on the way, as a golf club picture facing the viewer, while the gray layer steps aside
+to the left so the two are centered together (`grayscaleExample`: a particle per
+pixel, its real size along its sides). Multispectral › Wafer: the bands shrink to the left, keeping one particle in
+three (each pixel as bright as before), and the others become the ten layers of a wafer, first stacked as one picture
+(its `prelude`: only the front layer lit), then coming apart back to back in an exploded view
+(`multispectralExample`, centered on the stage, seen more from above; each layer's lines drawn with particles where
+the wafer's drawing is bright, in one color, a window of it per layer, turned every other layer, in a thin frame; a generated defect goes
+through layers 4 to 7 at the same place, unmarked). The step after each glides on from its substep's layout
+(`splitsFrom`). Particles' colors
 always fade from the previous shape's to the new one's (`ParticleSystem.colorFade`). Back at the picture, the last
 step loops (`loop: 7`): its pixels flow through the model as pulses of gold light, from the input arrow down the
 backbone, through the neck to a Detect block of the head (`NetworkLayout.flow`: a random path of the blocks'

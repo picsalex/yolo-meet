@@ -5,7 +5,8 @@ extension Story {
     /// How a neural network works: a black box made of particles opens, and its particles become a brain, with the
     /// neurons and weights inside it, then some of them are laid out as a multilayer perceptron, then YOLO's
     /// architecture (backbone, neck, head) its input and output, the picture it looks at, its pixels, one pixel's
-    /// three values, their red, green and blue channels, and the same picture in grayscale (one channel) or multispectral (five); then the picture
+    /// three values, their red, green and blue channels, and the same picture in grayscale (one channel, then a client's
+    /// grayscale picture beside it) or multispectral (five, then the ten layers of a client's wafer); then the picture
     /// flows through the model; a quiz on its seven tasks, each revealed opening its output (a branch of the quiz's
     /// step); and a conclusion. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
@@ -48,10 +49,32 @@ extension Story {
                 nnStep("RGB channels", caption: "Every pixel's red, green and blue values: three layers") {
                     [NetworkEffect(network, network.channels)]
                 },
-                nnStep("Grayscale", caption: "YOLO also takes grayscale images: a single channel") {
+                // Each with a substep: a client's picture beside the cat's layers.
+                nnStep(
+                    "Grayscale",
+                    substeps: [
+                        nnStep(
+                            "Golf club", transition: .none,
+                            caption: "A client's grayscale picture: a golf club, 1280 × 1024, one channel"
+                        ) {
+                            [NetworkEffect(network, network.grayscaleExample)]
+                        }
+                    ], caption: "YOLO also takes grayscale images: a single channel"
+                ) {
                     [NetworkEffect(network, network.grayscale)]
                 },
-                nnStep("Multispectral", caption: "…and multispectral images, e.g. 5 channels") {
+                nnStep(
+                    "Multispectral",
+                    substeps: [
+                        nnStep(
+                            "Wafer", transition: .none,
+                            caption: "A client's wafer: 10 layers, 10 channels; a defect goes through layers 4 to 7"
+                        ) {
+                            // It takes the stage's whole width: around its middle.
+                            [NetworkEffect(network, network.multispectralExample, at: CGPoint(x: 0.5, y: 0.5))]
+                        }
+                    ], caption: "…and multispectral images, e.g. 5 channels"
+                ) {
                     [NetworkEffect(network, network.multispectral)]
                 },
                 nnStep("Back to the input", caption: "Back to the picture at the model's input") {
@@ -87,12 +110,12 @@ extension Story {
     /// A step of the story: its effects, then the hand skeleton (every step tracks hands) and the step's caption.
     private static func nnStep(
         _ title: String, models: [String] = [], transition: Transition = .fade, loop: TimeInterval? = nil,
-        showsCamera: Bool = false, branches: [[Step]] = [], caption: String, _ effects: @escaping () -> [Effect]
+        showsCamera: Bool = false, branches: [[Step]] = [], substeps: [Step] = [], caption: String,
+        _ effects: @escaping () -> [Effect]
     ) -> Step {
         Step(
             title: title, models: models + ["mediapipe-hand"], transition: transition, loop: loop,
-            showsCamera: showsCamera,
-            branches: branches
+            showsCamera: showsCamera, branches: branches, substeps: substeps
         ) {
             effects() + [handSkeleton(), titleCard(caption)]
         }

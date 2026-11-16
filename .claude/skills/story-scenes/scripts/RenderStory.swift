@@ -4,8 +4,8 @@
 //
 // Built and run by render_story.sh, which compiles this file with the app's sources. Arguments:
 //   <out dir> <story id> [--black] [--size WxH] [--background image] [--dwell seconds] <shot>...
-// A shot is STEP@SECONDS[,SECONDS...]: STEP is the 1-based step number as in the panel, or S.B.N for step S's
-// branch B (1-based), its step N, e.g. 12@1,4.5,8.3 or 13.1.2@2.
+// A shot is STEP@SECONDS[,SECONDS...]: STEP is the 1-based step number as in the panel, S.N for step S's substep N
+// (1-based), or S.B.N for step S's branch B (1-based), its step N, e.g. 12@1,4.5,8.3, 10.1@3 or 13.1.2@2.
 import AppKit
 import CoreImage
 import Metal
@@ -44,6 +44,7 @@ func place(_ spec: Substring) -> Story.Place {
     let n = spec.split(separator: ".").compactMap { Int($0) }
     guard let s = n.first, s >= 1, s <= story.steps.count else { fail("bad step \(spec) (1...\(story.steps.count))") }
     if n.count == 3 { return Story.Place(step: s - 1, branch: n[1] - 1, substep: n[2] - 1) }
+    if n.count == 2 { return Story.Place(step: s - 1, substep: n[1]) }
     return Story.Place(step: s - 1)
 }
 var wanted: [Story.Place: [Double]] = [:]
@@ -176,7 +177,8 @@ for place in order[...lastIndex] {
     previous = place
     let loop = story.step(at: place).loop
     let times = (wanted[place] ?? []).sorted()
-    let label = place.branch.map { "step\(place.step + 1).\($0 + 1).\(place.substep + 1)" } ?? "step\(place.step + 1)"
+    let label = place.branch.map { "step\(place.step + 1).\($0 + 1).\(place.substep + 1)" }
+        ?? (place.isStep ? "step\(place.step + 1)" : "step\(place.step + 1).\(place.substep)")
     let end = max(times.last ?? 0, wanted[place] == nil ? dwell : 0)
     var shots = times.map { (Int(($0 / dt).rounded()), String(format: "%@-%.1fs", label, $0)) }
     var i = 0

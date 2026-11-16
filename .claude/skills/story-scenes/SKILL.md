@@ -9,7 +9,8 @@ yolo-meet's stories are live presentations. The presenter talks over them in a m
 
 Vocabulary:
 - **Story:** a sequence of **steps** (the user calls them "states").
-- **Phase** ("substate"): progress inside a step, driven by its own effect: a gesture, a timeline (`stepTime`, `loop`) or a staged glide (`prelude`).
+- **Substep** ("substate"): a step nested in a step (`Step.substeps`), reached with the clicker: → goes through a step's substeps before the next step. The user wants substates on a clicker press, not on a timer.
+- **Phase:** progress inside a step, driven by its own effect: a gesture, a timeline (`stepTime`, `loop`) or a staged glide (`prelude`).
 - **Branch:** a sequence of steps entered from one step and returning to it (e.g. a quiz).
 
 The API is documented in `Sources/YoloMeet/Stories/README.md`. Read it before writing code: it covers effects, particles, gestures, keys, transitions, branches and the Kit. `NNExplained/` (CV onboarding) is the full worked example of the look and feel. `Test/` is the small reference.
@@ -83,6 +84,8 @@ Fix what you find, then render again.
 .claude/skills/story-scenes/scripts/render_story.sh "$SCRATCH/shots" nn-explained --black 12@1,4.5,8.3 29@3
 # a branch's step: S.B.N (step 13, branch 2, its step 1)
 .claude/skills/story-scenes/scripts/render_story.sh "$SCRATCH/shots" nn-explained --black 13.2.1@2
+# a substep: S.N (step 10's first substep)
+.claude/skills/story-scenes/scripts/render_story.sh "$SCRATCH/shots" nn-explained --black 10.1@3
 ```
 
 - **Steps are numbered as in the panel, from 1.** Write shots to your scratch folder, and read the PNGs as images.

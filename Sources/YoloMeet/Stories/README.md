@@ -128,7 +128,8 @@ and wins over the hands' while it acts.
 
 ## Kit
 
-- `TextEffect`, `titleCard(_:)`: captions and a lower-third title that fades after 3 s.
+- `TextEffect`: text anchored to the stage (a counter at the top left, the loading card). Steps have no caption
+  card: what a step is about is said by the presenter and shown by its own content.
 - `ObjectTitle(_:subtitle:)`: an object's title and subtitle beside it (`update(above:)` puts them at the stage's top,
   centered over it, instead); `Callouts([...])`: descriptions with a line to
   points of an object (its parts), in a column on each side. Both follow the object, fade with `visible`, and take the
@@ -136,6 +137,7 @@ and wins over the hands' while it acts.
   its faces described once exploded).
 - `handSkeleton(opacity:)`: the hands' skeletons from `mediapipe-hand` (light gray, white joints, 15%), drawn
   `behind` objects and particles, to guide the gestures; the index fingertip's joint grows on an actionable item.
+  They fade out while the camera is hidden (H), when hand gestures stop.
 - `ParticleShapes`: shapes for `ParticleSystem.form(_:)`, with how they explode (cube: faces apart) and their parts
   (cube: `CubeFace`, with each face's corners); `Box` for any box's 8 corners, 12 edges and 6 faces. A shape's
   `colors` (`ParticleColors`) read and write as optional colors, kept as the GPU takes them.
@@ -162,7 +164,9 @@ and wins over the hands' while it acts.
 sets its look, and `update(…, left:)` puts every label in one column (e.g. beside a whole layout, as `NetworkEffect` does).
 
 H on stage (or the panel's switch) hides the camera image: the stage is black behind the effects, and
-`frame.cameraHidden` tells them (CV onboarding centers its object meanwhile, then puts it back).
+`frame.cameraHidden` tells them (CV onboarding centers its object meanwhile, then puts it back). Hands make no gestures
+and don't point meanwhile (a gesture going on ends, and a hand still pinching when the camera shows again must let go
+first); the mouse still does.
 
 A step can loop: `Step(…, loop: 7)` starts it over every 7 seconds. Effects read the step's clock from the frame
 (`StageFrame.stepTime`, since the step or its loop started, and `loopCount`, 0 the first time through) and play their
@@ -198,7 +202,7 @@ Entering a branch takes its first step's transition; leaving one fades.
 The `NNExplained` story is the first full scene. Its network (every layout, about 180 MB) is built when the
 story is first opened, not at launch: `Story.prepare` builds it (`LazyNetwork`), pausing between layouts so the app
 keeps drawing, while the stage shows `loadingCard` and the panel a spinner; and its steps go through `nnStep`, which adds the hand
-skeleton and the caption. It opens on a black box (`NetworkLayout.blackBox`), its edges made of the
+skeleton. It opens on a black box (`NetworkLayout.blackBox`), its edges made of the
 particles in dark gray and its faces filled black behind them (`BlackBoxEffect`, `behind`), turning on its own
 (`NetworkLayout.spins`); Cmd + fist releases the particles, fading them to the system's blue
 (`ParticleSystem.scatter(plainColors:)`), and opening the hand moves on (`releases`, as a cloud does),

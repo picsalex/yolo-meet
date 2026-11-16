@@ -56,6 +56,8 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case up
     case undo
     case clear
+    /// A step of the story on stage: the next one, or the one before. A host from before this message skips it.
+    case step(forward: Bool)
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.
     case set(InkSettings)
 }

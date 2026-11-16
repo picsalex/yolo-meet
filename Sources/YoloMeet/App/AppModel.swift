@@ -33,7 +33,9 @@ final class AppModel {
     @ObservationIgnored let stageKeys = StageKeys()
     /// Ink drawn on the stage with the mouse, or with the iPad pen app's Apple Pencil; both observe their own settings.
     @ObservationIgnored let drawing = Drawing()
-    @ObservationIgnored private(set) lazy var pen = PenInput(drawing: drawing)
+    @ObservationIgnored private(set) lazy var pen = PenInput(drawing: drawing) { [weak self] forward in
+        forward ? self?.next() : self?.previous()
+    }
 
     var mode: Mode = .display { didSet { applyScene() } }
     /// Models drawn in Display mode, in drawing order.

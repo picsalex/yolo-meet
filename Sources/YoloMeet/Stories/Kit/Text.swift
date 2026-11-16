@@ -1,6 +1,6 @@
 import SpriteKit
 
-/// Text anchored to the stage, re-evaluated every frame (counters, captions).
+/// Text anchored to the stage, re-evaluated every frame (counters, the loading card).
 final class TextEffect: Effect {
     enum Placement { case topLeft, lowerThird }
     private let label = SKLabelNode(fontNamed: Theme.titleFont)
@@ -41,13 +41,6 @@ final class TextEffect: Effect {
         drawn = rect
         background.path = CGPath(roundedRect: rect, cornerWidth: 12 * u, cornerHeight: 12 * u, transform: nil)
     }
-}
-
-/// A lower-third title that shows for a few seconds when the step starts.
-func titleCard(_ title: String) -> Effect {
-    let effect = TextEffect(.lowerThird) { _ in title }
-    effect.node.run(.sequence([.wait(forDuration: 3), .fadeOut(withDuration: 0.6)]))
-    return effect
 }
 
 /// A lower-third card while a story gets ready (`Story.prepare`): its title, and dots that keep moving so the stage

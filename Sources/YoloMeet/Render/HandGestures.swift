@@ -135,12 +135,17 @@ final class HandGestures {
     private var pending: (active: Active, since: TimeInterval)?
     /// The one-hand gesture charging now, nil when none. Call after `update(_:)`.
     private(set) var charging: HandCharge?
+    /// The camera image is hidden (H): hands make no gestures and don't point (`update(_:)`).
+    private var isOff = false
 
-    /// The index fingertips of the hands in view, but not of fists (the tip is in the palm) or hands at the frame's edge.
-    /// Call after `update(_:)`.
+    /// The index fingertips of the hands in view, but not of fists (the tip is in the palm) or hands at the frame's edge;
+    /// none while the camera is hidden. Call after `update(_:)`.
     var pointers: [Pointer] {
-        hands.filter { !$0.value.fist && !$0.value.atEdge }.map { Pointer(hand: $0.key, location: $0.value.tip.value) }
-            .sorted { $0.hand < $1.hand }
+        guard !isOff else { return [] }
+        return hands.filter { !$0.value.fist && !$0.value.atEdge }.map {
+            Pointer(hand: $0.key, location: $0.value.tip.value)
+        }
+        .sorted { $0.hand < $1.hand }
     }
 
     func update(_ frame: StageFrame) -> HandGesture? {
@@ -152,6 +157,18 @@ final class HandGestures {
         }
         hands = hands.filter { frame.time - $0.value.lastSeen <= (frame.smooth ? Self.grace : 0) }
         consumed = consumed.filter { id, fist in hands[id].map { fist ? $0.fist : $0.pinching } ?? false }
+
+        // While the camera is hidden (H), the hands are still followed but do nothing: a gesture going on ends, and a
+        // hand still pinching or in a fist when the camera shows again must let go before it starts another.
+        isOff = frame.cameraHidden
+        if isOff {
+            (charging, pending) = (nil, nil)
+            guard let current = active else {
+                for (id, hand) in hands where hand.pinching || hand.fist { consumed[id] = hand.fist }
+                return nil
+            }
+            return end(at: frame.time, hands: { if case .pair = current { 2 } else { 1 } }())
+        }
 
         let (action, fists) = (frame.keys.held.contains("space"), frame.keys.held.contains("cmd"))
         charging = nil

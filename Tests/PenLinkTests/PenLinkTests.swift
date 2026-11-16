@@ -8,7 +8,7 @@ import Testing
     @Test func framesSplitAnywhere() {
         let sent: [PadMessage] = [
             .hello(name: "iPad"), .hover(x: 10, y: 20.5, height: 0.4), .down(id: 7, x: 1, y: 2, force: 0.8),
-            .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear,
+            .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear, .step(forward: true), .step(forward: false),
             .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }

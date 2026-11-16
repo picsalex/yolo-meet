@@ -136,9 +136,11 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   down, so you can aim while looking at the Mac.
 - A double tap on the pencil switches between the pencil and the eraser; a squeeze (Apple Pencil Pro) picks the next
   color, with a tap in the barrel.
-- The bar under the pad has the panel's ink settings: pencil or eraser, the colors, and under the sliders button the
-  width, Fading ink and its time. They are the same settings: a change on either shows on the other. It also undoes
-  and clears.
+- The bar under the pad has the panel's ink settings: pencil or eraser, the sparkling pencil for Fading ink (lit
+  while strokes fade), the ink's color (tap it to show the others over it, then one to pick it), and under the
+  sliders button the width and the fading time. They are the same settings: a change on either shows on the other. It also undoes and
+  clears.
+- The bar's two wide arrows step through the story, like the arrow keys on the Mac.
 - Fingers draw too until a pencil has touched the pad; after that they are ignored, so a resting hand leaves no ink.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
@@ -172,7 +174,7 @@ While yolo-meet is the active app (not typing in the panel), scenes can use R, Z
 (AZERTY letters; the same keys are W, A, S, D on QWERTY, and 0 works without Shift). In the Test story's Particles
 scene: **R** turns the slow spin on or off, **Q**/**D** turn the shape left or right and **Z**/**S** tilt it while held,
 **0** resets the turn, tilt and zoom, and holding **Space** enters action mode: the item your index fingertip (or the cursor) points at grows,
-and releasing Space acts on it (in the Test story, the 3D shape or the cube's top face: it shows "Action"). H hides the camera image (black stage) and shows it again. Arrows and Page Up/Down step through the story while yolo-meet is active,
+and releasing Space acts on it (in the Test story, the 3D shape or the cube's top face: it shows "Action"). H hides the camera image (black stage) and shows it again; while it's hidden, hands make no gestures and their skeletons fade out (the mouse still works). Arrows and Page Up/Down step through the story while yolo-meet is active,
 and from any app with Clicker keys on; the stage's other keys (R, Q/D, Z/S, 0, Space) never work from other apps, so typing in Meet's chat can't trigger them.
 
 ## Extending

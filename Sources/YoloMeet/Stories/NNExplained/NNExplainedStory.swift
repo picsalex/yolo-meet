@@ -16,78 +16,65 @@ extension Story {
         return Story(
             id: "nn-explained", title: "CV onboarding",
             steps: [
-                nnStep("Black box", caption: "Cmd + fist to open the black box") {
+                nnStep("Black box") {
                     [NetworkEffect(network, network.blackBox), BlackBoxEffect(network, network.blackBox)]
                 },
-                nnStep(
-                    "Neural network",
-                    caption: "Pinch to move, two hands to zoom inside; hold space and point at a neuron"
-                ) {
+                nnStep("Neural network") {
                     [NetworkEffect(network, network.brain)]
                 },
-                nnStep("Multilayer perceptron", caption: "Hold space and point at a neuron or a weight") {
+                nnStep("Multilayer perceptron") {
                     [NetworkEffect(network, network.perceptron)]
                 },
-                nnStep("YOLO architecture", caption: "Backbone, neck, head: hold space and point at a block") {
+                nnStep("YOLO architecture") {
                     [NetworkEffect(network, network.architecture)]
                 },
-                nnStep("Input and output", transition: .none, caption: "An image in, boxes and classes out") {
+                nnStep("Input and output", transition: .none) {
                     [NetworkEffect(network, network.inputOutput)]
                 },
-                nnStep("The input", transition: .none, caption: "The picture the model looks at") {
+                nnStep("The input", transition: .none) {
                     [NetworkEffect(network, network.picture)]
                 },
-                nnStep("Pixels", caption: "Zoomed in: a grid of pixels, each one color") {
+                nnStep("Pixels") {
                     [NetworkEffect(network, network.pixels)]
                 },
-                nnStep(
-                    "One pixel", transition: .none,
-                    caption: "One pixel is three numbers: hold space and point at another"
-                ) {
+                nnStep("One pixel", transition: .none) {
                     [NetworkEffect(network, network.onePixel), PixelValuesEffect(network, network.onePixel)]
                 },
-                nnStep("RGB channels", caption: "Every pixel's red, green and blue values: three layers") {
+                nnStep("RGB channels") {
                     [NetworkEffect(network, network.channels)]
                 },
                 // Each with a substep: a client's picture beside the cat's layers.
                 nnStep(
                     "Grayscale",
                     substeps: [
-                        nnStep(
-                            "Golf club", transition: .none,
-                            caption: "A client's grayscale picture: a golf club, 1280 × 1024, one channel"
-                        ) {
+                        // A client's grayscale picture: a golf club, 1280 × 1024, one channel.
+                        nnStep("Golf club", transition: .none) {
                             [NetworkEffect(network, network.grayscaleExample)]
                         }
-                    ], caption: "YOLO also takes grayscale images: a single channel"
+                    ]
                 ) {
                     [NetworkEffect(network, network.grayscale)]
                 },
                 nnStep(
                     "Multispectral",
                     substeps: [
-                        nnStep(
-                            "Wafer", transition: .none,
-                            caption: "A client's wafer: 10 layers, 10 channels; a defect goes through layers 4 to 7"
-                        ) {
+                        // A client's wafer: 10 layers, 10 channels; a defect goes through layers 4 to 7.
+                        nnStep("Wafer", transition: .none) {
                             // It takes the stage's whole width: around its middle.
                             [NetworkEffect(network, network.multispectralExample, at: CGPoint(x: 0.5, y: 0.5))]
                         }
-                    ], caption: "…and multispectral images, e.g. 5 channels"
+                    ]
                 ) {
                     [NetworkEffect(network, network.multispectral)]
                 },
-                nnStep("Back to the input", caption: "Back to the picture at the model's input") {
+                nnStep("Back to the input") {
                     [NetworkEffect(network, network.pictureAgain)]
                 },
-                nnStep(
-                    "Inference", transition: .none, loop: 8.5,
-                    caption: "The pixels flow through backbone, neck and head"
-                ) {
+                nnStep("Inference", transition: .none, loop: 8.5) {
                     [NetworkEffect(network, network.inference)]
                 },
                 taskQuiz(shared),
-                nnStep("Conclusion", caption: "One image, one model, 7 tasks") {
+                nnStep("Conclusion") {
                     [NetworkEffect(network, network.recap), RecapEffect(network, network.recap)]
                 },
             ],
@@ -107,17 +94,17 @@ extension Story {
         }
     }
 
-    /// A step of the story: its effects, then the hand skeleton (every step tracks hands) and the step's caption.
+    /// A step of the story: its effects, then the hand skeleton (every step tracks hands).
     private static func nnStep(
         _ title: String, models: [String] = [], transition: Transition = .fade, loop: TimeInterval? = nil,
-        showsCamera: Bool = false, branches: [[Step]] = [], substeps: [Step] = [], caption: String,
+        showsCamera: Bool = false, branches: [[Step]] = [], substeps: [Step] = [],
         _ effects: @escaping () -> [Effect]
     ) -> Step {
         Step(
             title: title, models: models + ["mediapipe-hand"], transition: transition, loop: loop,
             showsCamera: showsCamera, branches: branches, substeps: substeps
         ) {
-            effects() + [handSkeleton(), titleCard(caption)]
+            effects() + [handSkeleton()]
         }
     }
 
@@ -127,9 +114,7 @@ extension Story {
     /// and its title flies to the top as the story enters its branch (its output on the cat, then live).
     private static func taskQuiz(_ shared: LazyNetwork) -> Step {
         let tasks = taskBranches(shared)
-        return nnStep(
-            "Task quiz", branches: tasks.map(\.steps), caption: "7 tasks: hold space and click one to reveal it"
-        ) {
+        return nnStep("Task quiz", branches: tasks.map(\.steps)) {
             let network = shared.network
             let output = TaskQuizEffect(network)  // first: it reads where the inference left the particles
             let items = zip(tasks, network.tasks.all).map { task, named in
@@ -151,35 +136,33 @@ extension Story {
         let tasks:
             [(
                 name: String, task: YOLOTask, layout: KeyPath<TaskLayouts, NetworkLayout>,
-                output: TaskOutputEffect.Output, caption: String, model: String, live: () -> [Effect]
+                output: TaskOutputEffect.Output, model: String, live: () -> [Effect]
             )] = [
                 (
-                    "Detect", .detect, \.detect, .box, "Detection: where each object is, what it is, how sure",
-                    "yolo26n", { [BoxesEffect(model: "yolo26n")] }
+                    "Detect", .detect, \.detect, .box, "yolo26n", { [BoxesEffect(model: "yolo26n")] }
                 ),
                 (
-                    "Segment", .segment, \.segment, .mask, "Segmentation: each object's exact pixels", "yolo26n-seg",
+                    "Segment", .segment, \.segment, .mask, "yolo26n-seg",
                     { [OverlayEffect(model: "yolo26n-seg"), BoxesEffect(model: "yolo26n-seg")] }
                 ),
                 (
-                    "Semantic", .semantic, \.semantic, .semantic, "Semantic segmentation: a class for every pixel",
-                    "yolo26n-sem",
+                    "Semantic", .semantic, \.semantic, .semantic, "yolo26n-sem",
                     { [OverlayEffect(model: "yolo26n-sem")] }
                 ),
                 (
-                    "Classify", .classify, \.classify, .classes, "Classification: what the whole image is",
-                    "yolo26n-cls", { [ClassifyEffect(model: "yolo26n-cls")] }
+                    "Classify", .classify, \.classify, .classes, "yolo26n-cls",
+                    { [ClassifyEffect(model: "yolo26n-cls")] }
                 ),
                 (
-                    "Pose", .pose, \.pose, .keypoints, "Pose: keypoints of each object", "yolo26n-pose",
+                    "Pose", .pose, \.pose, .keypoints, "yolo26n-pose",
                     { [PoseEffect(model: "yolo26n-pose"), BoxesEffect(model: "yolo26n-pose")] }
                 ),
                 (
-                    "OBB", .obb, \.obb, .oriented, "Oriented boxes: rotated to fit tilted objects", "yolo26n-obb",
+                    "OBB", .obb, \.obb, .oriented, "yolo26n-obb",
                     { [OrientedBoxesEffect(model: "yolo26n-obb")] }
                 ),
                 (
-                    "Depth", .depth, \.depth, .depth, "Depth: how far every pixel is", "yolo26n-depth",
+                    "Depth", .depth, \.depth, .depth, "yolo26n-depth",
                     { [OverlayEffect(model: "yolo26n-depth", alpha: 0.7, depthColors: Palette.infernoGradient)] }
                 ),
             ]
@@ -194,7 +177,7 @@ extension Story {
             (
                 [task.task.rawValue, datasets[task.task]].compactMap { $0 }.joined(separator: " · "),
                 [
-                    nnStep(task.name, transition: .none, caption: task.caption) {
+                    nnStep(task.name, transition: .none) {
                         let network = shared.network
                         let layout = network.tasks[keyPath: task.layout]
                         return [NetworkEffect(network, layout), TaskOutputEffect(network, layout, task.output)]
@@ -204,18 +187,13 @@ extension Story {
                         ? []
                         : [
                             // Zoomed in: the class of each pixel, its ID on it.
-                            nnStep(
-                                "Semantic · pixels", caption: "Every pixel gets a class: hold space and point at one"
-                            ) {
+                            nnStep("Semantic · pixels") {
                                 let network = shared.network
                                 let zoom = network.tasks.semanticZoom
                                 return [NetworkEffect(network, zoom), TaskOutputEffect(network, zoom, .pixelClasses)]
                             }
                         ]) + [
-                        nnStep(
-                            "\(task.name) · live", models: [task.model], showsCamera: true,
-                            caption: "Live: \(task.model) on the camera"
-                        ) {
+                        nnStep("\(task.name) · live", models: [task.model], showsCamera: true) {
                             task.live()
                         }
                     ]

@@ -47,13 +47,13 @@ A scene with only a moving outline, or a table of parameters off to the side, te
 
 **Be generous.** When you're choosing between a minimal scene and one that explains more (an extra panel of values, a connecting line, slow first examples), choose the richer one. Mention in your report what you added, so the user can trim it.
 
-**For a new story:** sketch the step list (title, the one idea, what's on screen, caption) and share it as you build. Each caption tells the presenter what to say or do ("Cmd + fist to open the black box").
+**For a new story:** sketch the step list (title, the one idea, what's on screen) and share it as you build. Steps have no caption card at the bottom of the stage: the user doesn't want them, so don't add one.
 
 ## Build it
 
 - **Shared state:** steps that continue each other share one state object created in the story file. CV onboarding's is `NeuralNetwork`: one `ParticleSystem` and its layouts. That's what makes particles fly from the previous step's shape into the next.
 - **Build heavy state in `prepare`:** use `Story(…, prepare:)`, not launch. The app shows a loading card meanwhile. Build in chunks with short pauses, as `NeuralNetwork.init` does with `breathe`.
-- **A step helper per story** (like `nnStep`): it adds the models every step needs, the hand skeleton and the caption.
+- **A step helper per story** (like `nnStep`): it adds the models every step needs and the hand skeleton.
 - **Layout options** that already work: reuse them where they fit.
   - `splits` / `splitsFrom` / `prelude` for staged glides;
   - `arrivedColors` (travel unlit, light up on arrival) and `settled`;
@@ -119,7 +119,7 @@ Then build the app with `scripts/build.sh`, which sets `DEVELOPER_DIR` itself, s
   - "don't like it, reset": restore the files to the last commit and remove new ones.
 
   Otherwise, design freely and richly as above.
-- **Use their wording** in titles and captions ("7 tasks", "YOLO" in titles).
+- **Use their wording** in titles ("7 tasks", "YOLO" in titles).
 - **Commits:** only when asked, straight on `main`, push only when asked. Never commit `optimizations.md` or other local notes.
 - **Don't quit or relaunch their running app.** Build, and tell them to relaunch.
 
@@ -127,6 +127,6 @@ Then build the app with `scripts/build.sh`, which sets `DEVELOPER_DIR` itself, s
 
 - [ ] Each step has one idea, shown working with real values, paced for narration, with its subject the clearest thing.
 - [ ] Rendered offscreen at the moments that matter, looked at, and fixed what read badly.
-- [ ] `scripts/build.sh` succeeds. A new story is in `Story.all`, each step has a caption, and heavy state goes through `prepare`.
+- [ ] `scripts/build.sh` succeeds. A new story is in `Story.all`, no step has a caption card, and heavy state goes through `prepare`.
 - [ ] Styling stayed in the story. `Stories/README.md` mentions new patterns or options.
 - [ ] The report says what the scene shows, what was checked offscreen, what needs a live look (colours over the camera, timing, gestures), and that nothing is committed.

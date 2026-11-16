@@ -7,7 +7,7 @@ import SystemConfiguration
 /// network they share, or straight from a nearby iPad when they share none, and the pad's strokes are drawn as ink
 /// (`Drawing`). The pad shows the stage with its own ink over it, so it is told which of its strokes left the stage
 /// and is sent the stage's picture (`StagePicture`). The ink's settings are the panel's, and the pad can change them
-/// too.
+/// too. The pad also steps through the story, like the arrow keys.
 @Observable
 final class PenInput {
     var isOn = UserDefaults.standard.bool(forKey: "penOn") {
@@ -31,11 +31,13 @@ final class PenInput {
     @ObservationIgnored private(set) var lastHeard: TimeInterval = 0
     @ObservationIgnored private let host = PenHost()
     @ObservationIgnored private let drawing: Drawing
+    /// The pad asked for the story's next step (true) or the one before.
+    @ObservationIgnored private let onStep: (Bool) -> Void
     /// The pad's change to the settings is being made: it isn't sent back to it.
     @ObservationIgnored private var isApplying = false
 
-    init(drawing: Drawing) {
-        self.drawing = drawing
+    init(drawing: Drawing, onStep: @escaping (Bool) -> Void) {
+        (self.drawing, self.onStep) = (drawing, onStep)
         host.received = { [weak self] in self?.handle($0) }
         host.changed = { [weak self] connected in
             guard let self else { return }
@@ -107,6 +109,7 @@ final class PenInput {
         case .up: drawing.released(.pen, time: CACurrentMediaTime())
         case .undo: drawing.undo()
         case .clear: drawing.clear()
+        case .step(let forward): onStep(forward)
         case .set(let settings): apply(settings)
         }
     }

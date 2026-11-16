@@ -169,6 +169,8 @@ final class PadModel {
 
     func undo() { client.send(.undo) }
     func clear() { client.send(.clear) }
+    /// The story's next step on stage, or the one before: what the Mac's arrow keys do.
+    func step(forward: Bool) { client.send(.step(forward: forward)) }
 
     // Settings: the pad changes them at once, and yolo-meet answers only when it keeps something else.
 

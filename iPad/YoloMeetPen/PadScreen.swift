@@ -1,11 +1,14 @@
 import PenLink
 import SwiftUI
 
-/// The pad, with a bar under it: the link's state and pairing, the pencil or the eraser, the ink's colors and
-/// settings, undo and clear. Until yolo-meet's pairing code has been typed, it asks for it.
+/// The pad, with a bar under it: the link's state and pairing, the story's steps, the pencil or the eraser, ink that
+/// stays or fades, the ink's color (the others show over it when it is tapped) and settings, undo and clear. Until
+/// yolo-meet's pairing code has been typed, it asks for it.
 struct PadScreen: View {
     @Environment(PadModel.self) private var model
     @State private var showsInk = false
+    /// The colors to pick from show over the ink's.
+    @State private var showsColors = false
     @State private var showsPairing = false
 
     var body: some View {
@@ -40,11 +43,34 @@ struct PadScreen: View {
             Button("Pairing code", systemImage: "key") { showsPairing = true }
                 .tint(model.link == .refused ? .orange : nil)
             Spacer()
-            ink.disabled(!isConnected)
+            Group {
+                steps
+                Divider().frame(height: 28).padding(.horizontal, 4)
+                ink
+            }
+            .disabled(!isConnected)
         }
         .labelStyle(.iconOnly)
         .font(.title2)
         .frame(height: 56)
+    }
+
+    /// The story's steps on stage, as the Mac's arrow keys: the one before, and the next. Wide enough for a finger
+    /// that isn't looked at.
+    private var steps: some View {
+        HStack(spacing: 12) {
+            ForEach([false, true], id: \.self) { forward in
+                Button {
+                    model.step(forward: forward)
+                } label: {
+                    Image(systemName: forward ? "chevron.right" : "chevron.left").fontWeight(.semibold)
+                        .frame(width: 72, height: 34)
+                }
+                .accessibilityLabel(forward ? "Next step" : "Previous step")
+            }
+        }
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.roundedRectangle(radius: 12))
     }
 
     /// The ink's controls.
@@ -55,22 +81,50 @@ struct PadScreen: View {
         }
         .pickerStyle(.segmented)
         .fixedSize()
-        ForEach(model.colors, id: \.self) { color in
-            Button {
-                model.pick(color)
-            } label: {
-                Circle().fill(Color(uiColor: UIColor(hex: color))).frame(width: 30, height: 30)
-                    .padding(4)
-                    .overlay(
-                        Circle().stroke(
-                            .white, lineWidth: model.settings.color == color && !model.settings.erases ? 2 : 0))
+        Toggle(isOn: model.setting(\.fades)) {
+            // A pencil whose ink sparkles away.
+            Image(systemName: "pencil.tip").padding(.trailing, 8)
+                .overlay(alignment: .topTrailing) {
+                    Image(systemName: "sparkles").font(.caption.weight(.bold)).offset(x: 4, y: -4)
+                }
+        }
+        .toggleStyle(.button)
+        .accessibilityLabel("Fading ink")
+        // The ink's color alone: the others show over it when it is tapped, so the bar stays as it is.
+        Button {
+            showsColors = true
+        } label: {
+            swatch(model.settings.color, size: 30)
+        }
+        .accessibilityLabel("Colors")
+        .popover(isPresented: $showsColors, arrowEdge: .bottom) {
+            HStack(spacing: 14) {
+                ForEach(model.colors, id: \.self) { color in
+                    Button {
+                        model.pick(color)
+                        showsColors = false
+                    } label: {
+                        swatch(color, size: 40)
+                    }
+                    .accessibilityLabel("Color \(color)")
+                }
             }
-            .accessibilityLabel("Color \(color)")
+            .padding(16)
+            .preferredColorScheme(.dark)
+            .presentationCompactAdaptation(.popover)
         }
         Button("Ink", systemImage: "slider.horizontal.3") { showsInk = true }
             .popover(isPresented: $showsInk) { InkPanel(model: model) }
         Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
         Button("Clear", systemImage: "trash") { model.clear() }
+    }
+
+    /// A color to pick, ringed when it is the ink's and the pencil has it.
+    private func swatch(_ color: String, size: CGFloat) -> some View {
+        Circle().fill(Color(uiColor: UIColor(hex: color))).frame(width: size, height: size)
+            .padding(4)
+            .overlay(
+                Circle().stroke(.white, lineWidth: model.settings.color == color && !model.settings.erases ? 2 : 0))
     }
 
     private var isConnected: Bool { if case .connected = model.link { true } else { false } }
@@ -87,7 +141,7 @@ struct PadScreen: View {
     }
 }
 
-/// The ink's settings that don't fit the bar: the line's width, and whether and when strokes fade.
+/// The ink's settings that don't fit the bar: the line's width, and how long fading ink stays (the bar switches it).
 private struct InkPanel: View {
     let model: PadModel
 
@@ -96,14 +150,8 @@ private struct InkPanel: View {
             LabeledContent("Width") { Text("\(Int(model.settings.width)) px") }
             Slider(value: model.setting(\.width), in: InkSettings.widths, step: 1)
             Divider()
-            Toggle("Fading ink", isOn: model.setting(\.fades))
-            if model.settings.fades {
-                LabeledContent("Fades after") { Text("\(Int(model.settings.fadeAfter)) s") }
-                Slider(value: model.setting(\.fadeAfter), in: InkSettings.stays, step: 1)
-            } else {
-                Text("Strokes stay until they are undone, erased or cleared").font(.footnote).foregroundStyle(
-                    .secondary)
-            }
+            LabeledContent("Fading ink fades after") { Text("\(Int(model.settings.fadeAfter)) s") }
+            Slider(value: model.setting(\.fadeAfter), in: InkSettings.stays, step: 1)
         }
         .font(.body)
         .padding(20)

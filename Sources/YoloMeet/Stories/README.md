@@ -189,8 +189,9 @@ A step can have **branches**, like hyperlinks in a slide deck: `Step(…, branch
 entered from it by an effect, `frame.branches.enter(i)` (e.g. a clicked item, `QuizEffect`). Inside a branch → and ←
 move through its steps, and past either end back to the step it branches from; → and ← on that step skip its
 branches. The panel lists a branch's steps indented under its step (click one to go there), and the bottom bar shows
-"13 of 14 · Task quiz › Detect". Effects of the step read `frame.branches.visited` (the branches entered since the
-story came to it, kept until it goes back before it) and `frame.branches.returned` (the branch it just came back from,
+"13 of 14 · Task quiz › Detect". Effects of the step read `frame.branches.visited` (the branches entered, kept until
+another story is chosen or the app quits, or the step is reset: right-click it, or one of its substeps or branch
+steps, in the panel › Reset; it can shrink while the step shows) and `frame.branches.returned` (the branch it just came back from,
 e.g. to animate its way back). Where the story is: `AppModel.place` (`Story.Place`: a step, a branch, a step in it).
 Entering a branch takes its first step's transition; leaving one fades.
 

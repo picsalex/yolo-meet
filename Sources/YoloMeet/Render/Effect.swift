@@ -71,8 +71,8 @@ struct StageFrame {
     var branches = Branches()
 
     struct Branches {
-        /// The branches entered from this step since the story came to it (they stay visited when it moves on and
-        /// back, until it goes back before it).
+        /// The branches entered from this step: they stay visited until another story is chosen or the step is
+        /// reset (the panel's step menu). They can shrink while the step is on stage.
         var visited: Set<Int> = []
         /// The branch the story just came back from (past its first or last step), e.g. to animate its way back.
         var returned: Int?

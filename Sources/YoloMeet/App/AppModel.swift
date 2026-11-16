@@ -49,9 +49,8 @@ final class AppModel {
     /// Where the story is: a step, or a step of one of its branches.
     var place = Story.Place() {
         didSet {
-            // The branches entered from a step stay visited until the story goes back before that step.
+            // The branches entered from a step stay visited until the story changes or the step is reset.
             if let branch = place.branch { visited[place.step, default: []].insert(branch) }
-            visited = visited.filter { $0.key <= place.step }
             let left = oldValue.branch != nil && place.branch == nil && oldValue.step == place.step
             returnedBranch = left ? oldValue.branch : nil
             applyScene(transition: sceneStory == storyID ? story.transition(from: oldValue, to: place) : .fade)
@@ -60,7 +59,7 @@ final class AppModel {
     /// The story's step on stage.
     var step: Story.Step { story.step(at: place) }
     /// The branches entered from each step (index in `story.steps`), for its effects (`StageFrame.branches`).
-    @ObservationIgnored private(set) var visited: [Int: Set<Int>] = [:]
+    private(set) var visited: [Int: Set<Int>] = [:]
     /// The branch the story just came back from to its step, if it did.
     @ObservationIgnored private(set) var returnedBranch: Int?
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
@@ -156,6 +155,9 @@ final class AppModel {
         }
         place = Story.Place(step: place.step, branch: branch)
     }
+
+    /// Forgets the branches entered from a step (e.g. a quiz's revealed items blur again).
+    func reset(step: Int) { visited[step] = nil }
 
     /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
     func applyScene(transition: Story.Transition = .fade) {

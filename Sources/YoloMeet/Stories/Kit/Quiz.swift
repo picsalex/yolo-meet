@@ -5,7 +5,7 @@ import SpriteKit
 /// under it, blurred but for the title's first letter. Hold Space and click one (the mouse: `Actionable(by: .click)`):
 /// it comes clear, its title flies to the top of the stage, where the branch's own title shows (`ObjectTitle`, which
 /// picks it up: `handOff`), and the story enters that branch (item i, branch i). Coming back, the title glides from the
-/// top back into its place. Items whose branch was visited stay clear. As a title flies to the top, the other labels
+/// top back into its place. Items whose branch was visited stay clear, until the step is reset (`AppModel.reset`). As a title flies to the top, the other labels
 /// fade out (`leaving`, for the step's other content too), since the branch's first step may follow with no transition.
 /// An item without a branch (more items than the step has branches) can't be clicked.
 final class QuizEffect: Effect {
@@ -59,11 +59,17 @@ final class QuizEffect: Effect {
             if let i = frame.branches.returned, labels.indices.contains(i) { flight = (i, false, frame.time) }
         }
         for label in labels { label.layout(unit: u) }
+        let busy = flight != nil || unveiling != nil || parked != nil
+        // The step reset (the panel): revealed items not visited any more blur again.
+        if !busy {
+            for (i, label) in labels.enumerated() where label.revealed && !frame.branches.visited.contains(i) {
+                label.conceal()
+            }
+        }
         let rest = Self.size / ObjectTitle.titleSize
         let (top, bottom) = (column.maxY * size.height, column.minY * size.height)
         let rowHeight = (labels.first?.height ?? 0) * rest
         let gap = labels.count > 1 ? (top - bottom - rowHeight) / CGFloat(labels.count - 1) : 0
-        let busy = flight != nil || unveiling != nil || parked != nil
         let flying = parked ?? flight.flatMap { $0.out ? $0.index : nil }
         leaving =
             parked != nil ? 1 : flight.map { $0.out ? smoothstep(CGFloat((frame.time - $0.start) / Self.fly)) : 0 } ?? 0
@@ -185,6 +191,18 @@ private final class QuizLabel: SKNode {
         revealed = true
         revealedAt = time
         if time == nil { show(clear: 1) }
+    }
+
+    /// Blurred again, as before it was revealed.
+    func conceal() {
+        (revealed, revealedAt, radius) = (false, nil, -1)
+        if hint.parent !== veil {
+            hint.removeFromParent()
+            veil.addChild(hint)
+        }
+        veil.set(\.alpha, 1)
+        first.set(\.alpha, 1)
+        full.set(\.alpha, 0)
     }
 
     /// Eases the blur away while it comes clear; call every frame.

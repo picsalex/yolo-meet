@@ -181,7 +181,9 @@ A step can have **substeps**, like the builds of a slide: `Step(…, substeps: [
 next one (e.g. the same object, then an example beside it, usually with `transition: .none`). → goes through them in
 order and ← back through them; ← on the next step comes back to the last one. The panel lists them indented under
 their step, unnumbered, and the bottom bar shows "10 of 15 · Grayscale › Golf club" (`Story.Place.substep`, 1… on a
-substep with no branch; `isStep` on the step itself). The render script takes them as `S.N` (`10.1@3`).
+substep with no branch; `isStep` on the step itself). The render script takes them as `S.N` (`10.1@3`). They don't
+nest: a substep's own substeps and branches are never reached, and branches are entered only from the step itself
+(`StageFrame.branches` is empty on its substeps).
 
 A step can have **branches**, like hyperlinks in a slide deck: `Step(…, branches: [[Step]])`, each a sequence of steps
 entered from it by an effect, `frame.branches.enter(i)` (e.g. a clicked item, `QuizEffect`). Inside a branch → and ←

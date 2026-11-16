@@ -29,9 +29,9 @@ final class PixelValuesEffect: Effect {
     /// Lines from the pixel to its swatch, as through a magnifier.
     private let rays = SKShapeNode()
     private let swatch = SKShapeNode()
-    private let place = ShadowedLabel("", font: "GeistMono-Medium")
+    private let place = ShadowedLabel("", font: ObjectTitle.subtitleFont)
     private let rows: [(name: ShadowedLabel, track: SKShapeNode, bar: SKShapeNode, value: ShadowedLabel)]
-    private let total = ShadowedLabel("", font: "GeistMono-Medium", color: NNColors.gold)
+    private let total = ShadowedLabel("", font: ObjectTitle.subtitleFont, color: NNColors.gold)
     private static let gold = NNColors.gold
     /// Each channel's name and its color on stage (lighter than pure, so the blue reads on black).
     private static let channels: [(name: String, color: NSColor)] = [
@@ -51,7 +51,7 @@ final class PixelValuesEffect: Effect {
             let (track, bar) = (SKShapeNode(), SKShapeNode())
             (track.fillColor, track.strokeColor) = (NSColor(white: 1, alpha: 0.14), .clear)
             (bar.fillColor, bar.strokeColor) = (channel.color, .clear)
-            return (name, track, bar, ShadowedLabel("", font: "GeistMono-Medium"))
+            return (name, track, bar, ShadowedLabel("", font: ObjectTitle.subtitleFont))
         }
         super.init()
         (outline.strokeColor, outline.fillColor, outline.lineJoin) = (Self.gold, .clear, .miter)
@@ -78,8 +78,8 @@ final class PixelValuesEffect: Effect {
         if here, since == nil { since = frame.time + 0.5 }
         if !here { since = nil }
         let t = since.map { frame.time - $0 } ?? -1
-        content.alpha = content.alpha.approaching(here && t >= 0 ? 1 : 0, CGFloat(1 - exp(-frame.dt * (here ? 6 : 14))))
-        content.isHidden = content.alpha < 0.01
+        content.set(\.alpha, content.alpha.approaching(here && t >= 0 ? 1 : 0, CGFloat(1 - exp(-frame.dt * (here ? 6 : 14)))))
+        content.set(\.isHidden, content.alpha < 0.01)
         guard !content.isHidden else { return }
 
         // The grid on stage: a pixel's corners from its column and row (the picture faces the viewer).
@@ -106,12 +106,12 @@ final class PixelValuesEffect: Effect {
 
         // The pixel outlined in gold, closing in on it from four times its size.
         let cell = CGRect(enclosing: [corner(Float(column), Float(row)), corner(Float(column + 1), Float(row + 1))])
-        let close = CGFloat(smoothstep(min(max((t - Self.outlineAt) / 0.6, 0), 1)))
+        let close = CGFloat(smoothstep((t - Self.outlineAt) / 0.6))
         let grow = 1 + 3 * (1 - close)
         let ring = cell.insetBy(dx: -cell.width * (grow - 1) / 2, dy: -cell.height * (grow - 1) / 2)
-        outline.path = CGPath(rect: ring, transform: nil)
+        outline.set(\.path, CGPath(rect: ring, transform: nil))
         outline.set(\.lineWidth, 2.5 * u)
-        outline.alpha = close
+        outline.set(\.alpha, close)
 
         // The panel beside the picture, on the right if it fits, else on the left (clear of the height's label).
         let (side, width) = (120 * u, 250 * u)
@@ -125,13 +125,13 @@ final class PixelValuesEffect: Effect {
         let target = CGRect(x: x, y: top - side, width: side, height: side)
 
         // The swatch flies out of the pixel, growing, to its place; the rays follow it.
-        let flown = CGFloat(smoothstep(min(max((t - Self.flight.at) / Self.flight.duration, 0), 1)))
+        let flown = CGFloat(smoothstep((t - Self.flight.at) / Self.flight.duration))
         let box = CGRect(
             x: cell.minX + (target.minX - cell.minX) * flown, y: cell.minY + (target.minY - cell.minY) * flown,
             width: cell.width + (target.width - cell.width) * flown,
             height: cell.height + (target.height - cell.height) * flown)
-        swatch.isHidden = t < Self.flight.at
-        swatch.path = CGPath(rect: box, transform: nil)
+        swatch.set(\.isHidden, t < Self.flight.at)
+        swatch.set(\.path, CGPath(rect: box, transform: nil))
         swatch.set(
             \.fillColor,
             NSColor(
@@ -145,50 +145,53 @@ final class PixelValuesEffect: Effect {
         rayPath.addLine(to: CGPoint(x: far, y: box.maxY))
         rayPath.move(to: CGPoint(x: near, y: cell.minY))
         rayPath.addLine(to: CGPoint(x: far, y: box.minY))
-        rays.path = rayPath
+        rays.set(\.path, rayPath)
         rays.set(\.lineWidth, 1.5 * u)
-        rays.alpha = flown
+        rays.set(\.alpha, flown)
 
         // Where it is in the picture, under the swatch.
         place.label.set(\.text, "pixel (\(column), \(row))")
         place.label.set(\.fontSize, 18 * u)
-        place.position = CGPoint(x: x, y: target.minY - 22 * u)
-        place.alpha = CGFloat(smoothstep(min(max((t - Self.flight.at - Self.flight.duration) / 0.4, 0), 1)))
+        place.set(\.position, CGPoint(x: x, y: target.minY - 22 * u))
+        place.set(\.alpha, CGFloat(smoothstep((t - Self.flight.at - Self.flight.duration) / 0.4)))
         place.sync(unit: u)
 
         // Its values, one after the other: the bar fills as the number counts up to it.
         let track = (x: x + 34 * u, width: 150 * u, height: 14 * u)
         for (c, row) in rows.enumerated() {
             let at = Self.valuesAt + Double(c) * Self.valueGap
-            let shown = CGFloat(smoothstep(min(max((t - at) / 0.3, 0), 1)))
-            let filled = Float(smoothstep(min(max((t - at) / Self.fill, 0), 1)))
+            let shown = CGFloat(smoothstep((t - at) / 0.3))
+            let filled = Float(smoothstep((t - at) / Self.fill))
             let y = top - rowsTop - (CGFloat(c) + 0.5) * rowHeight
-            for part in [row.name, row.track, row.bar, row.value] as [SKNode] { part.alpha = shown }
+            for part in [row.name, row.track, row.bar, row.value] as [SKNode] { part.set(\.alpha, shown) }
             row.name.label.set(\.fontSize, 24 * u)
-            row.name.position = CGPoint(x: x, y: y)
+            row.name.set(\.position, CGPoint(x: x, y: y))
             row.name.sync(unit: u)
             let r = track.height / 2
-            row.track.path = CGPath(
-                roundedRect: CGRect(x: track.x, y: y - r, width: track.width, height: track.height), cornerWidth: r,
-                cornerHeight: r, transform: nil)
+            row.track.set(
+                \.path,
+                CGPath(
+                    roundedRect: CGRect(x: track.x, y: y - r, width: track.width, height: track.height),
+                    cornerWidth: r, cornerHeight: r, transform: nil))
             let length = max(CGFloat(bars[c] * filled) * track.width, 0)
-            row.bar.path =
+            row.bar.set(
+                \.path,
                 length < 1
-                ? nil
-                : CGPath(
-                    roundedRect: CGRect(x: track.x, y: y - r, width: length, height: track.height),
-                    cornerWidth: min(r, length / 2), cornerHeight: r, transform: nil)
+                    ? nil
+                    : CGPath(
+                        roundedRect: CGRect(x: track.x, y: y - r, width: length, height: track.height),
+                        cornerWidth: min(r, length / 2), cornerHeight: r, transform: nil))
             row.value.label.set(\.text, "\(Int((bars[c] * 255 * filled).rounded()))")
             row.value.label.set(\.fontSize, 24 * u)
-            row.value.position = CGPoint(x: track.x + track.width + 14 * u, y: y)
+            row.value.set(\.position, CGPoint(x: track.x + track.width + 14 * u, y: y))
             row.value.sync(unit: u)
         }
 
         // The three together: the pixel's value.
         total.label.set(\.text, "= (\(value.x), \(value.y), \(value.z))")
         total.label.set(\.fontSize, 26 * u)
-        total.position = CGPoint(x: x, y: top - rowsTop - 3 * rowHeight - 30 * u)
-        total.alpha = CGFloat(smoothstep(min(max((t - Self.totalAt) / 0.5, 0), 1)))
+        total.set(\.position, CGPoint(x: x, y: top - rowsTop - 3 * rowHeight - 30 * u))
+        total.set(\.alpha, CGFloat(smoothstep((t - Self.totalAt) / 0.5)))
         total.sync(unit: u)
     }
 }

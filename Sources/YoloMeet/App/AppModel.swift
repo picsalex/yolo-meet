@@ -148,9 +148,10 @@ final class AppModel {
 
     func next() { if mode == .story, let next = story.place(after: place) { place = next } }
     func previous() { if mode == .story, let previous = story.place(before: place) { place = previous } }
-    /// Enters a branch of the step on stage (`Story.Step.branches`), at its first step.
+    /// Enters a branch of the step on stage (`Story.Step.branches`), at its first step: only from the step itself,
+    /// not from its substeps or from inside a branch.
     func enter(branch: Int) {
-        guard mode == .story, place.branch == nil, story.steps[place.step].branches.indices.contains(branch) else {
+        guard mode == .story, place.isStep, story.steps[place.step].branches.indices.contains(branch) else {
             return
         }
         place = Story.Place(step: place.step, branch: branch)

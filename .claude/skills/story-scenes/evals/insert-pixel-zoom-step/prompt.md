@@ -5,4 +5,4 @@ timeout_seconds: 3600
 allowed_tools: [Read, Glob, Grep, Skill, Write, Edit, Bash]
 ---
 
-in CV onboarding, after the Pixels state, add a state that zooms on one pixel of the cat's eye and shows its R, G, B values as three numbers next to it
+in CV onboarding, after the RGB channels state, add a state that zooms on the cat's eye in the three layers and shows one eye pixel's value in each layer as a number next to it

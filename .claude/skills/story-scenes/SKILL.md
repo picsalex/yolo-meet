@@ -94,8 +94,7 @@ Fix what you find, then render again.
 - **What it can't show:**
   - gestures and pointing, so a phase waiting on a fist won't advance;
   - live model outputs;
-  - the 3D layer;
-  - the app's fonts.
+  - the 3D layer.
 
   Colours come out a little lighter than in the app.
 - **If it fails to build** after app changes, a new file probably only works in the app shell. Add it to `skip` in the script.

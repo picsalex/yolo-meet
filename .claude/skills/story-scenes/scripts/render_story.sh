@@ -47,4 +47,5 @@ if (( ! fresh )) || [[ ! -x $build/render ]]; then
   swiftc -O -swift-version 6 -default-isolation MainActor -module-name YoloMeet -o $build/render $src/*.swift
   touch $stamp
 fi
-exec $build/render "$@"
+# The app's fonts (Archivo, Geist Mono), which the renderer registers as the app does from its bundle.
+YOLO_MEET_FONTS=$repo/Support/Fonts exec $build/render "$@"

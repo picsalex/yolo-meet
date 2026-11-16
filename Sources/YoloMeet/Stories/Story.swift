@@ -28,7 +28,8 @@ struct Story: Identifiable {
         var branches: [[Step]] = []
         /// Substeps: steps that follow this one before the next, as the builds of a slide do (e.g. the same object,
         /// then an example beside it): → goes through them in order, ← back through them, and ← on the next step
-        /// comes back to the last one. Shown indented under it in the panel.
+        /// comes back to the last one. Shown indented under it in the panel. They don't nest: a substep's own
+        /// `branches` and `substeps` are never reached (nor a branch's steps' `substeps`), so leave them empty.
         var substeps: [Step] = []
         let effects: () -> [Effect]
     }

@@ -8,6 +8,7 @@
 // (1-based), or S.B.N for step S's branch B (1-based), its step N, e.g. 12@1,4.5,8.3, 10.1@3 or 13.1.2@2.
 import AppKit
 import CoreImage
+import CoreText
 import Metal
 import SpriteKit
 
@@ -35,6 +36,15 @@ while !args.isEmpty {
 }
 try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
+// The app's fonts, as `Theme.registerFonts` does from the bundle: without them labels fall back to another font.
+if let fonts = ProcessInfo.processInfo.environment["YOLO_MEET_FONTS"],
+    let files = try? FileManager.default.contentsOfDirectory(at: URL(filePath: fonts), includingPropertiesForKeys: nil)
+{
+    for url in files where url.pathExtension == "ttf" { CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil) }
+} else {
+    FileHandle.standardError.write(Data("warning: no YOLO_MEET_FONTS: labels use fallback fonts\n".utf8))
+}
+
 guard let story = Story.all.first(where: { $0.id == storyID }) else {
     fail("no story \"\(storyID)\"; stories: \(Story.all.map(\.id).joined(separator: ", "))")
 }
@@ -42,9 +52,27 @@ guard let story = Story.all.first(where: { $0.id == storyID }) else {
 // Shots, as places in the story.
 func place(_ spec: Substring) -> Story.Place {
     let n = spec.split(separator: ".").compactMap { Int($0) }
+    guard n.count == spec.split(separator: ".").count, (1...3).contains(n.count) else {
+        fail("bad step \(spec): expected S, S.N or S.B.N")
+    }
     guard let s = n.first, s >= 1, s <= story.steps.count else { fail("bad step \(spec) (1...\(story.steps.count))") }
-    if n.count == 3 { return Story.Place(step: s - 1, branch: n[1] - 1, substep: n[2] - 1) }
-    if n.count == 2 { return Story.Place(step: s - 1, substep: n[1]) }
+    let step = story.steps[s - 1]
+    if n.count == 3 {
+        guard step.branches.indices.contains(n[1] - 1) else {
+            fail("bad step \(spec): step \(s) has \(step.branches.count) branches")
+        }
+        let branch = step.branches[n[1] - 1]
+        guard branch.indices.contains(n[2] - 1) else {
+            fail("bad step \(spec): branch \(n[1]) of step \(s) has \(branch.count) steps")
+        }
+        return Story.Place(step: s - 1, branch: n[1] - 1, substep: n[2] - 1)
+    }
+    if n.count == 2 {
+        guard (1...max(step.substeps.count, 1)).contains(n[1]), !step.substeps.isEmpty else {
+            fail("bad step \(spec): step \(s) has \(step.substeps.count) substeps")
+        }
+        return Story.Place(step: s - 1, substep: n[1])
+    }
     return Story.Place(step: s - 1)
 }
 var wanted: [Story.Place: [Double]] = [:]
@@ -102,7 +130,7 @@ func frame(loop: TimeInterval?, shot: String? = nil) {
     pointing.next()
     f.pointing = pointing
     f.nextStep = { advance = true }
-    f.branches = StageFrame.Branches(count: story.step(at: current).branches.count)
+    f.branches = StageFrame.Branches(count: current.isStep ? story.steps[current.step].branches.count : 0)
     for effect in effects { effect.update(f) }
     let commands = queue.makeCommandBuffer()!
     let destination = CIRenderDestination(mtlTexture: texture, commandBuffer: commands)
@@ -168,7 +196,7 @@ if let prepare = story.prepare {
 
 // Walk the story in the panel's order up to the last wanted place, dwelling on the places between.
 let order = story.places
-let lastIndex = order.lastIndex { wanted[$0] != nil }!
+guard let lastIndex = order.lastIndex(where: { wanted[$0] != nil }) else { fail("none of the shots is in the story") }
 var previous: Story.Place?
 for place in order[...lastIndex] {
     // Branches are entered from their step; places in branches nobody asked for are skipped.

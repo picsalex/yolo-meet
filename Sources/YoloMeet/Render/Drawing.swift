@@ -8,17 +8,23 @@ import SpriteKit
 /// at any time (`PenInput`): a harder press makes a wider line, and its nib shows on stage while it hovers over the pad.
 /// With the eraser, both remove the strokes they touch instead, whole.
 ///
+/// The stage and the whiteboard each have their own ink (`page`): switching shelves one's strokes and brings back the
+/// other's. On the whiteboard, white ink is drawn near-black (`PenLink.ink`).
+///
 /// Points are in ink points: stage points at unit 1 (a 1280 × 720 stage), so ink keeps its place when the stage resizes.
 @Observable
 final class Drawing {
     /// Who draws: each has its own stroke in progress.
     enum Source { case mouse, pen }
-    /// What the pen's pad is told (`changed`): the ink's settings changed, or strokes it drew (their ids) left the
-    /// stage.
+    /// What the pen's pad is told (`changed`): the ink's settings changed, strokes it drew (their ids) left the
+    /// stage, or the page changed (the pad keeps only the new page's strokes).
     enum Change {
         case settings
         case removed([Int])
+        case page
     }
+    /// Where the ink is: over the stage's picture, or on the whiteboard.
+    enum Page { case stage, whiteboard }
 
     /// Ink colors (Ultralytics' brand skeleton colors, white and the annotation palette's red), as names and hex.
     static let colors = [
@@ -57,6 +63,28 @@ final class Drawing {
             changed?(.settings)
         }
     }
+    /// The ink on stage: the stage's own, or the whiteboard's. The other page's strokes wait, hidden, until it's back,
+    /// and only undo, the eraser and Clear remove them: fading ink doesn't age meanwhile, and goes on fading from where
+    /// it was.
+    var page = Page.stage {
+        didSet {
+            guard page != oldValue else { return }
+            let now = CACurrentMediaTime()
+            for source in [Source.mouse, .pen] { released(source, time: now) }
+            hovering = nil
+            for stroke in strokes { stroke.node.removeFromParent() }
+            shelved[oldValue] = (strokes, now)
+            let back = shelved.removeValue(forKey: page)
+            let away = back.map { now - $0.since } ?? 0
+            strokes = back?.strokes ?? []
+            for stroke in strokes {
+                stroke.endedAt = stroke.endedAt.map { $0 + away }
+                node.addChild(stroke.node)
+            }
+            strokeCount = strokes.count
+            changed?(.page)
+        }
+    }
     /// The mouse and the pen erase instead of drawing: a stroke they touch leaves the stage.
     var erases = false {
         didSet {
@@ -76,6 +104,8 @@ final class Drawing {
     @ObservationIgnored let node = SKNode()
     @ObservationIgnored var changed: ((Change) -> Void)?
     @ObservationIgnored private var strokes: [Stroke] = []
+    /// The other page's strokes while it isn't on stage, and since when.
+    @ObservationIgnored private var shelved: [Page: (strokes: [Stroke], since: TimeInterval)] = [:]
     /// The strokes being drawn: the mouse's while its button is down, the pen's while it touches its pad.
     @ObservationIgnored private var current: [Source: Stroke] = [:]
     /// The pen's nib while it hovers over its pad: a dot the size of the line, in a ring that closes in as the pen
@@ -111,7 +141,7 @@ final class Drawing {
             erasing[source] = point
             return erase(from: point, to: point)
         }
-        let stroke = Stroke(color: .hex(color), id: id)
+        let stroke = Stroke(color: ink, id: id)
         node.addChild(stroke.node)
         strokes.append(stroke)
         (current[source], strokeCount) = (stroke, strokes.count)
@@ -132,6 +162,9 @@ final class Drawing {
         current[source]?.endedAt = time
         (current[source], erasing[source]) = (nil, nil)
     }
+
+    /// The color the next strokes are drawn in, on this page.
+    private var ink: NSColor { .hex(PenLink.ink(color, onWhiteboard: page == .whiteboard)) }
 
     /// The strokes the eraser touches on its way from `start` to `end` leave the stage.
     private func erase(from start: CGPoint, to end: CGPoint) {
@@ -184,13 +217,15 @@ final class Drawing {
                 rings[source]
                 ?? {
                     let ring = SKShapeNode()
-                    (ring.strokeColor, ring.fillColor, ring.lineWidth, ring.zPosition) = (
-                        .white, .white.withAlphaComponent(0.15), 1.5, 1
-                    )
+                    (ring.lineWidth, ring.zPosition) = (1.5, 1)
                     node.addChild(ring)
                     rings[source] = ring
                     return ring
                 }()
+            // White over the stage's picture, dark on the whiteboard.
+            let shade: NSColor = page == .whiteboard ? .hex("1A1A1A") : .white
+            ring.set(\.strokeColor, shade)
+            ring.set(\.fillColor, shade.withAlphaComponent(0.15))
             let radius = settings.eraserRadius
             ring.path = CGPath(
                 ellipseIn: CGRect(x: -radius, y: -radius, width: 2 * radius, height: 2 * radius), transform: nil)
@@ -199,7 +234,7 @@ final class Drawing {
         // The nib hides while the pen draws: the line's end shows where it is.
         nib.node.isHidden = hovering == nil || current[.pen] != nil || erases
         if let hovering, !nib.node.isHidden {
-            let (ink, radius) = (NSColor.hex(color), CGFloat(width) / 2 + 3 + 16 * hovering.height)
+            let radius = CGFloat(width) / 2 + 3 + 16 * hovering.height
             nib.node.position = hovering.point
             nib.dot.setScale(CGFloat(width) / 2)
             nib.dot.fillColor = ink

@@ -122,6 +122,11 @@ turned off, until it is cleared.
   grows with the width). Erasing can't be undone. Picking a color takes the pencil back.
 - **Fading ink**: off, strokes stay until they are undone, erased or cleared; on, each fades out once it has stayed
   the time set under it (1 to 30 seconds).
+- **Whiteboard** (the panel's toolbar, or the pen app's deck): the stage fades to white, with its own ink, and the
+  models and effects stop. Turning it off fades back to the stage as it was (Display mode, or the story at its step),
+  with the stage's ink; the whiteboard's waits for next time, until it's undone, erased or cleared (fading ink
+  doesn't age while its page is hidden). White ink draws near-black on it. The clicker and the
+  arrow keys don't step the story meanwhile.
 
 ### iPad pen
 
@@ -140,7 +145,15 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   while strokes fade), the ink's color (tap it to show the others over it, then one to pick it), and under the
   sliders button the width and the fading time. They are the same settings: a change on either shows on the other. It also undoes and
   clears.
-- The bar's two wide arrows step through the story, like the arrow keys on the Mac.
+- On the bar's left, a deck of large keys, as on a Stream Deck: **Display**, **Story** and **Whiteboard** switch what
+  the stage shows, the one on stage lit yellow. **Story** opens a page of the stories, like a Stream Deck folder: pick
+  one to show it (where it was if it's the one open, else from its start), or **Back**. **Whiteboard** again goes back to
+  Display mode or the story, whichever was under it: its key stays yellow meanwhile, dimmed and off. **Hide** hides the camera
+  image and shows it again, as H does (lit while hidden, off on the whiteboard). While a story shows, **Restart**
+  takes it back to its first step (its branches and quiz as when it was opened), and **Previous** and **Next** step
+  through it, like the arrow keys on the Mac. A key lights when yolo-meet has done what it asks.
+- Over the pad, centered between the screen's top and the pad, a line says which Mac it draws on (or what the link
+  waits for), with the key for the pairing code.
 - Fingers draw too until a pencil has touched the pad; after that they are ignored, so a resting hand leaves no ink.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,

@@ -9,6 +9,7 @@ import Testing
         let sent: [PadMessage] = [
             .hello(name: "iPad"), .hover(x: 10, y: 20.5, height: 0.4), .down(id: 7, x: 1, y: 2, force: 0.8),
             .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear, .step(forward: true), .step(forward: false),
+            .show(.whiteboard), .show(.display), .story(id: "nn-explained"), .restartStory, .hideCamera(true),
             .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }
@@ -26,7 +27,10 @@ import Testing
     @Test func picturesCross() {
         let jpeg = Data((0..<200_000).map { UInt8(truncatingIfNeeded: $0 &* 31) })
         let sent: [HostMessage] = [
-            .picture(jpeg: jpeg, through: 7), .removed(ids: [7]), .picture(jpeg: Data(), through: nil),
+            .picture(jpeg: jpeg, through: 7), .removed(ids: [7]), .shows(.whiteboard, mode: .story),
+            .cameraHidden(true),
+            .stories([StoryInfo(id: "nn-explained", title: "CV onboarding")], current: "nn-explained"),
+            .picture(jpeg: Data(), through: nil),
             .picture(jpeg: jpeg, through: Int(Int32.max)),
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }
@@ -188,6 +192,14 @@ import Testing
         let small = ink.eraserRadius
         ink.width = InkSettings.widths.upperBound
         #expect(small > InkSettings.widths.lowerBound / 2 && ink.eraserRadius > small)
+    }
+
+    /// White ink shows on the whiteboard, drawn near-black; other colors, and white on the stage, stay as they are.
+    @Test func whiteInkShowsOnTheWhiteboard() {
+        #expect(PenLink.ink("FFFFFF", onWhiteboard: true) == "1A1A1A")
+        #expect(PenLink.ink("ffffff", onWhiteboard: true) == "1A1A1A")
+        #expect(PenLink.ink("FFFFFF", onWhiteboard: false) == "FFFFFF")
+        #expect(PenLink.ink("00FFFF", onWhiteboard: true) == "00FFFF")
     }
 
     @Test func pressFollowsForce() {

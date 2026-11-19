@@ -27,6 +27,15 @@ final class PadModel {
     /// The ink's settings, and the colors to pick from (hex).
     private(set) var settings = InkSettings(color: "E1FF25", width: 6, fades: false, fadeAfter: 4, erases: false)
     private(set) var colors: [String] = []
+    /// What the stage shows: Display mode's models, a story, or the whiteboard (`StageShow`).
+    private(set) var shows = StageShow.display
+    /// The mode under the whiteboard: Display mode or the story, what the whiteboard's key goes back to.
+    private(set) var mode = StageShow.display
+    /// The stage hides the camera image (H on the Mac).
+    private(set) var cameraHidden = false
+    /// The stories yolo-meet can show, and the one open.
+    private(set) var stories: [StoryInfo] = []
+    private(set) var currentStory: String?
     /// Where the eraser is over the pad (ink points), while the pen erases or hovers with it.
     @ObservationIgnored private(set) var eraser: CGPoint? {
         didSet {
@@ -57,7 +66,7 @@ final class PadModel {
             if case .connected = state {
                 self.client.send(.hello(name: UIDevice.current.name))
             } else {
-                self.hostName = nil
+                (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
                 self.end()
                 self.forgetPicture()
             }
@@ -86,6 +95,11 @@ final class PadModel {
             if settings.erases != self.settings.erases { end() }  // the pen's touch was for the other tool
             (self.settings, self.colors) = (settings, colors)
             if !settings.erases { eraser = nil }
+        case .cameraHidden(let hidden): cameraHidden = hidden
+        case .stories(let stories, let current): (self.stories, currentStory) = (Array(stories.prefix(24)), current)
+        case .shows(let shows, let mode):
+            (self.shows, self.mode) = (shows, mode)
+            redraw?(nil)  // white ink is drawn another color on the whiteboard
         case .ink(let ids): keep { ids.contains($0.id) }
         case .removed(let ids): keep { !ids.contains($0.id) }
         case .picture(let jpeg, let through):
@@ -171,6 +185,15 @@ final class PadModel {
     func clear() { client.send(.clear) }
     /// The story's next step on stage, or the one before: what the Mac's arrow keys do.
     func step(forward: Bool) { client.send(.step(forward: forward)) }
+    /// The story on stage starts over, at its first step.
+    func restartStory() { client.send(.restartStory) }
+    /// The story (where it was) or the whiteboard on stage. The deck's keys light when yolo-meet says it did it
+    /// (`shows`), not before: a key that stays dark means it didn't (e.g. an older yolo-meet).
+    func show(_ show: StageShow) { client.send(.show(show)) }
+    /// The story `id` on stage: where it was if it is the one open, else from its start; lit when yolo-meet says so.
+    func open(story id: String) { client.send(.story(id: id)) }
+    /// Hides the stage's camera image, or shows it again, as H does on the Mac; lit when yolo-meet says so.
+    func toggleCamera() { client.send(.hideCamera(!cameraHidden)) }
 
     // Settings: the pad changes them at once, and yolo-meet answers only when it keeps something else.
 

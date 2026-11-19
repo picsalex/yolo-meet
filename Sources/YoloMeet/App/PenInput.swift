@@ -7,7 +7,8 @@ import SystemConfiguration
 /// network they share, or straight from a nearby iPad when they share none, and the pad's strokes are drawn as ink
 /// (`Drawing`). The pad shows the stage with its own ink over it, so it is told which of its strokes left the stage
 /// and is sent the stage's picture (`StagePicture`). The ink's settings are the panel's, and the pad can change them
-/// too. The pad also steps through the story, like the arrow keys.
+/// too. The pad also steps through the story, like the arrow keys, switches the stage between the story and the
+/// whiteboard, and hides the camera image, as H does (its deck).
 @Observable
 final class PenInput {
     var isOn = UserDefaults.standard.bool(forKey: "penOn") {
@@ -31,13 +32,42 @@ final class PenInput {
     @ObservationIgnored private(set) var lastHeard: TimeInterval = 0
     @ObservationIgnored private let host = PenHost()
     @ObservationIgnored private let drawing: Drawing
+    /// What the stage shows, and the mode under the whiteboard (Display mode or the story): the pad is told when either
+    /// changes.
+    @ObservationIgnored var shows = (StageShow.display, mode: StageShow.display) {
+        didSet { if shows != oldValue { host.send(.shows(shows.0, mode: shows.mode)) } }
+    }
+    /// Whether the camera image is hidden (H): the pad is told when it changes.
+    @ObservationIgnored var cameraHidden = false {
+        didSet { if cameraHidden != oldValue { host.send(.cameraHidden(cameraHidden)) } }
+    }
+    /// The story open: the pad's deck lights it among `stories`.
+    @ObservationIgnored var story: String {
+        didSet { if story != oldValue { host.send(.stories(stories, current: story)) } }
+    }
+    @ObservationIgnored private let stories: [StoryInfo]
     /// The pad asked for the story's next step (true) or the one before.
     @ObservationIgnored private let onStep: (Bool) -> Void
+    /// The pad asked for the story or the whiteboard.
+    @ObservationIgnored private let onShow: (StageShow) -> Void
+    /// The pad asked for a story, by id.
+    @ObservationIgnored private let onStory: (String) -> Void
+    /// The pad asked for the story to start over.
+    @ObservationIgnored private let onRestart: () -> Void
+    /// The pad asked to hide the camera image (true) or show it.
+    @ObservationIgnored private let onHide: (Bool) -> Void
     /// The pad's change to the settings is being made: it isn't sent back to it.
     @ObservationIgnored private var isApplying = false
 
-    init(drawing: Drawing, onStep: @escaping (Bool) -> Void) {
-        (self.drawing, self.onStep) = (drawing, onStep)
+    init(
+        drawing: Drawing, stories: [StoryInfo], story: String, onStep: @escaping (Bool) -> Void,
+        onShow: @escaping (StageShow) -> Void, onStory: @escaping (String) -> Void, onRestart: @escaping () -> Void,
+        onHide: @escaping (Bool) -> Void
+    ) {
+        (self.drawing, self.stories, self.story) = (drawing, stories, story)
+        (self.onStep, self.onShow, self.onStory, self.onRestart, self.onHide) = (
+            onStep, onShow, onStory, onRestart, onHide
+        )
         host.received = { [weak self] in self?.handle($0) }
         host.changed = { [weak self] connected in
             guard let self else { return }
@@ -48,6 +78,9 @@ final class PenInput {
             if connected {
                 self.host.send(.hello(name: Self.macName))
                 self.sendSettings()
+                self.host.send(.shows(self.shows.0, mode: self.shows.mode))
+                self.host.send(.cameraHidden(self.cameraHidden))
+                self.host.send(.stories(self.stories, current: self.story))
                 self.host.send(.ink(ids: self.drawing.penStrokes))
             }
         }
@@ -55,6 +88,7 @@ final class PenInput {
             switch change {
             case .settings: if self?.isApplying == false { self?.sendSettings() }
             case .removed(let ids): self?.host.send(.removed(ids: ids))
+            case .page: self.map { $0.host.send(.ink(ids: $0.drawing.penStrokes)) }
             }
         }
         UserDefaults.standard.set(code, forKey: "penCode")  // the first one is made here
@@ -110,6 +144,10 @@ final class PenInput {
         case .undo: drawing.undo()
         case .clear: drawing.clear()
         case .step(let forward): onStep(forward)
+        case .show(let show): onShow(show)
+        case .story(let id): onStory(id)
+        case .restartStory: onRestart()
+        case .hideCamera(let hidden): onHide(hidden)
         case .set(let settings): apply(settings)
         }
     }

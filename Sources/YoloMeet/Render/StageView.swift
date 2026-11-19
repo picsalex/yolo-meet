@@ -139,6 +139,9 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     private var cameraFade: CGFloat = 0
     /// Seconds to fade the camera image out or in.
     private static let cameraFadeTime: CGFloat = 0.6
+    /// How far the whiteboard has faded in over the picture (0 off, 1 on), toward `model.whiteboard`, at the camera's
+    /// pace.
+    private var boardFade: CGFloat = 0
     private var lastTime = CACurrentMediaTime()
     private var frameRate = RateCounter()
 
@@ -200,11 +203,18 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         cameraFade = model.cameraHidden ? min(cameraFade + step, 1) : max(cameraFade - step, 0)
         let eased = smoothstep(cameraFade)
         let black = 1 - pow(1 - eased, 2.2)
-        let video =
+        var video =
             black == 0
             ? placed
             : CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: black)).cropped(to: bounds).composited(
                 over: placed)
+        // The whiteboard fades in over it the same way, white.
+        boardFade = model.whiteboard ? min(boardFade + step, 1) : max(boardFade - step, 0)
+        if boardFade > 0 {
+            let white = 1 - pow(1 - smoothstep(boardFade), 2.2)
+            video = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: white)).cropped(to: bounds).composited(
+                over: video)
+        }
         _ = try? context.startTask(toRender: video, from: bounds, to: destination, at: .zero)
 
         // Effects: rebuild on scene change, then update every frame.

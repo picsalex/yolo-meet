@@ -1,25 +1,39 @@
 import PenLink
 import SwiftUI
 
-/// The pad, with a bar under it: the link's state and pairing, the story's steps, the pencil or the eraser, ink that
+/// The pad, with the link's state and pairing over it and a bar under it. On the bar's left, a deck of large keys, as
+/// on a Stream Deck: Display mode, a story (its key opens a page of the stories to pick from) or the whiteboard on
+/// stage, hiding the camera, and the story's steps while it shows; on its right, the pencil or the eraser, ink that
 /// stays or fades, the ink's color (the others show over it when it is tapped) and settings, undo and clear. Until
 /// yolo-meet's pairing code has been typed, it asks for it.
 struct PadScreen: View {
     @Environment(PadModel.self) private var model
+    /// The deck shows the stories to pick from instead of its keys.
+    @State private var picksStory = false
     @State private var showsInk = false
     /// The colors to pick from show over the ink's.
     @State private var showsColors = false
     @State private var showsPairing = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            PadView(model: model)
-                .aspectRatio(PenLink.size.width / PenLink.size.height, contentMode: .fit)
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(0.25), lineWidth: 1))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        VStack(spacing: 12) {
+            GeometryReader { space in
+                // As large as fits under the link's line. The room it leaves is shared above and under it, so it sits
+                // in the middle; the line is centered in the room above, between the screen's top and the pad.
+                let width = min(space.size.width, (space.size.height - 32) * PenLink.size.width / PenLink.size.height)
+                let height = width * PenLink.size.height / PenLink.size.width
+                VStack(spacing: 0) {
+                    link.frame(maxWidth: .infinity).frame(height: max(32, (space.size.height - height) / 2))
+                    PadView(model: model)
+                        .frame(width: width, height: height)
+                        .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(0.25), lineWidth: 1))
+                    Spacer(minLength: 0)
+                }
+                .frame(width: space.size.width, height: space.size.height)
+            }
             bar
         }
-        .padding(12)
+        .padding([.horizontal, .bottom], 12)
         .background(Color(white: 0.08))
         .preferredColorScheme(.dark)
         .statusBarHidden()
@@ -36,41 +50,93 @@ struct PadScreen: View {
         }
     }
 
+    /// The link's state, and the pairing code, in a line centered over the pad.
+    private var link: some View {
+        HStack(spacing: 10) {
+            Circle().fill(isConnected ? .green : .orange).frame(width: 8, height: 8)
+            Text(status).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            Button("Pairing code", systemImage: "key") { showsPairing = true }
+                .labelStyle(.iconOnly)
+                .font(.footnote)
+                .tint(model.link == .refused ? .orange : nil)
+        }
+    }
+
     private var bar: some View {
         HStack(spacing: 20) {
-            Circle().fill(isConnected ? .green : .orange).frame(width: 10, height: 10)
-            Text(status).font(.callout).foregroundStyle(.secondary).lineLimit(1)
-            Button("Pairing code", systemImage: "key") { showsPairing = true }
-                .tint(model.link == .refused ? .orange : nil)
-            Spacer()
-            Group {
-                steps
-                Divider().frame(height: 28).padding(.horizontal, 4)
-                ink
-            }
-            .disabled(!isConnected)
+            deck.disabled(!isConnected)
+            Spacer(minLength: 0)
+            ink.disabled(!isConnected)
         }
         .labelStyle(.iconOnly)
         .font(.title2)
-        .frame(height: 56)
+        .frame(height: 64)
+        .animation(.snappy(duration: 0.2), value: model.shows)
+        .animation(.snappy(duration: 0.2), value: picksStory)
+        .onChange(of: isConnected) { if !isConnected { picksStory = false } }
     }
 
-    /// The story's steps on stage, as the Mac's arrow keys: the one before, and the next. Wide enough for a finger
-    /// that isn't looked at.
-    private var steps: some View {
-        HStack(spacing: 12) {
-            ForEach([false, true], id: \.self) { forward in
-                Button {
-                    model.step(forward: forward)
-                } label: {
-                    Image(systemName: forward ? "chevron.right" : "chevron.left").fontWeight(.semibold)
-                        .frame(width: 72, height: 34)
+    /// The deck: Display mode, the story and the whiteboard, lit while on stage (Story opens the stories' page; Whiteboard
+    /// again goes back to what was under it); hiding
+    /// the camera (H), lit while it is hidden, off on the whiteboard, where there's no camera to hide; and while the
+    /// story shows, a restart from its first step and its steps as the Mac's arrow keys. Keys large enough for a finger that isn't looked at.
+    @ViewBuilder private var deck: some View {
+        if picksStory {
+            stories
+        } else {
+            HStack(spacing: 10) {
+                DeckKey(
+                    "Display", symbol: "camera.viewfinder", isLit: model.shows == .display, isMarked: isUnder(.display)
+                ) {
+                    model.show(.display)
                 }
-                .accessibilityLabel(forward ? "Next step" : "Previous step")
+                DeckKey("Story", symbol: "play.rectangle.fill", isLit: model.shows == .story, isMarked: isUnder(.story))
+                {
+                    picksStory = true
+                }
+                DeckKey("Whiteboard", symbol: "rectangle.and.pencil.and.ellipsis", isLit: model.shows == .whiteboard) {
+                    model.show(.whiteboard)
+                }
+                DeckKey("Hide", symbol: "video.slash.fill", isLit: model.cameraHidden) { model.toggleCamera() }
+                    .disabled(model.shows == .whiteboard)
+                if model.shows == .story {
+                    DeckKey("Restart", symbol: "backward.end.fill") { model.restartStory() }
+                        .padding(.leading, 8)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    DeckKey("Previous", symbol: "chevron.left") { model.step(forward: false) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    DeckKey("Next", symbol: "chevron.right") { model.step(forward: true) }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
             }
+            .transition(.opacity)
         }
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.roundedRectangle(radius: 12))
+    }
+
+    /// Whether `mode` is under the whiteboard: its key stays yellow but is off, as what the whiteboard's key goes back
+    /// to.
+    private func isUnder(_ mode: StageShow) -> Bool { model.shows == .whiteboard && model.mode == mode }
+
+    /// The deck's page of stories, as a Stream Deck folder: Back to the keys, then a key per story, the one open lit
+    /// while a story shows. Picking one shows it (where it was if it is the one open) and goes back to the keys.
+    private var stories: some View {
+        HStack(spacing: 10) {
+            DeckKey("Back", symbol: "arrow.backward") { picksStory = false }
+            HStack(spacing: 10) {
+                ForEach(model.stories, id: \.self) { story in
+                    DeckKey(
+                        story.title, symbol: "play.rectangle.fill",
+                        isLit: model.shows == .story && model.currentStory == story.id,
+                        isMarked: isUnder(.story) && model.currentStory == story.id
+                    ) {
+                        model.open(story: story.id)
+                        picksStory = false
+                    }
+                }
+            }
+            .padding(.leading, 8)
+        }
+        .transition(.opacity)
     }
 
     /// The ink's controls.
@@ -113,15 +179,19 @@ struct PadScreen: View {
             .preferredColorScheme(.dark)
             .presentationCompactAdaptation(.popover)
         }
-        Button("Ink", systemImage: "slider.horizontal.3") { showsInk = true }
-            .popover(isPresented: $showsInk) { InkPanel(model: model) }
+        Button("Ink", systemImage: "slider.horizontal.3") {
+            showsInk = true
+        }
+        .popover(isPresented: $showsInk) { InkPanel(model: model) }
         Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
         Button("Clear", systemImage: "trash") { model.clear() }
     }
 
-    /// A color to pick, ringed when it is the ink's and the pencil has it.
+    /// A color to pick, as it draws on stage now (white is near-black on the whiteboard), ringed when it is the ink's
+    /// and the pencil has it.
     private func swatch(_ color: String, size: CGFloat) -> some View {
-        Circle().fill(Color(uiColor: UIColor(hex: color))).frame(width: size, height: size)
+        Circle().fill(Color(uiColor: UIColor(hex: PenLink.ink(color, onWhiteboard: model.shows == .whiteboard))))
+            .frame(width: size, height: size)
             .padding(4)
             .overlay(
                 Circle().stroke(.white, lineWidth: model.settings.color == color && !model.settings.erases ? 2 : 0))
@@ -138,6 +208,59 @@ struct PadScreen: View {
         case .outdated: "yolo-meet on the Mac and this app are different versions: update both"
         case .connected(let name): "Drawing on \(model.hostName ?? name)"
         }
+    }
+}
+
+/// A key of the deck, as on a Stream Deck: a symbol over its name on a square-ish key, in Ultralytics' yellow while
+/// what it shows is on stage. A marked key (the mode under the whiteboard) stays yellow but is off, dimmed like any
+/// key that is: the whiteboard's key goes back to it.
+private struct DeckKey: View {
+    let title: String
+    let symbol: String
+    let isLit: Bool
+    let isMarked: Bool
+    let action: () -> Void
+
+    init(
+        _ title: String, symbol: String, isLit: Bool = false, isMarked: Bool = false, action: @escaping () -> Void
+    ) {
+        (self.title, self.symbol, self.isLit, self.isMarked, self.action) = (title, symbol, isLit, isMarked, action)
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: symbol).font(.title3.weight(.semibold))
+                Text(title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
+            }
+            .padding(.horizontal, 4)
+            .frame(width: 92, height: 60)
+        }
+        .buttonStyle(DeckPress(isLit: isLit || isMarked))
+        .disabled(isMarked)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(isLit ? .isSelected : [])
+    }
+}
+
+/// A deck key's face: dark, lit yellow, dimmed while off, and pressed in while touched.
+private struct DeckPress: ButtonStyle {
+    let isLit: Bool
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(isLit ? Color.black : Color.white)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(isLit ? Color(uiColor: UIColor(hex: "E1FF25")) : Color(white: 0.2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(.white.opacity(configuration.isPressed ? 0.6 : 0.12), lineWidth: 1))
+            )
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(isEnabled ? 1 : 0.4)
+            .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }
 }
 

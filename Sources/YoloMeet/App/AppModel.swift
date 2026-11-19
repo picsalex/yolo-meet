@@ -1,6 +1,7 @@
 import AppKit
 import CoreImage
 import Observation
+import PenLink
 import YoloMeetCore
 
 /// App state shared by the control panel and the stage.
@@ -33,17 +34,40 @@ final class AppModel {
     @ObservationIgnored let stageKeys = StageKeys()
     /// Ink drawn on the stage with the mouse, or with the iPad pen app's Apple Pencil; both observe their own settings.
     @ObservationIgnored let drawing = Drawing()
-    @ObservationIgnored private(set) lazy var pen = PenInput(drawing: drawing) { [weak self] forward in
-        forward ? self?.next() : self?.previous()
-    }
+    @ObservationIgnored private(set) lazy var pen = PenInput(
+        drawing: drawing, stories: Story.all.map { StoryInfo(id: $0.id, title: $0.title) }, story: storyID,
+        onStep: { [weak self] forward in forward ? self?.next() : self?.previous() },
+        onShow: { [weak self] show in
+            guard let self else { return }
+            switch show {
+            case .story: showStory()
+            case .whiteboard: whiteboard.toggle()  // its key again: back to what was under it
+            case .display: (whiteboard, mode) = (false, .display)
+            }
+        },
+        onStory: { [weak self] in self?.showStory($0) },
+        onRestart: { [weak self] in self?.restartStory() },
+        onHide: { [weak self] in self?.cameraHidden = $0 })
 
     var mode: Mode = .display { didSet { applyScene() } }
+    /// The stage shows a whiteboard over everything: white, with its own ink (`Drawing.page`), and no models or effects.
+    /// The mode and the story's place stay as they were underneath, and show again when it's off.
+    var whiteboard = false {
+        didSet {
+            guard whiteboard != oldValue else { return }
+            drawing.page = whiteboard ? .whiteboard : .stage
+            applyScene()
+        }
+    }
+    /// What the stage shows, for the pen app's deck.
+    var shows: StageShow { whiteboard ? .whiteboard : mode == .story ? .story : .display }
     /// Models drawn in Display mode, in drawing order.
     var displayModels: [String] = [] { didSet { applyScene() } }
-    /// The models on stage now: the Display picks, or the story step's.
-    var stageModels: [String] { mode == .display ? displayModels : step.models }
+    /// The models on stage now: the Display picks, or the story step's; none on the whiteboard.
+    var stageModels: [String] { whiteboard ? [] : mode == .display ? displayModels : step.models }
     var storyID = Story.all[0].id {
         didSet {
+            pen.story = storyID
             (visited, revealed) = ([:], [:])
             place = Story.Place()
         }
@@ -81,7 +105,12 @@ final class AppModel {
         }
     }
     /// The stage shows black instead of the camera (H on stage); the camera keeps running for the models.
-    var cameraHidden = false { didSet { restoreHidden = false } }  // set by hand: no longer ours to restore
+    var cameraHidden = false {
+        didSet {
+            restoreHidden = false  // set by hand: no longer ours to restore
+            pen.cameraHidden = cameraHidden
+        }
+    }
     /// The camera was hidden when a live step showed it: hide it again on the next step that doesn't.
     private var restoreHidden = false
     /// ←/→ and Page Up/Down step the story while other apps are in front (a setting: remembered across launches).
@@ -153,8 +182,24 @@ final class AppModel {
         media.adopt(try await links.download(link, into: media.directory))
     }
 
-    func next() { if mode == .story, let next = story.place(after: place) { place = next } }
-    func previous() { if mode == .story, let previous = story.place(before: place) { place = previous } }
+    /// The story's next step, or the one before; not while the whiteboard hides it.
+    func next() { if mode == .story, !whiteboard, let next = story.place(after: place) { place = next } }
+    func previous() { if mode == .story, !whiteboard, let previous = story.place(before: place) { place = previous } }
+    /// Back to the story, at the step it was on: from the whiteboard or from Display mode (the pen app's Story).
+    func showStory() { (whiteboard, mode) = (false, .story) }
+    /// The story `id` on stage (the pen app's deck): where it was if it is the one open, else from its start.
+    func showStory(_ id: String) {
+        guard Story.all.contains(where: { $0.id == id }) else { return }
+        if storyID != id { storyID = id }
+        showStory()
+    }
+    /// The story on stage starts over (the pen app's deck): its first step, its branches unvisited and its quiz blurred
+    /// again, as when it was opened. Not while the whiteboard hides it.
+    func restartStory() {
+        guard mode == .story, !whiteboard else { return }
+        (visited, revealed) = ([:], [:])
+        place = Story.Place()
+    }
     /// Enters a branch of the step on stage (`Story.Step.branches`), at its first step: only from the step itself,
     /// not from its substeps or from inside a branch.
     func enter(branch: Int) {
@@ -208,7 +253,7 @@ final class AppModel {
             }
         }
         // A live step shows the camera even when it's hidden (H); the next step that doesn't hides it again.
-        let live = mode == .story && step.showsCamera
+        let live = mode == .story && !whiteboard && step.showsCamera
         if live, cameraHidden {
             cameraHidden = false
             restoreHidden = true
@@ -217,21 +262,23 @@ final class AppModel {
         }
         let models = stageModels
         missingModels = models.filter { !isAvailable($0) }
-        if mode == .story {
+        if mode == .story, !whiteboard {
             // A story's models download on their own: this step's, and the next one's so it's ready when it comes.
             let next = story.place(after: place).map { story.step(at: $0).models } ?? []
             for id in missingModels + next where !isAvailable(id) { ModelCatalog.entry(id).map(store.download) }
         }
         pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
         sceneVersion += 1
+        pen.shows = (shows, mode == .story ? .story : .display)
     }
 
     /// How long the step on stage plays before starting over (`Story.Step.loop`), if it loops.
-    var stepLoop: TimeInterval? { mode == .story ? step.loop : nil }
+    var stepLoop: TimeInterval? { mode == .story && !whiteboard ? step.loop : nil }
 
     /// Called by the stage renderer when `sceneVersion` changes.
     func makeEffects() -> [Effect] {
-        switch mode {
+        if whiteboard { return [] }
+        return switch mode {
         case .display:
             displayModels.flatMap { id in
                 task(of: id).map { displayEffects(for: $0, model: id, custom: custom.model(id) != nil) } ?? []

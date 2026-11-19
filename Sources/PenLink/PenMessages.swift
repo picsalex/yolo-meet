@@ -16,6 +16,25 @@ public nonisolated enum PenLink {
 
     /// How wide the line is for a press of `force` (1 is an average press), as a factor of the ink's width.
     public static func press(force: Double) -> Double { min(max(0.35 + 0.65 * force, 0.35), 2.2) }
+
+    /// The color ink of `hex` is drawn in: white ink is drawn near-black on the whiteboard, where white wouldn't show.
+    public static func ink(_ hex: String, onWhiteboard: Bool) -> String {
+        onWhiteboard && hex.uppercased() == "FFFFFF" ? "1A1A1A" : hex
+    }
+}
+
+/// What the stage shows: Display mode's models, a story, or the whiteboard (white, with its own ink). The pad's deck
+/// shows which, and switches between them.
+public nonisolated enum StageShow: String, Codable, Sendable {
+    case display, story, whiteboard
+}
+
+/// A story the pad's deck can open: its id in yolo-meet, and its title.
+public nonisolated struct StoryInfo: Codable, Sendable, Equatable, Hashable {
+    public let id: String
+    public let title: String
+
+    public init(id: String, title: String) { (self.id, self.title) = (id, title) }
 }
 
 /// The ink's settings: the same in the host's panel and on the pad, whichever changes them.
@@ -58,6 +77,16 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case clear
     /// A step of the story on stage: the next one, or the one before. A host from before this message skips it.
     case step(forward: Bool)
+    /// The stage should show Display mode, the story (where it was) or the whiteboard. The whiteboard again, while it
+    /// shows, turns it off: back to Display mode or the story, whichever was under it.
+    case show(StageShow)
+    /// The stage should show this story (`StoryInfo.id`): where it was if it is the one already open, else from its
+    /// start.
+    case story(id: String)
+    /// The story on stage should start over: its first step, with its branches and quiz unvisited again.
+    case restartStory
+    /// The stage should hide the camera image (black behind the effects) or show it again, as H does.
+    case hideCamera(Bool)
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.
     case set(InkSettings)
 }
@@ -72,6 +101,13 @@ public nonisolated enum HostMessage: Codable, Sendable, Equatable {
     case ink(ids: [Int])
     /// Strokes of the pad's that left the stage: undone, cleared or faded.
     case removed(ids: [Int])
+    /// What the stage shows, and the mode under the whiteboard (Display mode or a story: what it goes back to): sent on
+    /// connecting and whenever either changes.
+    case shows(StageShow, mode: StageShow)
+    /// Whether the camera image is hidden (H): sent on connecting and whenever it changes.
+    case cameraHidden(Bool)
+    /// The stories the pad can open, and the one open: sent on connecting and whenever another one is opened.
+    case stories([StoryInfo], current: String)
     /// The stage as it was just drawn, as a JPEG. It shows the pad's stroke `through` whole, and those before it:
     /// the latest that was finished when the picture was taken, if any.
     case picture(jpeg: Data, through: Int?)

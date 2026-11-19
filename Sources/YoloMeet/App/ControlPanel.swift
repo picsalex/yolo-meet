@@ -6,8 +6,8 @@ import YoloMeetCore
 
 /// Private controls. Only the Stage window is meant to be shared in Meet.
 ///
-/// Laid out to fit without scrolling: what is switched mid-talk is in the toolbar (drawing, hiding the camera,
-/// debug) and the bottom bar (the story's steps, the stage's speed); the rest is split into tabs, one-time setup
+/// Laid out to fit without scrolling: what is switched mid-talk is in the toolbar (drawing, the whiteboard,
+/// hiding the camera, debug) and the bottom bar (the story's steps, the stage's speed); the rest is split into tabs, one-time setup
 /// (pen pairing, clicker keys, storage) in Settings.
 struct ControlPanel: View {
     enum Tab: String, CaseIterable {
@@ -45,6 +45,8 @@ struct ControlPanel: View {
             ToolbarItemGroup {
                 Toggle("Draw on Stage", systemImage: "pencil.tip", isOn: $drawing.isOn)
                     .help("Draw on the stage with the mouse (P on stage)")
+                Toggle("Whiteboard", systemImage: "rectangle.and.pencil.and.ellipsis", isOn: $model.whiteboard)
+                    .help("Show a whiteboard with its own ink instead of the stage; off goes back to where it was")
                 Toggle("Hide Camera", systemImage: "video.slash", isOn: $model.cameraHidden)
                     .help("Show black instead of the camera; the models keep running (H on stage)")
                 Toggle("Debug Mode", systemImage: "ladybug", isOn: $model.debugMode)
@@ -322,13 +324,17 @@ private struct DrawControls: View {
                                 Button {
                                     (drawing.color, drawing.erases) = (hex, false)
                                 } label: {
-                                    Circle().fill(Color(nsColor: .hex(hex))).frame(width: 18, height: 18)
-                                        .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
-                                        .padding(3)
-                                        .overlay(
-                                            Circle().stroke(
-                                                Color.accentColor,
-                                                lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
+                                    // As it draws on the stage now: white is near-black on the whiteboard.
+                                    Circle().fill(
+                                        Color(nsColor: .hex(PenLink.ink(hex, onWhiteboard: model.whiteboard)))
+                                    )
+                                    .frame(width: 18, height: 18)
+                                    .overlay(Circle().stroke(.secondary.opacity(0.5), lineWidth: 1))
+                                    .padding(3)
+                                    .overlay(
+                                        Circle().stroke(
+                                            Color.accentColor,
+                                            lineWidth: drawing.color == hex && !drawing.erases ? 2 : 0))
                                 }
                                 .buttonStyle(.plain)
                                 .accessibilityLabel(name)

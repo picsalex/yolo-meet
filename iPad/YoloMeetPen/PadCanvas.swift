@@ -130,7 +130,8 @@ private final class InkView: UIView {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         context.setLineCap(.round)
         for stroke in model.strokes where !stroke.isPictured {
-            context.setStrokeColor(UIColor(hex: stroke.color).cgColor)
+            context.setStrokeColor(
+                UIColor(hex: PenLink.ink(stroke.color, onWhiteboard: model.shows == .whiteboard)).cgColor)
             guard stroke.points.count > 1 else {
                 // A dot: a line with no length and round ends.
                 guard let dot = stroke.points.first else { continue }
@@ -150,9 +151,11 @@ private final class InkView: UIView {
         if let eraser = model.eraser {
             let (middle, radius) = (viewPoint(eraser), model.settings.eraserRadius * inkUnit)
             let ring = CGRect(x: middle.x - radius, y: middle.y - radius, width: 2 * radius, height: 2 * radius)
-            context.setFillColor(UIColor.white.withAlphaComponent(0.15).cgColor)
+            // White over the stage's picture, dark on the whiteboard.
+            let shade = model.shows == .whiteboard ? UIColor(hex: "1A1A1A") : .white
+            context.setFillColor(shade.withAlphaComponent(0.15).cgColor)
             context.fillEllipse(in: ring)
-            context.setStrokeColor(UIColor.white.cgColor)
+            context.setStrokeColor(shade.cgColor)
             context.setLineWidth(1.5)
             context.strokeEllipse(in: ring)
         }

@@ -116,9 +116,12 @@ struct PadScreen: View {
                     DeckKey("Restart", symbol: "backward.end.fill") { model.restartStory() }
                         .padding(.leading, 8)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    // Off at the story's first step and at its last.
                     DeckKey("Previous", symbol: "chevron.left") { model.step(forward: false) }
+                        .disabled(!model.steps.hasPrevious)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                     DeckKey("Next", symbol: "chevron.right") { model.step(forward: true) }
+                        .disabled(!model.steps.hasNext)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }

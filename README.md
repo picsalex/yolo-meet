@@ -156,7 +156,7 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   Display mode or the story, whichever was under it: its key stays yellow meanwhile, dimmed and off. **Hide** hides the camera
   image and shows it again, as H does (lit while hidden, off on the whiteboard). While a story shows, **Restart**
   takes it back to its first step (its branches and quiz as when it was opened), and **Previous** and **Next** step
-  through it, like the arrow keys on the Mac. While the whiteboard shows, a key shows how far it is zoomed; tapping
+  through it, like the arrow keys on the Mac (each off at the story's end it would go past). While the whiteboard shows, a key shows how far it is zoomed; tapping
   it glides the view back to where it started. A key lights when yolo-meet has done what it asks.
 - Over the pad, centered between the screen's top and the pad, a line says which Mac it draws on (or what the link
   waits for), with the key for the pairing code.

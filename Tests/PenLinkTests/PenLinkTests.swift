@@ -31,7 +31,7 @@ import Testing
             .picture(jpeg: jpeg, through: 7), .removed(ids: [7]), .shows(.whiteboard, mode: .story),
             .cameraHidden(true),
             .stories([StoryInfo(id: "nn-explained", title: "CV onboarding")], current: "nn-explained"),
-            .board(zoom: 1.5, isHome: false),
+            .board(zoom: 1.5, isHome: false), .steps(hasPrevious: false, hasNext: true),
             .picture(jpeg: Data(), through: nil),
             .picture(jpeg: jpeg, through: Int(Int32.max)),
         ]

@@ -36,6 +36,8 @@ final class PadModel {
     /// The stories yolo-meet can show, and the one open.
     private(set) var stories: [StoryInfo] = []
     private(set) var currentStory: String?
+    /// Whether the story on stage has a step before the one it is on, and one after (both, until yolo-meet says).
+    private(set) var steps = (hasPrevious: true, hasNext: true)
     /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
     private(set) var board = (zoom: 1.0, isHome: true)
     /// Where the eraser is over the pad (ink points), while the pen erases or hovers with it.
@@ -69,7 +71,7 @@ final class PadModel {
                 self.client.send(.hello(name: UIDevice.current.name))
             } else {
                 (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
-                self.board = (1, true)
+                (self.board, self.steps) = ((1, true), (true, true))
                 self.end()
                 self.forgetPicture()
             }
@@ -100,6 +102,7 @@ final class PadModel {
             if !settings.erases { eraser = nil }
         case .cameraHidden(let hidden): cameraHidden = hidden
         case .board(let zoom, let isHome): board = (zoom, isHome)
+        case .steps(let hasPrevious, let hasNext): steps = (hasPrevious, hasNext)
         case .stories(let stories, let current): (self.stories, currentStory) = (Array(stories.prefix(24)), current)
         case .shows(let shows, let mode):
             (self.shows, self.mode) = (shows, mode)

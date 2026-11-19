@@ -37,6 +37,10 @@ final class PenInput {
     @ObservationIgnored var shows = (StageShow.display, mode: StageShow.display) {
         didSet { if shows != oldValue { host.send(.shows(shows.0, mode: shows.mode)) } }
     }
+    /// Whether the story has a step before the one on stage, and one after: the pad is told when either changes.
+    @ObservationIgnored var steps = (hasPrevious: false, hasNext: true) {
+        didSet { if steps != oldValue { host.send(.steps(hasPrevious: steps.hasPrevious, hasNext: steps.hasNext)) } }
+    }
     /// Whether the camera image is hidden (H): the pad is told when it changes.
     @ObservationIgnored var cameraHidden = false {
         didSet { if cameraHidden != oldValue { host.send(.cameraHidden(cameraHidden)) } }
@@ -82,6 +86,7 @@ final class PenInput {
                 self.sendSettings()
                 self.host.send(.shows(self.shows.0, mode: self.shows.mode))
                 self.host.send(.cameraHidden(self.cameraHidden))
+                self.host.send(.steps(hasPrevious: self.steps.hasPrevious, hasNext: self.steps.hasNext))
                 self.host.send(.stories(self.stories, current: self.story))
                 self.host.send(.ink(ids: self.drawing.penStrokes))
                 self.toldBoard = nil

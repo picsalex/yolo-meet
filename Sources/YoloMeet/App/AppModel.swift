@@ -270,6 +270,7 @@ final class AppModel {
         pipeline.setModels(models.filter(isAvailable).map { ($0, url(for: $0)) })
         sceneVersion += 1
         pen.shows = (shows, mode == .story ? .story : .display)
+        pen.steps = (story.place(before: place) != nil, story.place(after: place) != nil)
     }
 
     /// How long the step on stage plays before starting over (`Story.Step.loop`), if it loops.

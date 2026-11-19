@@ -113,6 +113,9 @@ public nonisolated enum HostMessage: Codable, Sendable, Equatable {
     case cameraHidden(Bool)
     /// The stories the pad can open, and the one open: sent on connecting and whenever another one is opened.
     case stories([StoryInfo], current: String)
+    /// Whether the story on stage has a step before the one it is on, and one after: the deck's Previous and Next are
+    /// off at its ends. Sent on connecting and whenever either changes.
+    case steps(hasPrevious: Bool, hasNext: Bool)
     /// How far the whiteboard's view is zoomed in (1 as it started), and whether it is where it started: sent on
     /// connecting and whenever either changes.
     case board(zoom: Double, isHome: Bool)

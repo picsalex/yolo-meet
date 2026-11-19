@@ -157,7 +157,8 @@ and wins over the hands' while it acts.
 - `Actionable`, `PopLabel`: items to point at and act on with the space bar (hold, point, release), and a word that pops to confirm; with
   hit-test helpers `Entity.stageBounds`, `CGPoint.isInside(_:)`, `CGRect(enclosing:)`. `Actionable(by: .click)` is
   for the mouse alone: the item under the cursor grows while Space is held, and a click on it acts (`frame.click`, a
-  press while Space is held, which starts no drag).
+  press while Space is held, which starts no drag). An effect can read `frame.click` itself too, e.g. to
+  select parts (`NetworkLayout.selectable`).
 - `QuizEffect`: a quiz on a step with branches: labels in a column (a title and a hint under it), blurred but for the
   title's first letter. Space + click a blurred one: it comes clear (`frame.branches.reveal`). Click a clear one: its
   title flies to the top of the stage and the story enters its branch (item i, branch i). Coming back, the title glides
@@ -217,8 +218,11 @@ particles in dark gray and its faces filled black behind them (`BlackBoxEffect`,
 (`NetworkLayout.spins`); Cmd + fist releases the particles, fading them to the system's blue
 (`ParticleSystem.scatter(plainColors:)`), and opening the hand moves on (`releases`, as a cloud does),
 then a brain (`Brain.shape`) holding a network of 300
-neurons (balls of particles, each its own part) and their synapses (lines of particles); in action mode, the touched
-neuron shows as a disc with its bias and the touched synapse with its weight, kept on the particles with `shownPoint`.
+neurons (balls of particles, each its own part) and their synapses (lines of particles); in action mode a touched
+neuron grows and a touched synapse lights up, with no values (`showsValues` off; the perceptron shows a touched
+neuron as a disc with its bias and a synapse's weight, kept on the particles with `shownPoint`). Space + click
+selects a neuron or synapse (`selectable`): its particles turn gold (`ParticleSystem.paint`), again to unselect it, on
+neither to unselect all; forming again (a fist) clears it.
 Its next step lays 23 of those neurons out as a multilayer perceptron (10 → 5 → 8): first only those neurons glide out of the brain to their place (a layout's `prelude`, formed first when coming from the layout it `splitsFrom`), then the rest of the brain glides on into the connections; and the last one shows YOLO's
 architecture: blocks of layers as boxes of particles (a layout's `Neuron.box`, described with `info` when touched),
 each holding its neurons as slices of dot grids (`Neuron.grid`: one slice per channel, one dot per cell), in

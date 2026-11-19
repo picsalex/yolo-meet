@@ -12,8 +12,10 @@ import simd
 ///
 /// Action mode (Space held): the neuron a fingertip touches grows its particles and shows as a neuron, a disc with a
 /// ring and its bias inside, described beside it ("neuron - bias …"); a synapse a fingertip touches lights up with its
-/// weight in its middle. Nothing else shows values. 2D content follows the particles as they show
-/// (`ParticleSystem.shownPoint`), so it stays on them when the network moves.
+/// weight in its middle (a layout that `showsValues`; else they only grow and light up). Nothing else shows values. On a
+/// `selectable` layout, Space + click selects a neuron or synapse, its particles turning gold (again: unselects it; on
+/// neither: unselects all). 2D content follows the particles as they show (`ParticleSystem.shownPoint`), so it stays on
+/// them when the network moves.
 final class NetworkEffect: Effect {
     /// Half the layout's size on stage at zoom 1 and unit 1.
     static let size: CGFloat = 170
@@ -85,6 +87,10 @@ final class NetworkEffect: Effect {
     private var labelSide: (neuron: Int, left: Bool)?
     /// The neuron and synapse last described, so their labels fade out in place.
     private var described: (neuron: Int?, synapse: Int?) = (nil, nil)
+    /// The neurons and synapses selected with Space + click (`NetworkLayout.selectable`), painted gold.
+    private var selected: (neurons: Set<Int>, synapses: Set<Int>) = ([], [])
+    /// Each selected part's particles, found once (where the formed shape has them).
+    private var selection: (neurons: [Int: [Int]], synapses: [Int: [Int]]) = ([:], [:])
 
     private static let gold = NNColors.gold
     /// A neuron's look: a white disc with a blue ring, 64 points across.
@@ -310,6 +316,8 @@ final class NetworkEffect: Effect {
 
     private func form(_ shape: ParticleShape, _ frame: StageFrame) {
         let previous = network.formed
+        // Forming again (e.g. after a fist) gives the particles the shape's colors: nothing stays selected.
+        (selected, selection) = (([], []), ([:], [:]))
         // From the layout its prelude follows, the prelude first (e.g. some neurons moving out of the brain); the
         // layout itself forms from it once it's done (`update`).
         if let prelude = layout?.prelude, let first = prelude.shape, system.mode == .form, previous != nil,
@@ -451,7 +459,7 @@ final class NetworkEffect: Effect {
             let shown = min(max((item.scale - 1) / (item.grown - 1), 0), 1)
             let block = layout.neurons[i].info != nil
             let radius = block ? onStage[i].radius : max(onStage[i].radius + 2 * u, Self.focusRadius * u) * shown
-            focus.isHidden = block || shown < 0.01
+            focus.isHidden = block || shown < 0.01 || !layout.showsValues
             focus.position = onStage[i].point
             focus.setScale(radius / 32)
             let center = onStage[i].point
@@ -478,7 +486,9 @@ final class NetworkEffect: Effect {
                 corners[i].map { $0.min { onLeft ? $0.x < $1.x : $0.x > $1.x }! }
                 ?? CGPoint(x: center.x + (onLeft ? -radius : radius), y: center.y)
         }
-        neuronInfo.update(anchors: [anchor], around: around, left: left, visible: !pointedNeurons.isEmpty, frame: frame)
+        neuronInfo.update(
+            anchors: [anchor], around: around, left: left, visible: layout.showsValues && !pointedNeurons.isEmpty,
+            frame: frame)
 
         // Gold: a touched header, and the outlines of the touched blocks and of a touched header's.
         for (h, label) in headers.enumerated() {
@@ -513,7 +523,49 @@ final class NetworkEffect: Effect {
             weight.sync(unit: u)
         }
         line.isHidden = pointedSynapse == nil
-        weight.alpha = weight.alpha.approaching(pointedSynapse != nil ? 1 : 0, CGFloat(1 - exp(-frame.dt * 12)))
+        let weighed = layout.showsValues && pointedSynapse != nil
+        weight.alpha = weight.alpha.approaching(weighed ? 1 : 0, CGFloat(1 - exp(-frame.dt * 12)))
+
+        if layout.selectable, let click = frame.click { select(at: click, layout, frame) }
+    }
+
+    /// Space + click: the neuron under the click (or the nearest synapse) is selected, or unselected if it was; a
+    /// click on neither unselects all. Selected parts' particles are gold, the others the system's color.
+    private func select(at click: CGPoint, _ layout: NetworkLayout, _ frame: StageFrame) {
+        let reach = 8 * frame.stage.unit
+        let gap = { (i: Int) in self.onStage[i].point.distance(to: click) }
+        let neuron = onStage.indices.filter { gap($0) < onStage[$0].radius + reach }.min { gap($0) < gap($1) }
+        let synapse = layout.synapses.indices.min { distance(click, $0) < distance(click, $1) }
+            .flatMap { distance(click, $0) < reach ? $0 : nil }
+        guard let points = system.points(Array(0..<NeuralNetwork.particles)) else { return }
+        // A synapse is a thin line of few particles: brighter than a neuron's ball to read as well.
+        let gold = (neuron: NNColors.goldLight, synapse: NNColors.goldLight * 2.2)
+        if let i = neuron {
+            let particles =
+                selection.neurons[i]
+                ?? points.indices.filter {
+                    simd_distance(points[$0], layout.neurons[i].point) <= layout.neuronSize * 1.05
+                }
+            selection.neurons[i] = particles
+            let on = selected.neurons.insert(i).inserted
+            if !on { selected.neurons.remove(i) }
+            system.paint(particles, color: on ? gold.neuron : system.color)
+        } else if let s = synapse {
+            let (a, b) = (layout.neurons[layout.synapses[s].a].point, layout.neurons[layout.synapses[s].b].point)
+            let particles =
+                selection.synapses[s]
+                ?? points.indices.filter {
+                    segmentDistance(points[$0], a, b) < 1e-4
+                }
+            selection.synapses[s] = particles
+            let on = selected.synapses.insert(s).inserted
+            if !on { selected.synapses.remove(s) }
+            system.paint(particles, color: on ? gold.synapse : system.color)
+        } else {
+            for i in selected.neurons { system.paint(selection.neurons[i] ?? [], color: system.color) }
+            for s in selected.synapses { system.paint(selection.synapses[s] ?? [], color: system.color) }
+            selected = ([], [])
+        }
     }
 
     /// From a stage point to a synapse on stage.
@@ -521,6 +573,12 @@ final class NetworkEffect: Effect {
         guard let synapse = layout?.synapses[s] else { return .infinity }
         return segmentDistance(p, onStage[synapse.a].point, onStage[synapse.b].point)
     }
+}
+
+/// From a point to the segment from `a` to `b`, in the shape's units.
+private func segmentDistance(_ p: SIMD3<Float>, _ a: SIMD3<Float>, _ b: SIMD3<Float>) -> Float {
+    let t = max(0, min(1, simd_dot(p - a, b - a) / max(simd_length_squared(b - a), 1e-12)))
+    return simd_distance(p, a + t * (b - a))
 }
 
 /// From a point to the segment from `a` to `b`.

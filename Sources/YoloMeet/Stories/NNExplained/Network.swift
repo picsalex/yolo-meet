@@ -148,6 +148,11 @@ final class NetworkLayout {
     var releases = false
     /// How much a touched neuron or block grows.
     var grown: CGFloat = 1.8
+    /// Whether a touched neuron shows its bias and a touched synapse its weight (action mode).
+    var showsValues = true
+    /// Whether Space + click selects a neuron or synapse (again: unselects it; on neither: unselects all), its
+    /// particles turning gold (`NetworkEffect`).
+    var selectable = false
     /// Labels under parts of the layout (e.g. its columns), at points of it, with the neurons or blocks they name
     /// (outlined when a header is touched in action mode).
     var headers: [(text: String, point: SIMD3<Float>, members: [Int])] = []
@@ -229,6 +234,7 @@ final class NetworkLayout {
         let layout = NetworkLayout(
             title: "Neural network", subtitle: "\(neurons.count) neurons · \(synapses.count) synapses · zoom in",
             neurons: neurons, synapses: synapses, neuronSize: 0.022, restingTilt: 0.2)
+        (layout.showsValues, layout.selectable) = (false, true)
         layout.ready = Task {
             let surface = await surface.value
             layout.outline = stride(from: 0, to: surface.points.count, by: 200).map { surface.points[$0] }

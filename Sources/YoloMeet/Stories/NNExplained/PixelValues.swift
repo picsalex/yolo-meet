@@ -78,7 +78,8 @@ final class PixelValuesEffect: Effect {
         if here, since == nil { since = frame.time + 0.5 }
         if !here { since = nil }
         let t = since.map { frame.time - $0 } ?? -1
-        content.set(\.alpha, content.alpha.approaching(here && t >= 0 ? 1 : 0, CGFloat(1 - exp(-frame.dt * (here ? 6 : 14)))))
+        let ease = CGFloat(1 - exp(-frame.dt * (here ? 6 : 14)))
+        content.set(\.alpha, content.alpha.approaching(here && t >= 0 ? 1 : 0, ease))
         content.set(\.isHidden, content.alpha < 0.01)
         guard !content.isHidden else { return }
 

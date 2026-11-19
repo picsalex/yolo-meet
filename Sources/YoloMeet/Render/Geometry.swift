@@ -92,10 +92,14 @@ nonisolated extension CGPath {
         flush()
         if let command { tokens.append((command, numbers)) }
 
-        var current = CGPoint.zero, start = CGPoint.zero, control: CGPoint?
+        var current = CGPoint.zero
+        var start = CGPoint.zero
+        var control: CGPoint?
         for (command, args) in tokens {
             let relative = command.isLowercase
-            let at = { (x: CGFloat, y: CGFloat) in relative ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y) }
+            let at = { (x: CGFloat, y: CGFloat) in
+                relative ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+            }
             switch command.uppercased() {
             case "M":
                 for k in stride(from: 0, to: args.count - 1, by: 2) {
@@ -158,8 +162,9 @@ nonisolated extension CGPath {
     }
 
     /// A circular arc from `p0` to `p1` as SVG draws it (its center from the flags), in short lines.
-    private static func arc(_ path: CGMutablePath, from p0: CGPoint, to p1: CGPoint, radius: CGFloat, large: Bool, sweep: Bool)
-    {
+    private static func arc(
+        _ path: CGMutablePath, from p0: CGPoint, to p1: CGPoint, radius: CGFloat, large: Bool, sweep: Bool
+    ) {
         let (dx, dy) = ((p0.x - p1.x) / 2, (p0.y - p1.y) / 2)
         let r = max(radius, (dx * dx + dy * dy).squareRoot())
         let k = ((r * r - dx * dx - dy * dy) / (dx * dx + dy * dy)).squareRoot() * (large == sweep ? -1 : 1)

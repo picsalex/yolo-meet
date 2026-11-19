@@ -59,7 +59,7 @@ final class NeuralNetwork {
     /// The rotation the particles last showed, so the next step's view turns from it instead of jumping.
     var rotation: simd_quatf?
 
-    /// Builds every layout, in order (each reads the ones before), about half a second in all: a short pause after
+    /// Builds every layout, in order (each reads the ones before), about a second in all: a short pause after
     /// each lets the app draw and respond meanwhile (e.g. a loading indicator), instead of freezing.
     init() async {
         system.brightness = 0.45 / Float(Self.scale).squareRoot()  // points add light: about the same look, denser
@@ -95,7 +95,7 @@ final class NeuralNetwork {
         await Self.breathe()
         recap = .recap(tasks, architecture: architecture)
         await Self.breathe()
-        shipping = Shipping(after: recap, architecture: architecture)
+        shipping = await Shipping(after: recap, architecture: architecture, between: Self.breathe)
     }
 
     /// A short pause, so the run loop turns (the stage draws a frame, the panel updates).

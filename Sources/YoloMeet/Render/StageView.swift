@@ -241,9 +241,11 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         stageFrame.click = mouse.takeClick()
         if model.mode == .story {
             stageFrame.branches = StageFrame.Branches(
-                visited: model.visited[model.place.step] ?? [], returned: model.returnedBranch,
+                visited: model.visited[model.place.step] ?? [],
+                revealed: model.revealed[model.place.step] ?? [], returned: model.returnedBranch,
                 count: model.place.isStep ? model.step.branches.count : 0,
-                enter: { [model] branch in Task { model.enter(branch: branch) } })
+                enter: { [model] branch in Task { model.enter(branch: branch) } },
+                reveal: { [model] branch in Task { model.reveal(branch: branch) } })
         }
         for effect in effects { effect.update(stageFrame) }
         model.drawing.update(stageFrame)

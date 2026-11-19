@@ -44,7 +44,7 @@ final class AppModel {
     var stageModels: [String] { mode == .display ? displayModels : step.models }
     var storyID = Story.all[0].id {
         didSet {
-            visited = [:]
+            (visited, revealed) = ([:], [:])
             place = Story.Place()
         }
     }
@@ -52,7 +52,10 @@ final class AppModel {
     var place = Story.Place() {
         didSet {
             // The branches entered from a step stay visited until the story changes or the step is reset.
-            if let branch = place.branch { visited[place.step, default: []].insert(branch) }
+            if let branch = place.branch {
+                visited[place.step, default: []].insert(branch)
+                revealed[place.step, default: []].insert(branch)
+            }
             let left = oldValue.branch != nil && place.branch == nil && oldValue.step == place.step
             returnedBranch = left ? oldValue.branch : nil
             applyScene(transition: sceneStory == storyID ? story.transition(from: oldValue, to: place) : .fade)
@@ -62,6 +65,8 @@ final class AppModel {
     var step: Story.Step { story.step(at: place) }
     /// The branches entered from each step (index in `story.steps`), for its effects (`StageFrame.branches`).
     private(set) var visited: [Int: Set<Int>] = [:]
+    /// The branches shown on each step (e.g. a quiz's items clicked clear), entered or not: kept like `visited`.
+    private(set) var revealed: [Int: Set<Int>] = [:]
     /// The branch the story just came back from to its step, if it did.
     @ObservationIgnored private(set) var returnedBranch: Int?
     var mirror = true { didSet { pipeline.setMirror(mirror) } }
@@ -123,6 +128,7 @@ final class AppModel {
             Task { @MainActor in self.map { $0.pendingModels = $0.pipeline.pending } }
         }
         Task { await start() }
+        Task { await refreshNumbers() }
     }
 
     private func start() async {
@@ -158,8 +164,34 @@ final class AppModel {
         place = Story.Place(step: place.step, branch: branch)
     }
 
-    /// Forgets the branches entered from a step (e.g. a quiz's revealed items blur again).
-    func reset(step: Int) { visited[step] = nil }
+    /// Marks a branch of the step on stage as shown (`StageFrame.Branches.reveal`), without entering it.
+    func reveal(branch: Int) {
+        guard mode == .story, place.isStep, story.steps[place.step].branches.indices.contains(branch) else {
+            return
+        }
+        revealed[place.step, default: []].insert(branch)
+    }
+
+    /// Whether a story shows live numbers (`Story.refresh`), for Settings › Refresh.
+    var hasLiveNumbers: Bool { Story.all.contains { $0.refresh != nil } }
+    /// Fetching the stories' live numbers now.
+    private(set) var refreshingNumbers = false
+    /// The last fetch's outcome: when, and whether every source answered (else the last numbers fetched stay).
+    private(set) var numbersRefreshed: (at: Date, complete: Bool)?
+
+    /// Fetches the live numbers the stories show (GitHub's stars, PyPI's release…): at launch, and from Settings.
+    func refreshNumbers() async {
+        guard !refreshingNumbers, hasLiveNumbers else { return }
+        refreshingNumbers = true
+        var complete = true
+        for story in Story.all {
+            if let refresh = story.refresh, await !refresh() { complete = false }
+        }
+        (numbersRefreshed, refreshingNumbers) = ((Date(), complete), false)
+    }
+
+    /// Forgets the branches entered from a step and shown on it (e.g. a quiz's revealed items blur again).
+    func reset(step: Int) { (visited[step], revealed[step]) = (nil, nil) }
 
     /// Recomputes the active models and asks the stage to rebuild its effects, with `transition`.
     func applyScene(transition: Story.Transition = .fade) {

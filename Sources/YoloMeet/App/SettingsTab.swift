@@ -8,6 +8,16 @@ struct SettingsTab: View {
     @State private var showsCode = false
     @State private var confirmingDeleteAll = false
 
+    /// What the last fetch of the stories' live numbers did.
+    private var numbersStatus: String {
+        guard let last = model.numbersRefreshed else {
+            return "Stars, forks and the latest release, fetched at launch"
+        }
+        let time = last.at.formatted(date: .omitted, time: .shortened)
+        return last.complete
+            ? "Fetched at \(time)" : "Not all fetched at \(time): the last numbers fetched are shown"
+    }
+
     var body: some View {
         @Bindable var model = model
         let pen = model.pen
@@ -35,6 +45,19 @@ struct SettingsTab: View {
                     "macOS needs yolo-meet allowed in System Settings › Privacy & Security › Accessibility (again after a rebuild). Then turn this off and on."
                 )
                 .foregroundStyle(.secondary)
+            }
+        }
+
+        if model.hasLiveNumbers {
+            Section("Live numbers") {
+                LabeledContent {
+                    if model.refreshingNumbers { ProgressView().controlSize(.small) }
+                    Button("Refresh") { Task { await model.refreshNumbers() } }
+                        .disabled(model.refreshingNumbers)
+                } label: {
+                    Text("GitHub and PyPI")
+                    Text(numbersStatus)
+                }
             }
         }
 

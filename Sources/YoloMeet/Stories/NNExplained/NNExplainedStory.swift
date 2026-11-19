@@ -11,7 +11,7 @@ extension Story {
     /// step); a conclusion; and YOLO back in its black box, shipped: on GitHub, published to PyPI, installed with
     /// pip. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
-        // Built when the story is first opened (`prepare`: about half a second and 180 MB), not at launch.
+        // Built when the story is first opened (`prepare`: about 1.1 s and 216 MB), not at launch.
         let shared = LazyNetwork()
         var network: NeuralNetwork { shared.network }
         let center = CGPoint(x: 0.5, y: 0.5)
@@ -113,10 +113,15 @@ extension Story {
                     ]
                 },
                 nnStep("pip install ultralytics") {
-                    [NetworkEffect(network, network.shipping.closing, at: center), ClosingEffect(network, network.shipping)]
+                    [
+                        NetworkEffect(network, network.shipping.closing, at: center),
+                        ClosingEffect(network, network.shipping),
+                    ]
                 },
             ],
-            prepare: { await shared.build() })
+            prepare: { await shared.build() },
+            // GitHub's stars and forks, PyPI's latest version and wheel, for the shipping steps.
+            refresh: { await ProjectStats.ultralytics.refresh() })
     }()
 
     /// The story's network, built by `build` (the story's `prepare`, which the app runs before the first step shows).

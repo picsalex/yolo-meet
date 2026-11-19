@@ -3,10 +3,12 @@ import SpriteKit
 
 /// A quiz on a step with branches (`Story.Step.branches`): labels in a column, top to bottom, each a title with a hint
 /// under it, blurred but for the title's first letter. Hold Space and click one (the mouse: `Actionable(by: .click)`):
-/// it comes clear, its title flies to the top of the stage, where the branch's own title shows (`ObjectTitle`, which
-/// picks it up: `handOff`), and the story enters that branch (item i, branch i). Coming back, the title glides from the
-/// top back into its place. Items whose branch was visited stay clear, until the step is reset (`AppModel.reset`). As a title flies to the top, the other labels
-/// fade out (`leaving`, for the step's other content too), since the branch's first step may follow with no transition.
+/// a blurred item comes clear and stays there; a clear one's title flies to the top of the stage, where the branch's
+/// own title shows (`ObjectTitle`, which picks it up: `handOff`), and the story enters that branch (item i, branch i).
+/// Coming back, the title glides from the top back into its place. Items cleared or visited stay clear
+/// (`frame.branches.revealed`), until the step is reset (`AppModel.reset`). As a title flies to the top, the other
+/// labels fade out (`leaving`, for the step's other content too), since the branch's first step may follow with no
+/// transition.
 /// An item without a branch (more items than the step has branches) can't be clicked.
 final class QuizEffect: Effect {
     struct Item {
@@ -28,14 +30,14 @@ final class QuizEffect: Effect {
     private let actions: [Actionable]
     /// The label flying (to the top, or back from it), and when it started.
     private var flight: (index: Int, out: Bool, start: TimeInterval)?
-    /// The label coming clear before it flies, and when it started.
+    /// The label coming clear, and when it started.
     private var unveiling: (index: Int, start: TimeInterval)?
     /// The label that has flown to the top, waiting there for the branch to show.
     private var parked: Int?
     private var started = false
 
-    /// Seconds to come clear, then to wait, then to fly.
-    static let unveil: TimeInterval = 0.5, pause: TimeInterval = 0.2, fly: TimeInterval = 0.8
+    /// Seconds to come clear, and to fly.
+    static let unveil: TimeInterval = 0.5, fly: TimeInterval = 0.8
     /// The labels' size in the column (the title's, at unit 1).
     static let size: CGFloat = 30
 
@@ -54,15 +56,15 @@ final class QuizEffect: Effect {
         let (u, size) = (frame.stage.unit, frame.stage.viewSize)
         if !started {
             started = true
-            for i in labels.indices where frame.branches.visited.contains(i) { labels[i].reveal(at: nil) }
+            for i in labels.indices where frame.branches.revealed.contains(i) { labels[i].reveal(at: nil) }
             // Back from a branch: its title starts at the top, where the branch's title stood.
             if let i = frame.branches.returned, labels.indices.contains(i) { flight = (i, false, frame.time) }
         }
         for label in labels { label.layout(unit: u) }
         let busy = flight != nil || unveiling != nil || parked != nil
-        // The step reset (the panel): revealed items not visited any more blur again.
+        // The step reset (the panel): revealed items not shown any more blur again.
         if !busy {
-            for (i, label) in labels.enumerated() where label.revealed && !frame.branches.visited.contains(i) {
+            for (i, label) in labels.enumerated() where label.revealed && !frame.branches.revealed.contains(i) {
                 label.conceal()
             }
         }
@@ -86,6 +88,7 @@ final class QuizEffect: Effect {
                 } else {
                     label.reveal(at: frame.time)
                     unveiling = (i, frame.time)
+                    frame.branches.reveal(i)
                 }
             }
             label.unveil(frame)
@@ -117,9 +120,7 @@ final class QuizEffect: Effect {
             label.hintAlpha = hint
             label.set(\.alpha, flying == nil || flying == i ? 1 : 1 - leaving)
         }
-        if let unveiling, frame.time - unveiling.start > Self.unveil + Self.pause {
-            (flight, self.unveiling) = ((unveiling.index, true, frame.time), nil)
-        }
+        if let unveiling, frame.time - unveiling.start > Self.unveil { self.unveiling = nil }
     }
 }
 

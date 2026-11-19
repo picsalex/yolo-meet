@@ -10,6 +10,10 @@ struct Story: Identifiable {
     /// Work done once before the story's first step shows (e.g. building its shared state): the stage shows a loading
     /// card meanwhile, and the panel a spinner. Nil: the steps show at once.
     var prepare: (() async -> Void)? = nil
+    /// Fetches live numbers its steps show (e.g. GitHub's stars: `ProjectStats`), in the background: once at launch,
+    /// whichever story shows, and again with Settings › Refresh. True when everything was fetched; nil: nothing to
+    /// fetch.
+    var refresh: (() async -> Bool)? = nil
 
     struct Step {
         let title: String

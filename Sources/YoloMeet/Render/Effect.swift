@@ -74,12 +74,17 @@ struct StageFrame {
         /// The branches entered from this step: they stay visited until another story is chosen or the step is
         /// reset (the panel's step menu). They can shrink while the step is on stage.
         var visited: Set<Int> = []
+        /// The branches shown on this step (`reveal`, e.g. a quiz's items clicked clear) and those entered, kept like
+        /// `visited`.
+        var revealed: Set<Int> = []
         /// The branch the story just came back from (past its first or last step), e.g. to animate its way back.
         var returned: Int?
         /// How many branches the step has: `enter` takes 0..<count.
         var count = 0
         /// Enters a branch, at its first step (after this frame); nothing if the step has no such branch.
         var enter: (Int) -> Void = { _ in }
+        /// Marks a branch as shown without entering it (after this frame), so it stays shown when the step comes back.
+        var reveal: (Int) -> Void = { _ in }
     }
 
     struct Keys {

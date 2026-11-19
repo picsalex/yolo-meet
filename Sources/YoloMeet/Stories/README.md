@@ -24,6 +24,13 @@ Stories/
    (`scripts/build.sh`) and with `swift run`.
 5. If the story needs heavy shared state, build it in `Story(…, prepare:)` rather than at launch: the app runs it once,
    the first time the story is opened, showing `loadingCard` on stage and a spinner in the panel until it's done.
+6. For live numbers a step shows (stars, a release), fetch them in `Story(…, refresh:)`: the app runs it in the
+   background once at launch, whichever story shows, and again with Settings › Live numbers › Refresh.
+   `ProjectStats` (YoloMeetCore) fetches a GitHub repository's stars and forks and a PyPI package's latest version
+   and wheel size: no token, off the main actor, capped in size, checked, kept between launches, and its `current`
+   falls back to the last fetch or built-in numbers offline. Effects read `current` once, when their step starts, so
+   a refresh never changes half a step (CV onboarding's shipping steps: `ProjectStats.ultralytics`,
+   `Shipping.numbers`, `ShippingEffect.numbers`); the fetch lands seconds after launch.
 
 A step lists models by catalog id (`ModelCatalog`); missing ones are downloaded when the step is shown. Effects are
 built anew each time a step starts.
@@ -152,8 +159,9 @@ and wins over the hands' while it acts.
   for the mouse alone: the item under the cursor grows while Space is held, and a click on it acts (`frame.click`, a
   press while Space is held, which starts no drag).
 - `QuizEffect`: a quiz on a step with branches: labels in a column (a title and a hint under it), blurred but for the
-  title's first letter. Space + click one: it comes clear, its title flies to the top of the stage and the story enters
-  its branch (item i, branch i); coming back, the title glides home, and visited items stay clear. The other labels fade
+  title's first letter. Space + click a blurred one: it comes clear (`frame.branches.reveal`). Click a clear one: its
+  title flies to the top of the stage and the story enters its branch (item i, branch i). Coming back, the title glides
+  home; cleared and visited items stay clear (`frame.branches.revealed`). The other labels fade
   as it flies (`leaving`, to fade the step's other content with them). The branch's first step should have
   `transition: .none` and show its title with `ObjectTitle`, which picks up the flown one (`ObjectTitle.handOff`, then
   `showAtOnce()` on a step that continues with no transition).
@@ -196,11 +204,12 @@ move through its steps, and past either end back to the step it branches from; �
 branches. The panel lists a branch's steps indented under its step (click one to go there), and the bottom bar shows
 "13 of 14 · Task quiz › Detect". Effects of the step read `frame.branches.visited` (the branches entered, kept until
 another story is chosen or the app quits, or the step is reset: right-click it, or one of its substeps or branch
-steps, in the panel › Reset; it can shrink while the step shows) and `frame.branches.returned` (the branch it just came back from,
-e.g. to animate its way back). Where the story is: `AppModel.place` (`Story.Place`: a step, a branch, a step in it).
+steps, in the panel › Reset; it can shrink while the step shows), `frame.branches.revealed` (those shown on the step
+without being entered, `frame.branches.reveal(i)`, plus the visited ones, kept and reset the same way) and
+`frame.branches.returned` (the branch it just came back from, e.g. to animate its way back). Where the story is: `AppModel.place` (`Story.Place`: a step, a branch, a step in it).
 Entering a branch takes its first step's transition; leaving one fades.
 
-The `NNExplained` story is the first full scene. Its network (every layout, about 180 MB) is built when the
+The `NNExplained` story is the first full scene. Its network (every layout, about 216 MB) is built when the
 story is first opened, not at launch: `Story.prepare` builds it (`LazyNetwork`), pausing between layouts so the app
 keeps drawing, while the stage shows `loadingCard` and the panel a spinner; and its steps go through `nnStep`, which adds the hand
 skeleton. It opens on a black box (`NetworkLayout.blackBox`), its edges made of the

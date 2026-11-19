@@ -26,6 +26,7 @@ swift format lint -r Sources iPad Tests            # lint; kept at zero warnings
 - **Formatting is automatic:** a PostToolUse hook (`.claude/hooks/swift-format.sh`) formats every `.swift` file
   Claude edits, then lints it and reports any warnings to fix by hand. Expect the file to change after an edit.
 
+- **The live-numbers test** (`ProjectStatsTests.fetchesLive`) asks GitHub and PyPI only with `YOLO_MEET_LIVE_NUMBERS=1`.
 - **Model tests** are skipped unless `YOLO_MEET_MODELS` (unzipped `yolo26n*.aimodel` folders) and `YOLO_MEET_IMAGE`
   (Ultralytics' `bus.jpg`) are set. MediaPipe tests need `YOLO_MEET_MEDIAPIPE` (see README).
 - **Pen-link network tests** use Bonjour. If the user's own yolo-meet is running with iPad pen on, a test pad or a

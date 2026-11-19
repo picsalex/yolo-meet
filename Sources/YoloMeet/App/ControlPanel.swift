@@ -159,7 +159,7 @@ private struct StageTab: View {
                 // Reset: forgets what the step's branches revealed (a quiz's items blur again).
                 .contextMenu {
                     Button("Reset", systemImage: "arrow.counterclockwise") { model.reset(step: place.step) }
-                        .disabled(model.visited[place.step]?.isEmpty ?? true)
+                        .disabled(model.revealed[place.step]?.isEmpty ?? true)
                 }
             }
         } label: {

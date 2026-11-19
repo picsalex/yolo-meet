@@ -1,4 +1,5 @@
 import SpriteKit
+import YoloMeetCore
 import simd
 
 /// After the recap, YOLO leaves the lab: the model goes back into its black box (step 1's), the box's code is on
@@ -29,11 +30,24 @@ final class Shipping {
     let boxA, mark, stream, boxB, boxC, laptop, user: [Int]
     let modelA, modelB, modelC: [Int]
     let shelf: [[Int]]
-    /// Each box particle's place on its box: the edge (`Box.edges`), how far along it, and a little jitter (in half
-    /// sides), so a box keeps its look as it moves and shrinks.
-    private let edge: [Int], along: [Float], jitter: [SIMD3<Float>]
+    /// Each box particle's place on its box (`Spot`), so a box keeps its look as it moves and shrinks.
+    private let spots: [Spot]
     /// Each small YOLO's particle: its point in YOLO's architecture (`NetworkLayout.architecture`), centered.
     private let local: [SIMD3<Float>]
+
+    /// A box particle's place on its box: the edge (`Box.edges`), how far along it, and a little jitter (in half
+    /// sides).
+    struct Spot {
+        var edge = 0
+        var along: Float = 0
+        var jitter = SIMD3<Float>.zero
+
+        /// Where it is on `cube` (its `corners`).
+        func on(_ cube: Cube, _ corners: [SIMD3<Float>]) -> SIMD3<Float> {
+            let (a, b) = Box.edges[edge]
+            return corners[a] + (corners[b] - corners[a]) * along + jitter * cube.half
+        }
+    }
 
     // Where things stand, in the shape's units: the layouts are centered on the stage (x within ±3.7, y within ±2.1).
     /// The repository: its card's top left corner (`ShippingEffect`), the GitHub mark over it, the box on the right,
@@ -68,12 +82,13 @@ final class Shipping {
     /// Under the stations: their names.
     static let headerY: Float = -1.02
 
-    /// The release shipped (PyPI, November 2026) and its wheel; the repository's numbers (GitHub, the same day).
-    static let version = "8.4.215"
-    static let wheel = "1.5 MB"
-    static let stars = "63.6k", forks = "12k"
+    /// The latest release and its wheel (PyPI), the repository's stars and forks (GitHub): fetched at launch
+    /// (`ProjectStats.ultralytics`, the story's `refresh`), else the last ones fetched or those of November 2026.
+    /// Each step reads them once, as it starts (`ShippingEffect.numbers`), so a refresh never changes half a step.
+    static var numbers: ProjectStats.Snapshot { ProjectStats.ultralytics.current }
 
-    init(after recap: NetworkLayout, architecture: NetworkLayout) {
+    /// Builds the layouts in order, `pause` after each (`NeuralNetwork.breathe`), so the app keeps drawing meanwhile.
+    init(after recap: NetworkLayout, architecture: NetworkLayout, between pause: () async -> Void) async {
         let n = NeuralNetwork.particles
         guard let from = recap.settled, let fromColors = recap.arrivedColors else {
             preconditionFailure("Shipping: the recap has no particles")
@@ -116,21 +131,14 @@ final class Shipping {
             for i in modelB + modelC { local[i] = blocks.points[solid.randomElement()!] - Self.modelCenter }
         }
         self.local = local
-        func inBox(_ i: Int, _ cube: Cube) -> SIMD3<Float> {
-            cube.center + cube.rotation.act(local[i] * (Self.modelScale * cube.half))
-        }
+        func inBox(_ i: Int, _ cube: Cube) -> SIMD3<Float> { Self.place(local[i], in: cube) }
 
-        var edge = [Int](repeating: 0, count: n)
-        var along = [Float](repeating: 0, count: n)
-        var jitter = [SIMD3<Float>](repeating: .zero, count: n)
+        var spots = [Spot](repeating: Spot(), count: n)
         for (k, i) in pictures.enumerated() {
-            (edge[i], along[i], jitter[i]) = (k % Box.edges.count, .random(in: 0...1), .random(in: -0.011...0.011))
+            spots[i] = Spot(edge: k % Box.edges.count, along: .random(in: 0...1), jitter: .random(in: -0.011...0.011))
         }
-        (self.edge, self.along, self.jitter) = (edge, along, jitter)
-        func point(_ i: Int, on cube: Cube, _ corners: [SIMD3<Float>]) -> SIMD3<Float> {
-            let (a, b) = Box.edges[edge[i]]
-            return corners[a] + (corners[b] - corners[a]) * along[i] + jitter[i] * cube.half
-        }
+        self.spots = spots
+        func point(_ i: Int, on cube: Cube, _ corners: [SIMD3<Float>]) -> SIMD3<Float> { spots[i].on(cube, corners) }
         func gray(_ count: Int, _ cube: Cube) -> SIMD3<Float> {
             SIMD3(repeating: Self.edgeGray(count, half: cube.half))
         }
@@ -176,6 +184,7 @@ final class Shipping {
         packaged.arrivedColors = ParticleColors(
             (0..<n).map { inModelA.contains($0) ? bigModel : dark($0) ? .zero : wallGray })
         self.packaged = packaged
+        await pause()
 
         // The stations stay in place on the stage from here on; their title stays centered over all of them.
         let stations: [SIMD3<Float>] = [[-3.2, 1.1, 0], [3.5, 1.1, 0], [3.5, -1.0, 0], [-3.2, -1.0, 0]]
@@ -212,6 +221,7 @@ final class Shipping {
             points: inside, offsets: zip(points, inside).map { $0 - $1 }, parts: [], colors: travel)
         repository.arrivedColors = ParticleColors(arrived)
         self.repository = repository
+        await pause()
 
         // 17 · PyPI: the box moves to the left, under the GitHub mark (which shrinks there from the card's); the
         // shelf's packages appear in the middle (unseen on the way, lit once there); the box's copy waits, unseen, in
@@ -248,6 +258,7 @@ final class Shipping {
             points: before, offsets: zip(points, before).map { $0 - $1 }, parts: [], colors: onTheWay)
         pypi.arrivedColors = ParticleColors(arrived)
         self.pypi = pypi
+        await pause()
 
         // 17 › pip install: GitHub goes (its mark and box fade out where they are); the copy is in its slot on PyPI,
         // as it landed; a laptop and its user appear on the right (unseen on the way), and the laptop's copy waits,
@@ -271,12 +282,13 @@ final class Shipping {
         let laptopGray = SIMD3<Float>(repeating: Self.lineGray(laptop.count, length: laptopLines.length))
         for (k, i) in laptop.enumerated() { (points[i], arrived[i]) = (laptopLines.points[k], laptopGray) }
         let userPoints = Self.userPoints(user.count)
-        let userLight = blue * Self.fillLight(user.count, area: userPoints.area) * 0.5
+        let userLight = blue * Self.fillLight(user.count, area: userPoints.area) * 1.6
         for (k, i) in user.enumerated() { (points[i], arrived[i]) = (userPoints.points[k], userLight) }
         install.shape = ParticleShape(
             points: startInstall, offsets: zip(points, startInstall).map { $0 - $1 }, parts: [], colors: onTheWay)
         install.arrivedColors = ParticleColors(arrived)
         self.install = install
+        await pause()
 
         // 18 · The end: everything fades out where it is, but the command (no title: `ClosingEffect` draws it). Where
         // pip install left it: the laptop's copy landed (`ClosingEffect` reads where all the particles are, in case the
@@ -305,8 +317,11 @@ final class Shipping {
     }
 
     /// Where small YOLO particle `i` is in `cube`.
-    func inside(_ i: Int, _ cube: Cube) -> SIMD3<Float> {
-        cube.center + cube.rotation.act(local[i] * (Self.modelScale * cube.half))
+    func inside(_ i: Int, _ cube: Cube) -> SIMD3<Float> { Self.place(local[i], in: cube) }
+
+    /// Where a small YOLO's point (`local`) is in `cube`.
+    private static func place(_ point: SIMD3<Float>, in cube: Cube) -> SIMD3<Float> {
+        cube.center + cube.rotation.act(point * (modelScale * cube.half))
     }
 
     /// The architecture's middle (its blocks span about ±1.3 across, -0.8...1.1 up), and how large it is in a box, by
@@ -326,10 +341,7 @@ final class Shipping {
     }
 
     /// Where box particle `i` is on `cube` (its `corners`).
-    func point(_ i: Int, on cube: Cube, _ corners: [SIMD3<Float>]) -> SIMD3<Float> {
-        let (a, b) = Box.edges[edge[i]]
-        return corners[a] + (corners[b] - corners[a]) * along[i] + jitter[i] * cube.half
-    }
+    func point(_ i: Int, on cube: Cube, _ corners: [SIMD3<Float>]) -> SIMD3<Float> { spots[i].on(cube, corners) }
 
     /// The gray of a box's edges drawn by `count` particles, as bright as step 1's (all the particles on its edges,
     /// 0.03 each): light adds up, so fewer particles on as long an edge are brighter each.
@@ -422,7 +434,10 @@ final class Shipping {
     }
 
     /// A laptop facing the viewer: the screen's frame, and below it the base seen from above (a trapezoid) with
-    /// rows of keys and a trackpad; `count` points along their lines.
+    /// rows of keys and a trackpad; `count` points along their lines, the keys' denser (`keyDensity`, so their short
+    /// dashes read), and the lines' length in all as seen by `lineGray` (the keys' counted that many times).
+    private static let keyDensity: Float = 2
+
     private static func laptopPoints(_ count: Int) -> (points: [SIMD3<Float>], length: Float) {
         let (c, h) = (screen.center, screen.half)
         func rect(_ x0: Float, _ y0: Float, _ x1: Float, _ y1: Float) -> [(SIMD3<Float>, SIMD3<Float>)] {
@@ -430,6 +445,7 @@ final class Shipping {
             return (0..<4).map { (p[$0], p[($0 + 1) % 4]) }
         }
         var lines = rect(c.x - h.x, c.y - h.y, c.x + h.x, c.y + h.y)
+        var weights: [Float] = []
         let (top, bottom): (Float, Float) = (c.y - h.y - 0.04, -0.8)
         let (topHalf, bottomHalf): (Float, Float) = (h.x + 0.02, h.x + 0.2)
         let corners: [SIMD3<Float>] = [
@@ -437,6 +453,7 @@ final class Shipping {
             [c.x - bottomHalf, bottom, 0],
         ]
         lines += (0..<4).map { (corners[$0], corners[($0 + 1) % 4]) }
+        weights = Array(repeating: 1, count: lines.count)
         // Keys: three rows of short dashes, wider going down (the base's perspective); the trackpad under them.
         for row in 0..<3 {
             let y = top - 0.07 - Float(row) * 0.075
@@ -446,10 +463,12 @@ final class Shipping {
             for k in 0..<keys {
                 let x = c.x - half + pitch * (Float(k) + 0.2)
                 lines.append(([x, y, 0], [x + pitch * 0.6, y, 0]))
+                weights.append(keyDensity)
             }
         }
         lines += rect(c.x - 0.28, bottom + 0.05, c.x + 0.28, top - 0.3)
-        let lengths = lines.map { simd_distance($0.0, $0.1) }
+        weights += Array(repeating: 1, count: lines.count - weights.count)
+        let lengths = zip(lines, weights).map { simd_distance($0.0.0, $0.0.1) * $0.1 }
         let total = lengths.reduce(0, +)
         var points: [SIMD3<Float>] = []
         points.reserveCapacity(count)
@@ -498,11 +517,12 @@ struct Cube {
         return cube
     }
 
-    /// Between `a` and `b` (0...1): along an arc `height` above the straight line (below it if
-    /// negative), a quarter turn on the way.
-    static func flight(from a: Cube, to b: Cube, at s: Float, height: Float) -> Cube {
+    /// Between `a` and `b` (0...1): along an arc `height` above the straight line (below it if negative), highest
+    /// `peak` of the way along (later than halfway: it leaves nearly level), a quarter turn on the way.
+    static func flight(from a: Cube, to b: Cube, at s: Float, height: Float, peak: Float = 0.5) -> Cube {
         var cube = a
-        cube.center = a.center + (b.center - a.center) * s + [0, height * sin(.pi * s), 0]
+        let arc = sin(.pi * pow(s, log(0.5) / log(peak)))
+        cube.center = a.center + (b.center - a.center) * s + [0, height * arc, 0]
         cube.half = a.half + (b.half - a.half) * s
         cube.spin = .pi / 2 * s
         return cube
@@ -534,7 +554,7 @@ final class ClosingEffect: Effect {
         let size = frame.stage.viewSize
         let from = ObjectTitle.top(over: size.width / 2, width: command.label.frame.width, frame: frame)
         let to = CGPoint(x: size.width / 2, y: size.height / 2 + command.label.frame.height / 2)
-        command.position = CGPoint(x: from.x + (to.x - from.x) * s, y: from.y + (to.y - from.y) * s)
+        command.set(\.position, CGPoint(x: from.x + (to.x - from.x) * s, y: from.y + (to.y - from.y) * s))
         command.sync(unit: u)
     }
 }
@@ -582,8 +602,10 @@ final class ShippingEffect: Effect {
     /// How far along the flow the code's particles go per second (a whole flow is 1).
     static let flowSpeed: Float = 0.22
     private var names: [ShadowedLabel] = []
-    private let release = ShadowedLabel(
-        "ultralytics \(Shipping.version)", font: "Archivo-SemiBold", color: NNColors.gold)
+    /// The numbers shown, as they were when the step started (`Shipping.numbers`).
+    private let numbers = Shipping.numbers
+    private lazy var release = ShadowedLabel(
+        "ultralytics \(numbers.version)", font: "Archivo-SemiBold", color: NNColors.gold)
     private let terminal = SKNode()
     private let panel = SKShapeNode()
     private var lines: [SKLabelNode] = []
@@ -605,15 +627,17 @@ final class ShippingEffect: Effect {
             names = Shipping.shelfNames.map {
                 ShadowedLabel($0, font: "Archivo-SemiBold", color: NSColor(white: 0.88, alpha: 1))
             }
-            for label in names + [release] { content.addChild(label) }
+            // Over the boxes' faces (`zPosition` 5), so a copy flying past never hides one.
+            for label in names + [release] {
+                label.zPosition = 6
+                content.addChild(label)
+            }
             release.alpha = 0
         }
         if scene == .install {
             // PyPI as step 17 left it, sliding from there: shown at once (the step's fade covers the change).
             (content.alpha, release.alpha, terminal.alpha) = (1, 1, 0)
             content.addChild(pypiName)
-        }
-        if scene == .install {
             (panel.fillColor, panel.strokeColor) = (NSColor.hex("0B0F14"), .clear)
             terminal.addChild(panel)
             lines = (0..<8).map { _ in
@@ -676,9 +700,10 @@ final class ShippingEffect: Effect {
         var progress: Float = 0
         if scene == .install {
             progress = smoothstep((t - Self.download.start) / Self.download.duration)
-            // Dipping along the arrow and under the terminal's text, into the screen's lower right.
+            // Leaving nearly level (PyPI's labels draw over it), then dipping along the arrow and under the
+            // terminal's text, into the screen's lower right.
             let c = Cube.flight(
-                from: Shipping.onPyPI.moved(by: shift), to: Shipping.onLaptop, at: progress, height: -0.3)
+                from: Shipping.onPyPI.moved(by: shift), to: Shipping.onLaptop, at: progress, height: -0.3, peak: 0.6)
             boxes.append(sprung(1, c.corners, dt: frame.dt))
             if current { fly(shipping.boxC, model: shipping.modelC, on: c, shown: t >= Self.download.start) }
         }
@@ -688,7 +713,7 @@ final class ShippingEffect: Effect {
         }
         content.isHidden = false
         for (face, corners) in zip(faces, boxes) {
-            face.path = CGPath.closed(convexHull(corners.map { system.shownPoint($0).point }))
+            face.set(\.path, CGPath.closed(convexHull(corners.map { system.shownPoint($0).point })))
         }
         switch scene {
         case .repository: repository(frame)
@@ -725,7 +750,7 @@ final class ShippingEffect: Effect {
     private func repository(_ frame: StageFrame) {
         let u = frame.stage.unit
         if cardUnit != u { buildCard(u) }
-        card.position = network.system.shownPoint(Shipping.cardCorner).point
+        card.set(\.position, network.system.shownPoint(Shipping.cardCorner).point)
     }
 
     /// A channel between the card and the box, its particles flowing both ways: gold along its top half, the code going
@@ -750,8 +775,8 @@ final class ShippingEffect: Effect {
         )
         let (ends, waist): (Float, Float) = (0.5, 0.07)
         let ramp = smoothstep((t - 1.2) / 1.0)
-        let gold = NNColors.goldLight * 0.85 * ramp
-        let blue = Shipping.modelColor * 0.8 * ramp
+        let gold = NNColors.goldLight * ramp
+        let blue = Shipping.modelColor * ramp
         var points: [SIMD3<Float>] = []
         var colors: [SIMD3<Float>] = []
         points.reserveCapacity(particles.count)
@@ -786,6 +811,12 @@ final class ShippingEffect: Effect {
             ("LICENSE", false, ""), ("README.md", false, ""), ("pyproject.toml", false, ""),
         ]
         static let highlighted = 5
+        /// The repository's description (GitHub, November 2026).
+        static let description = """
+            Ultralytics YOLO27, YOLO26, YOLO11, YOLOv8 — object detection, instance segmentation, semantic \
+            segmentation, image classification, pose estimation, object tracking
+            """
+
         static let tableTop: CGFloat = 82, rowHeight: CGFloat = 26
         /// A row's middle, down from the card's top (at unit 1).
         static func row(_ k: Int) -> CGFloat { tableTop + rowHeight * (CGFloat(k) + 0.5) }
@@ -826,11 +857,16 @@ final class ShippingEffect: Effect {
         let pillX = 42 + name.frame.width / u + 10
         shape(rect(pillX, 18, 50, 21, radius: 10.5), stroke: Card.border)
         label("Public", 12, Card.muted, x: pillX + 9, y: 28.5)
-        let counts = label("★ \(Shipping.stars)   ⑂ \(Shipping.forks)", 14, Card.text, x: w - 20, y: 28)
+        let counts = label("★ \(numbers.starsText)   ⑂ \(numbers.forksText)", 14, Card.text, x: w - 20, y: 28)
         counts.horizontalAlignmentMode = .right
-        label(
-            "Ultralytics YOLO27, YOLO26, YOLO11, YOLOv8 — object detection, segmentation, …", 13.5, Card.muted, x: 20,
-            y: 58)
+        // The description, cut at a word with "…" to fit inside the card, as GitHub cuts it.
+        let about = label("", 13.5, Card.muted, x: 20, y: 58)
+        var words = Card.description.split(separator: " ").map(String.init)
+        about.text = Card.description
+        while about.frame.width > (w - 40) * u, words.count > 1 {
+            words.removeLast()
+            about.text = words.joined(separator: " ").trimmingCharacters(in: .punctuationCharacters) + " …"
+        }
         // Its files, folders first, as GitHub lists them; the package's folder (the box's code) outlined in gold.
         let table = Card.tableTop
         shape(rect(20, table, w - 40, Card.rowHeight * CGFloat(Card.rows.count), radius: 6), stroke: Card.border)
@@ -887,13 +923,13 @@ final class ShippingEffect: Effect {
         for (label, corners) in zip(names + [release], boxes) {
             label.label.set(\.fontSize, (label === release ? 15 : 13) * u)
             label.label.set(\.verticalAlignmentMode, .top)
-            label.position = under(corners)
+            label.set(\.position, under(corners))
             label.sync(unit: u)
         }
         guard scene == .install else { return }
         pypiName.label.set(\.fontSize, 22 * u)
         pypiName.label.set(\.verticalAlignmentMode, .top)
-        pypiName.position = CGPoint(x: under(boxes[1]).x, y: system.shownPoint([0, Shipping.headerY, 0]).point.y)
+        pypiName.set(\.position, CGPoint(x: under(boxes[1]).x, y: system.shownPoint([0, Shipping.headerY, 0]).point.y))
         pypiName.sync(unit: u)
     }
 
@@ -907,7 +943,8 @@ final class ShippingEffect: Effect {
         let (c, h) = (Shipping.screen.center, Shipping.screen.half)
         let lo = system.shownPoint([c.x - h.x + 0.03, c.y - h.y + 0.03, 0]).point
         let hi = system.shownPoint([c.x + h.x - 0.03, c.y + h.y - 0.03, 0]).point
-        panel.path = CGPath(rect: CGRect(x: lo.x, y: lo.y, width: hi.x - lo.x, height: hi.y - lo.y), transform: nil)
+        let screen = CGRect(x: lo.x, y: lo.y, width: hi.x - lo.x, height: hi.y - lo.y)
+        panel.set(\.path, CGPath(rect: screen, transform: nil))
 
         let typed = min(max(Int((t - Self.typing.start) / Self.typing.perKey), 0), Self.command.count)
         let entered = Self.entered
@@ -919,10 +956,10 @@ final class ShippingEffect: Effect {
             ("$ " + Self.command.prefix(typed), 0, .white, 0),
             ("Collecting ultralytics", 0, text, entered + 0.3),
             ("Downloading ultralytics-", 2, text, download.start),
-            ("\(Shipping.version)-py3-none-any.whl", 2, text, download.start),
+            ("\(numbers.version)-py3-none-any.whl", 2, text, download.start),
             ("", 0, text, download.start),  // the bar's size
             ("Successfully installed", 0, .white, done + 0.3),
-            ("ultralytics-\(Shipping.version)", 2, .white, done + 0.3),
+            ("ultralytics-\(numbers.version)", 2, .white, done + 0.3),
             ("$", 0, .white, done + 0.6),
         ]
         let (size, pitch) = (12.5 * u, 19 * u)
@@ -933,20 +970,19 @@ final class ShippingEffect: Effect {
             if k != 4 { line.set(\.text, row.text) }
             line.set(\.fontColor, row.color)
             line.set(\.isHidden, t < row.at)
-            line.position = CGPoint(x: left + row.indent * 0.6 * size, y: top - CGFloat(k) * pitch)
+            line.set(\.position, CGPoint(x: left + row.indent * 0.6 * size, y: top - CGFloat(k) * pitch))
         }
         // The bar: as wide as the wheel's name, filled with the copy's flight, its size after it.
         let barY = top - 4 * pitch + 3 * u
         let width = 150 * u
         let track = CGRect(x: left + 16 * u, y: barY, width: width, height: 6 * u)
-        bar.track.path = CGPath(rect: track, transform: nil)
-        bar.fill.path = CGPath(
-            rect: CGRect(x: track.minX, y: track.minY, width: width * CGFloat(progress), height: track.height),
-            transform: nil)
-        bar.track.isHidden = t < download.start
-        bar.fill.isHidden = bar.track.isHidden
-        lines[4].set(\.text, String(format: "%.1f/%@", 1.5 * progress, Shipping.wheel))
-        lines[4].position = CGPoint(x: track.maxX + 8 * u, y: barY - 1 * u)
+        bar.track.set(\.path, CGPath(rect: track, transform: nil))
+        let filled = CGRect(x: track.minX, y: track.minY, width: width * CGFloat(progress), height: track.height)
+        bar.fill.set(\.path, CGPath(rect: filled, transform: nil))
+        bar.track.set(\.isHidden, t < download.start)
+        bar.fill.set(\.isHidden, bar.track.isHidden)
+        lines[4].set(\.text, String(format: "%.1f/%@", numbers.wheelMB * progress, numbers.wheelText))
+        lines[4].set(\.position, CGPoint(x: track.maxX + 8 * u, y: barY - 1 * u))
         lines[4].set(\.fontSize, 11 * u)
         // The cursor: after what's typed, then on the new prompt; blinking while it waits.
         let waiting = t < Self.typing.start || t > done + 0.6
@@ -954,7 +990,15 @@ final class ShippingEffect: Effect {
         let blink = !waiting || Int(frame.time * 2) % 2 == 0
         let x = left + lines[row].frame.width + (row == 7 ? 0.6 * size : 2 * u)
         let y = top - CGFloat(row) * pitch - 3 * u
-        cursor.path = CGPath(rect: CGRect(x: x, y: y, width: 7 * u, height: 14 * u), transform: nil)
-        cursor.isHidden = !blink || (t > entered && t <= done + 0.6)
+        cursor.set(\.path, CGPath(rect: CGRect(x: x, y: y, width: 7 * u, height: 14 * u), transform: nil))
+        cursor.set(\.isHidden, !blink || (t > entered && t <= done + 0.6))
     }
+}
+
+extension ProjectStats {
+    /// Ultralytics' numbers for the shipping steps (`Shipping.numbers`), fetched at launch: until then, and offline,
+    /// the last ones fetched, or these (November 2026).
+    static let ultralytics = ProjectStats(
+        repository: "ultralytics/ultralytics", package: "ultralytics",
+        fallback: .init(stars: 63_600, forks: 12_000, version: "8.4.215", wheelBytes: 1_500_000))
 }

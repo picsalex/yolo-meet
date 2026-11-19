@@ -87,6 +87,11 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case restartStory
     /// The stage should hide the camera image (black behind the effects) or show it again, as H does.
     case hideCamera(Bool)
+    /// Fingers moved the whiteboard's view: it zooms by `scale` around (`x`, `y`), then slides by (`dx`, `dy`), in
+    /// ink points on the pad. Ignored when the whiteboard isn't on stage.
+    case moveBoard(scale: Double, x: Double, y: Double, dx: Double, dy: Double)
+    /// The whiteboard's view should go back to where it started: not zoomed, not slid.
+    case resetBoard
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.
     case set(InkSettings)
 }
@@ -108,6 +113,9 @@ public nonisolated enum HostMessage: Codable, Sendable, Equatable {
     case cameraHidden(Bool)
     /// The stories the pad can open, and the one open: sent on connecting and whenever another one is opened.
     case stories([StoryInfo], current: String)
+    /// How far the whiteboard's view is zoomed in (1 as it started), and whether it is where it started: sent on
+    /// connecting and whenever either changes.
+    case board(zoom: Double, isHome: Bool)
     /// The stage as it was just drawn, as a JPEG. It shows the pad's stroke `through` whole, and those before it:
     /// the latest that was finished when the picture was taken, if any.
     case picture(jpeg: Data, through: Int?)

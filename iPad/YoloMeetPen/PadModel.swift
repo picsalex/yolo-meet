@@ -36,6 +36,8 @@ final class PadModel {
     /// The stories yolo-meet can show, and the one open.
     private(set) var stories: [StoryInfo] = []
     private(set) var currentStory: String?
+    /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
+    private(set) var board = (zoom: 1.0, isHome: true)
     /// Where the eraser is over the pad (ink points), while the pen erases or hovers with it.
     @ObservationIgnored private(set) var eraser: CGPoint? {
         didSet {
@@ -67,6 +69,7 @@ final class PadModel {
                 self.client.send(.hello(name: UIDevice.current.name))
             } else {
                 (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
+                self.board = (1, true)
                 self.end()
                 self.forgetPicture()
             }
@@ -96,6 +99,7 @@ final class PadModel {
             (self.settings, self.colors) = (settings, colors)
             if !settings.erases { eraser = nil }
         case .cameraHidden(let hidden): cameraHidden = hidden
+        case .board(let zoom, let isHome): board = (zoom, isHome)
         case .stories(let stories, let current): (self.stories, currentStory) = (Array(stories.prefix(24)), current)
         case .shows(let shows, let mode):
             (self.shows, self.mode) = (shows, mode)
@@ -169,6 +173,15 @@ final class PadModel {
         client.send(.up)
     }
 
+    /// The touch that drew turned out to be fingers moving the whiteboard: the start of a line it left goes.
+    func cancel() {
+        let drew = isDrawing
+        end()
+        guard drew, strokes.popLast() != nil else { return }
+        redraw?(nil)
+        client.send(.undo)
+    }
+
     /// The pen is over the pad at `point` (`height` from 0 at the glass to 1), or left it (nil).
     func hover(at point: CGPoint?, height: Double = 0) {
         if settings.erases, !isErasing { eraser = point }
@@ -194,6 +207,16 @@ final class PadModel {
     func open(story id: String) { client.send(.story(id: id)) }
     /// Hides the stage's camera image, or shows it again, as H does on the Mac; lit when yolo-meet says so.
     func toggleCamera() { client.send(.hideCamera(!cameraHidden)) }
+    /// Fingers zoom the whiteboard by `scale` around `point` and slide it by `offset` (ink points).
+    func moveBoard(zoom scale: Double = 1, around point: CGPoint = .zero, by offset: CGVector = .zero) {
+        guard shows == .whiteboard, scale != 1 || offset != .zero else { return }
+        client.send(
+            .moveBoard(
+                scale: rounded(scale, to: 10_000), x: rounded(point.x), y: rounded(point.y), dx: rounded(offset.dx),
+                dy: rounded(offset.dy)))
+    }
+    /// The whiteboard's view goes back to where it started.
+    func resetBoard() { client.send(.resetBoard) }
 
     // Settings: the pad changes them at once, and yolo-meet answers only when it keeps something else.
 

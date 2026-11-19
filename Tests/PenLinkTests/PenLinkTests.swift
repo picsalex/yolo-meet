@@ -10,6 +10,7 @@ import Testing
             .hello(name: "iPad"), .hover(x: 10, y: 20.5, height: 0.4), .down(id: 7, x: 1, y: 2, force: 0.8),
             .move(x: 3, y: 4, force: 1.2), .up, .undo, .clear, .step(forward: true), .step(forward: false),
             .show(.whiteboard), .show(.display), .story(id: "nn-explained"), .restartStory, .hideCamera(true),
+            .moveBoard(scale: 1.05, x: 640, y: 360, dx: -3.5, dy: 2), .resetBoard,
             .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }
@@ -30,6 +31,7 @@ import Testing
             .picture(jpeg: jpeg, through: 7), .removed(ids: [7]), .shows(.whiteboard, mode: .story),
             .cameraHidden(true),
             .stories([StoryInfo(id: "nn-explained", title: "CV onboarding")], current: "nn-explained"),
+            .board(zoom: 1.5, isHome: false),
             .picture(jpeg: Data(), through: nil),
             .picture(jpeg: jpeg, through: Int(Int32.max)),
         ]

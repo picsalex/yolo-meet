@@ -3,7 +3,8 @@ import SwiftUI
 
 /// The pad, with the link's state and pairing over it and a bar under it. On the bar's left, a deck of large keys, as
 /// on a Stream Deck: Display mode, a story (its key opens a page of the stories to pick from) or the whiteboard on
-/// stage, hiding the camera, and the story's steps while it shows; on its right, the pencil or the eraser, ink that
+/// stage, hiding the camera, the story's steps while it shows, and the whiteboard's zoom while it shows (tapped, its
+/// view goes back to where it started); on its right, the pencil or the eraser, ink that
 /// stays or fades, the ink's color (the others show over it when it is tapped) and settings, undo and clear. Until
 /// yolo-meet's pairing code has been typed, it asks for it.
 struct PadScreen: View {
@@ -99,6 +100,18 @@ struct PadScreen: View {
                 }
                 DeckKey("Hide", symbol: "video.slash.fill", isLit: model.cameraHidden) { model.toggleCamera() }
                     .disabled(model.shows == .whiteboard)
+                if model.shows == .whiteboard {
+                    // How far it is zoomed; tapped, the view goes back to where it started.
+                    DeckKey(
+                        "\(Int((model.board.zoom * 100).rounded()))%",
+                        symbol: "arrow.up.left.and.down.right.magnifyingglass"
+                    ) {
+                        model.resetBoard()
+                    }
+                    .disabled(model.board.isHome)
+                    .padding(.leading, 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
                 if model.shows == .story {
                     DeckKey("Restart", symbol: "backward.end.fill") { model.restartStory() }
                         .padding(.leading, 8)

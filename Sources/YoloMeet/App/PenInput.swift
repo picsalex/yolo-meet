@@ -8,7 +8,7 @@ import SystemConfiguration
 /// (`Drawing`). The pad shows the stage with its own ink over it, so it is told which of its strokes left the stage
 /// and is sent the stage's picture (`StagePicture`). The ink's settings are the panel's, and the pad can change them
 /// too. The pad also steps through the story, like the arrow keys, switches the stage between the story and the
-/// whiteboard, and hides the camera image, as H does (its deck).
+/// whiteboard, and hides the camera image, as H does (its deck). Its fingers zoom and slide the whiteboard.
 @Observable
 final class PenInput {
     var isOn = UserDefaults.standard.bool(forKey: "penOn") {
@@ -58,6 +58,8 @@ final class PenInput {
     @ObservationIgnored private let onHide: (Bool) -> Void
     /// The pad's change to the settings is being made: it isn't sent back to it.
     @ObservationIgnored private var isApplying = false
+    /// The whiteboard's view as the pad was last told it: its zoom (to the percent) and whether it is home.
+    @ObservationIgnored private var toldBoard: HostMessage?
 
     init(
         drawing: Drawing, stories: [StoryInfo], story: String, onStep: @escaping (Bool) -> Void,
@@ -82,6 +84,8 @@ final class PenInput {
                 self.host.send(.cameraHidden(self.cameraHidden))
                 self.host.send(.stories(self.stories, current: self.story))
                 self.host.send(.ink(ids: self.drawing.penStrokes))
+                self.toldBoard = nil
+                self.sendBoard()
             }
         }
         drawing.changed = { [weak self] change in
@@ -89,6 +93,7 @@ final class PenInput {
             case .settings: if self?.isApplying == false { self?.sendSettings() }
             case .removed(let ids): self?.host.send(.removed(ids: ids))
             case .page: self.map { $0.host.send(.ink(ids: $0.drawing.penStrokes)) }
+            case .board: self?.sendBoard()
             }
         }
         UserDefaults.standard.set(code, forKey: "penCode")  // the first one is made here
@@ -108,6 +113,15 @@ final class PenInput {
 
     /// Makes another pairing code: every iPad has to be given it.
     func renewCode() { code = PenCode.new() }
+
+    /// Tells the pad the whiteboard's zoom, when it shows another percent or went home or left it.
+    private func sendBoard() {
+        let board = drawing.board
+        let message = HostMessage.board(zoom: (board.zoom * 100).rounded() / 100, isHome: board.isHome)
+        guard message != toldBoard else { return }
+        toldBoard = message
+        host.send(message)
+    }
 
     private func sendSettings() { host.send(.settings(drawing.settings, colors: Drawing.colors.map(\.1))) }
 
@@ -148,6 +162,12 @@ final class PenInput {
         case .story(let id): onStory(id)
         case .restartStory: onRestart()
         case .hideCamera(let hidden): onHide(hidden)
+        case .moveBoard(let scale, let x, let y, let dx, let dy):
+            func kept(_ value: Double, _ bound: Double) -> CGFloat { CGFloat(min(max(value, -bound), bound)) }
+            drawing.moveBoard(
+                zoom: CGFloat(min(max(scale, 0.5), 2)), around: point(x, y),
+                by: CGVector(dx: kept(dx, 2000), dy: kept(dy, 2000)))
+        case .resetBoard: drawing.resetBoard()
         case .set(let settings): apply(settings)
         }
     }

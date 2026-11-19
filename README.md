@@ -127,6 +127,11 @@ turned off, until it is cleared.
   with the stage's ink; the whiteboard's waits for next time, until it's undone, erased or cleared (fading ink
   doesn't age while its page is hidden). White ink draws near-black on it. The clicker and the
   arrow keys don't step the story meanwhile.
+- **Zoom and slide the whiteboard**: pinch on the trackpad to zoom it (around the cursor, a quarter to four times),
+  scroll with two fingers to slide it (Command + scroll zooms, for a mouse's wheel), or use your fingers on the pen
+  app's pad. Ink keeps its place on the board, light grey dots move with it so you can see it move where nothing is
+  drawn, and a new line is as wide on stage at any zoom. The view stays as you left it when the whiteboard goes off
+  and comes back.
 
 ### iPad pen
 
@@ -151,10 +156,13 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   Display mode or the story, whichever was under it: its key stays yellow meanwhile, dimmed and off. **Hide** hides the camera
   image and shows it again, as H does (lit while hidden, off on the whiteboard). While a story shows, **Restart**
   takes it back to its first step (its branches and quiz as when it was opened), and **Previous** and **Next** step
-  through it, like the arrow keys on the Mac. A key lights when yolo-meet has done what it asks.
+  through it, like the arrow keys on the Mac. While the whiteboard shows, a key shows how far it is zoomed; tapping
+  it glides the view back to where it started. A key lights when yolo-meet has done what it asks.
 - Over the pad, centered between the screen's top and the pad, a line says which Mac it draws on (or what the link
   waits for), with the key for the pairing code.
 - Fingers draw too until a pencil has touched the pad; after that they are ignored, so a resting hand leaves no ink.
+- On the whiteboard, two fingers pinch to zoom it and drag to slide it; once a pencil has touched the pad, one finger
+  slides it too. The pencil only draws.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
 or straight between the devices when they share none (Wi-Fi turned on, on both). A USB cable charges the iPad but

@@ -1,4 +1,5 @@
 import CoreImage
+import CoreImage.CIFilterBuiltins
 import MetalKit
 import SpriteKit
 import SwiftUI
@@ -29,7 +30,8 @@ struct StageView: NSViewRepresentable {
 
 /// Locks the stage window to 16:9 so it shares cleanly, takes key presses so keys the stage doesn't use don't make
 /// macOS beep (its keys reach effects through `StageKeys`), and passes the mouse and trackpad to `MouseGestures`, or to
-/// the `Drawing` while it's on.
+/// the `Drawing` while it's on. On the whiteboard, pinching zooms it and scrolling slides it (Command + scroll zooms,
+/// for a mouse's wheel).
 private final class StageMTKView: MTKView {
     var mouse: MouseGestures?
     var drawing: Drawing?
@@ -37,6 +39,8 @@ private final class StageMTKView: MTKView {
     var acting: () -> Bool = { false }
     /// The drawing, while it takes the mouse.
     private var inking: Drawing? { drawing?.isOn == true ? drawing : nil }
+    /// The drawing, while the whiteboard is on stage: the trackpad moves its view.
+    private var whiteboard: Drawing? { drawing?.page == .whiteboard ? drawing : nil }
 
     override var acceptsFirstResponder: Bool { true }
     override func keyDown(with event: NSEvent) {}
@@ -93,11 +97,23 @@ private final class StageMTKView: MTKView {
     }
 
     override func magnify(with event: NSEvent) {
+        if let whiteboard { return whiteboard.moveBoard(zoom: 1 + event.magnification, around: inkPoint(event)) }
         mouse?.magnified(by: event.magnification, phase: event.phase, at: stagePoint(event))
     }
 
-    /// Command + scroll zooms; plain scrolling is left alone.
+    /// Command + scroll zooms; plain scrolling is left alone, except on the whiteboard, which it slides the way the
+    /// fingers go.
     override func scrollWheel(with event: NSEvent) {
+        if let whiteboard {
+            // Ink points per scrolled point: a mouse's wheel scrolls by lines.
+            let step = (event.hasPreciseScrollingDeltas ? 1 : 10) * 720 / max(bounds.height, 1)
+            if event.modifierFlags.contains(.command) {
+                guard event.momentumPhase.isEmpty else { return }
+                return whiteboard.moveBoard(zoom: exp(event.scrollingDeltaY * step * 0.005), around: inkPoint(event))
+            }
+            return whiteboard.moveBoard(
+                by: CGVector(dx: event.scrollingDeltaX * step, dy: -event.scrollingDeltaY * step))
+        }
         guard event.modifierFlags.contains(.command), event.momentumPhase.isEmpty else {
             return super.scrollWheel(with: event)
         }
@@ -214,6 +230,7 @@ final class StageRenderer: NSObject, MTKViewDelegate {
             let white = 1 - pow(1 - smoothstep(boardFade), 2.2)
             video = CIImage(color: CIColor(red: 1, green: 1, blue: 1, alpha: white)).cropped(to: bounds).composited(
                 over: video)
+            if let dots = boardDots(alpha: white, in: bounds) { video = dots.composited(over: video) }
         }
         _ = try? context.startTask(toRender: video, from: bounds, to: destination, at: .zero)
 
@@ -297,6 +314,38 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }
+
+    /// The whiteboard's dots, `dotSpacing` ink points apart on it: a grid that zooms and slides with its view, so the view
+    /// shows moving where nothing is drawn yet. None where they would be too close together to tell apart.
+    private func boardDots(alpha: CGFloat, in bounds: CGRect) -> CIImage? {
+        let (view, unit) = (model.drawing.board, bounds.height / 720)
+        let spacing = Self.dotSpacing * view.zoom * unit  // in pixels
+        guard spacing >= 8, let tile = Self.dotTile else { return nil }
+        let tiles = CIFilter.affineTile()
+        tiles.inputImage = tile
+        tiles.transform = CGAffineTransform(
+            a: spacing / tile.extent.width, b: 0, c: 0, d: spacing / tile.extent.width, tx: view.pan.x * unit,
+            ty: view.pan.y * unit)
+        let faded = CIFilter.colorMatrix()
+        faded.inputImage = tiles.outputImage?.cropped(to: bounds)
+        faded.aVector = CIVector(x: 0, y: 0, z: 0, w: alpha)
+        return faded.outputImage
+    }
+
+    /// Ink points between the whiteboard's dots, when it isn't zoomed.
+    private static let dotSpacing: CGFloat = 40
+    /// One dot, in the middle of the grid's tile: light grey.
+    private static let dotTile: CIImage? = {
+        let size = 64
+        guard
+            let context = CGContext(
+                data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.setFillColor(CGColor(gray: 0.78, alpha: 1))
+        context.fillEllipse(in: CGRect(x: 30, y: 30, width: 4, height: 4))
+        return context.makeImage().map { CIImage(cgImage: $0) }
+    }()
 
     /// When the step on stage started (its first frame), for `StageFrame.stepTime`.
     private var stepStart: TimeInterval?

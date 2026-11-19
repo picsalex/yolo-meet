@@ -12,6 +12,9 @@ import SpriteKit
 /// other's. On the whiteboard, white ink is drawn near-black (`PenLink.ink`).
 ///
 /// Points are in ink points: stage points at unit 1 (a 1280 × 720 stage), so ink keeps its place when the stage resizes.
+///
+/// The whiteboard can be zoomed and slid (`board`): its strokes keep their place on it, and the mouse and the pen draw
+/// where they are on stage. A new line is as wide on stage at any zoom, and the eraser reaches as far.
 @Observable
 final class Drawing {
     /// Who draws: each has its own stroke in progress.
@@ -22,9 +25,22 @@ final class Drawing {
         case settings
         case removed([Int])
         case page
+        /// The whiteboard's view moved.
+        case board
     }
     /// Where the ink is: over the stage's picture, or on the whiteboard.
     enum Page { case stage, whiteboard }
+    /// How the whiteboard shows on stage: zoomed in by `zoom` (1 as it starts), its origin at `pan` on stage (ink
+    /// points). The stage's own ink never moves.
+    struct BoardView: Equatable {
+        var zoom: CGFloat = 1
+        var pan = CGPoint.zero
+
+        /// Where a place on stage is on the board.
+        func onBoard(_ point: CGPoint) -> CGPoint { CGPoint(x: (point.x - pan.x) / zoom, y: (point.y - pan.y) / zoom) }
+        /// Where the view started: not zoomed, not slid.
+        var isHome: Bool { abs(zoom - 1) < 0.001 && abs(pan.x) < 0.5 && abs(pan.y) < 0.5 }
+    }
 
     /// Ink colors (Ultralytics' brand skeleton colors, white and the annotation palette's red), as names and hex.
     static let colors = [
@@ -32,6 +48,10 @@ final class Drawing {
     ]
     /// Fading ink fades out over this many seconds, once it has stayed `fadeAfter`.
     static let fadeTime = 1.0
+    /// How far the whiteboard zooms out and in.
+    static let zooms: ClosedRange<CGFloat> = 0.25...4
+    /// Seconds the whiteboard's view takes to glide back home (`resetBoard`).
+    static let homeTime = 0.35
 
     /// The mouse and trackpad draw.
     var isOn = false { didSet { if !isOn { released(.mouse, time: CACurrentMediaTime()) } } }
@@ -79,7 +99,7 @@ final class Drawing {
             strokes = back?.strokes ?? []
             for stroke in strokes {
                 stroke.endedAt = stroke.endedAt.map { $0 + away }
-                node.addChild(stroke.node)
+                paper.addChild(stroke.node)
             }
             strokeCount = strokes.count
             changed?(.page)
@@ -99,9 +119,22 @@ final class Drawing {
     }
     /// Strokes on stage, for the panel's Undo and Clear.
     private(set) var strokeCount = 0
+    /// The whiteboard's view, which fingers on the pad and the trackpad move. It stays while the whiteboard is off.
+    @ObservationIgnored private(set) var board = BoardView() {
+        didSet { if board != oldValue { changed?(.board) } }
+    }
+    /// The view the ink is drawn with now: the whiteboard's, or none over the stage's picture.
+    private var view: BoardView { page == .whiteboard ? board : BoardView() }
 
     /// The ink, for the stage's 2D layer.
     @ObservationIgnored let node = SKNode()
+    /// The strokes, in the page's view (`view`); the nib and the erasers' rings are over it, where they are on stage.
+    @ObservationIgnored private let paper = SKNode()
+    /// The view gliding home: where it was, and when it started (on the next frame).
+    @ObservationIgnored private var homing: (from: BoardView, start: TimeInterval?)?
+    /// Pixels per ink point the strokes are drawn at, and when the view last moved: while it zooms, the strokes' images
+    /// are scaled, and drawn again at the new size once it has stopped a moment.
+    @ObservationIgnored private var sharpness: (unit: CGFloat, moved: TimeInterval) = (0, 0)
     @ObservationIgnored var changed: ((Change) -> Void)?
     @ObservationIgnored private var strokes: [Stroke] = []
     /// The other page's strokes while it isn't on stage, and since when.
@@ -129,6 +162,7 @@ final class Drawing {
         (nib.node.zPosition, nib.node.isHidden) = (1, true)
         nib.node.addChild(nib.dot)
         nib.node.addChild(nib.ring)
+        node.addChild(paper)
         node.addChild(nib.node)
     }
 
@@ -142,10 +176,10 @@ final class Drawing {
             return erase(from: point, to: point)
         }
         let stroke = Stroke(color: ink, id: id)
-        node.addChild(stroke.node)
+        paper.addChild(stroke.node)
         strokes.append(stroke)
         (current[source], strokeCount) = (stroke, strokes.count)
-        stroke.add(point, width: CGFloat(width) * press)
+        stroke.add(view.onBoard(point), width: CGFloat(width) * press / view.zoom)
     }
 
     /// The cursor or the pen moved: it draws or erases while pressed.
@@ -154,7 +188,7 @@ final class Drawing {
             erasing[source] = point
             erase(from: last, to: point)
         } else {
-            current[source]?.add(point, width: CGFloat(width) * press)
+            current[source]?.add(view.onBoard(point), width: CGFloat(width) * press / view.zoom)
         }
     }
 
@@ -168,7 +202,10 @@ final class Drawing {
 
     /// The strokes the eraser touches on its way from `start` to `end` leave the stage.
     private func erase(from start: CGPoint, to end: CGPoint) {
-        let touched = strokes.filter { $0.isTouched(from: start, to: end, radius: settings.eraserRadius) }
+        let (view, radius) = (view, settings.eraserRadius)
+        let touched = strokes.filter {
+            $0.isTouched(from: view.onBoard(start), to: view.onBoard(end), radius: radius / view.zoom)
+        }
         guard !touched.isEmpty else { return }
         strokes.removeAll { stroke in touched.contains { $0 === stroke } }
         remove(touched)
@@ -177,6 +214,29 @@ final class Drawing {
     /// The pen is over its pad at `point` without touching it (`height` from 0 at the pad to 1), or left it (nil).
     func hover(at point: CGPoint?, height: CGFloat = 0) {
         hovering = point.map { ($0, min(max(height, 0), 1)) }
+    }
+
+    // The whiteboard's view, from the pad's fingers and the trackpad. Points are on stage, in ink points.
+
+    /// Zooms the whiteboard by `scale` around `point`, then slides it by `offset`: what was under `point` stays under
+    /// it as it zooms. Only while it is on stage.
+    func moveBoard(zoom scale: CGFloat = 1, around point: CGPoint = .zero, by offset: CGVector = .zero) {
+        guard page == .whiteboard, scale.isFinite, scale > 0 else { return }
+        homing = nil
+        var moved = board
+        moved.zoom = min(max(board.zoom * scale, Self.zooms.lowerBound), Self.zooms.upperBound)
+        let factor = moved.zoom / board.zoom
+        moved.pan = CGPoint(
+            x: point.x - (point.x - board.pan.x) * factor + offset.dx,
+            y: point.y - (point.y - board.pan.y) * factor + offset.dy)
+        board = moved
+        sharpness.moved = CACurrentMediaTime()
+    }
+
+    /// The whiteboard's view glides back to where it started.
+    func resetBoard() {
+        guard !board.isHome else { return }
+        homing = (board, nil)
     }
 
     // The panel's, the stage keys' and the pad's actions.
@@ -195,8 +255,23 @@ final class Drawing {
     /// Every frame: strokes are redrawn and fade, and the node follows the stage's size.
     func update(_ frame: StageFrame) {
         node.setScale(frame.stage.unit)
+        if let homing {
+            let start = homing.start ?? frame.time
+            let t = min((frame.time - start) / Self.homeTime, 1)
+            let eased = t * t * (3 - 2 * t)
+            board = BoardView(
+                zoom: homing.from.zoom + (1 - homing.from.zoom) * eased,
+                pan: CGPoint(x: homing.from.pan.x * (1 - eased), y: homing.from.pan.y * (1 - eased)))
+            (self.homing, sharpness.moved) = (t < 1 ? (homing.from, start) : nil, frame.time)
+        }
+        let view = view
+        paper.setScale(view.zoom)
+        paper.position = view.pan
+        if sharpness.unit == 0 || frame.time - sharpness.moved > 0.2 {
+            sharpness.unit = frame.stage.unit * view.zoom
+        }
         for stroke in strokes {
-            stroke.redraw(unit: frame.stage.unit)
+            stroke.redraw(unit: sharpness.unit)
             let age = fades ? stroke.endedAt.map { frame.time - $0 - fadeAfter } : nil
             // opaque again when fading is turned off
             stroke.node.alpha = 1 - min(max((age ?? 0) / Self.fadeTime, 0), 1)

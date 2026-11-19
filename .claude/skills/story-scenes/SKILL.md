@@ -96,7 +96,7 @@ Fix what you find, then render again.
   - live model outputs;
   - the 3D layer.
 
-  Colours come out a little lighter than in the app.
+  Colours match the app's on a black stage.
 - **If it fails to build** after app changes, a new file probably only works in the app shell. Add it to `skip` in the script.
 
 Then build the app with `scripts/build.sh`, which sets `DEVELOPER_DIR` itself, so the user can look live.

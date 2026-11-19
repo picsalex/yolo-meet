@@ -87,6 +87,7 @@ if wanted.isEmpty { fail("no shots: give at least one STEP@SECONDS") }
 let device = MTLCreateSystemDefaultDevice()!
 let queue = device.makeCommandQueue()!
 let ci = CIContext(mtlCommandQueue: queue)
+let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 let background: CIImage = {
     let bounds = CGRect(origin: .zero, size: size)
     guard !black, let path = backgroundPath, let image = CIImage(contentsOf: URL(filePath: path)) else {
@@ -154,9 +155,9 @@ func frame(loop: TimeInterval?, shot: String? = nil) {
     commands.waitUntilCompleted()
     if let shot {
         let url = outDir.appending(path: "\(shot).png")
-        try? ci.writePNGRepresentation(
-            of: CIImage(mtlTexture: texture)!.oriented(.downMirrored), to: url, format: .RGBA8,
-            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
+        // The drawable holds sRGB-encoded values, as the app's does: tag it so, or they get encoded twice.
+        let image = CIImage(mtlTexture: texture, options: [.colorSpace: srgb])!.oriented(.downMirrored)
+        try? ci.writePNGRepresentation(of: image, to: url, format: .RGBA8, colorSpace: srgb)
         print("wrote \(url.path)")
     }
 }

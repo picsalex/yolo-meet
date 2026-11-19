@@ -8,11 +8,13 @@ extension Story {
     /// three values, their red, green and blue channels, and the same picture in grayscale (one channel, then a client's
     /// grayscale picture beside it) or multispectral (five, then the ten layers of a client's wafer); then the picture
     /// flows through the model; a quiz on its seven tasks, each revealed opening its output (a branch of the quiz's
-    /// step); and a conclusion. The steps share one network, so its particles fly from one to the next.
+    /// step); a conclusion; and YOLO back in its black box, shipped: on GitHub, published to PyPI, installed with
+    /// pip. The steps share one network, so its particles fly from one to the next.
     static let nnExplained: Story = {
         // Built when the story is first opened (`prepare`: about half a second and 180 MB), not at launch.
         let shared = LazyNetwork()
         var network: NeuralNetwork { shared.network }
+        let center = CGPoint(x: 0.5, y: 0.5)
         return Story(
             id: "nn-explained", title: "CV onboarding",
             steps: [
@@ -74,8 +76,44 @@ extension Story {
                     [NetworkEffect(network, network.inference)]
                 },
                 taskQuiz(shared),
-                nnStep("Conclusion") {
+                nnStep("Recap") {
                     [NetworkEffect(network, network.recap), RecapEffect(network, network.recap)]
+                },
+                // YOLO goes back into its black box, then out to the world: its code on GitHub, published to PyPI,
+                // installed with pip.
+                nnStep(
+                    "GitHub",
+                    substeps: [
+                        nnStep("Repository") {
+                            let shipping = network.shipping
+                            return [
+                                NetworkEffect(network, shipping.repository, at: center),
+                                ShippingEffect(network, shipping, .repository),
+                            ]
+                        }
+                    ]
+                ) {
+                    let packaged = network.shipping.packaged
+                    return [NetworkEffect(network, packaged, at: center), BlackBoxEffect(network, packaged)]
+                },
+                nnStep(
+                    "PyPI",
+                    substeps: [
+                        nnStep("pip install") {
+                            [
+                                NetworkEffect(network, network.shipping.install, at: center),
+                                ShippingEffect(network, network.shipping, .install),
+                            ]
+                        }
+                    ]
+                ) {
+                    [
+                        NetworkEffect(network, network.shipping.pypi, at: center),
+                        ShippingEffect(network, network.shipping, .pypi),
+                    ]
+                },
+                nnStep("pip install ultralytics") {
+                    [NetworkEffect(network, network.shipping.closing, at: center), ClosingEffect(network, network.shipping)]
                 },
             ],
             prepare: { await shared.build() })

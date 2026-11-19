@@ -142,7 +142,8 @@ and wins over the hands' while it acts.
   (cube: `CubeFace`, with each face's corners); `Box` for any box's 8 corners, 12 edges and 6 faces. A shape's
   `colors` (`ParticleColors`) read and write as optional colors, kept as the GPU takes them.
 - `CGPath.closed(_:)` and `CGContext.bitmap(width:height:)` (`Render/Geometry.swift`): a closed polygon, and an sRGB
-  bitmap to draw a texture or a picture in. Also `smoothstep(_:)` (clamped 0...1, eased at both ends) and `Spring`, a
+  bitmap to draw a texture or a picture in. `CGPath.svg(_:)` reads SVG path data (e.g. a logo's, to fill with
+  particles) and `convexHull(_:)` outlines points (e.g. a box's silhouette on stage, to fill its faces). Also `smoothstep(_:)` (clamped 0...1, eased at both ends) and `Spring`, a
   value on the particles' critically damped spring: 2D content that moves with them (e.g. an arrow on blocks that fly).
   `KeyTurn.rotation(tilt:turn:)` and `Stage.unitSize` (1280 × 720) place things before anything is on stage.
 - `Grip`: whether the gestures hold an object (they began on it), with its swell while a pinch charges and held (`scale`).
@@ -264,10 +265,33 @@ particles grow into them while the rest turn black where they are, shift just en
 there through `NetworkLayout.arrivedColors`), then the real YOLO26n model of that task on the camera, with the app's
 live overlays (`BoxesEffect`, `OverlayEffect`, `ClassifyEffect`, `PoseEffect`, `OrientedBoxesEffect`); as the model visualizer
 draws them (class colors), except the depth map, inferno as on the cat (`OverlayEffect(depthColors:)`); the cat steps' boxes
-are Ultralytics yellow. The last step, a **recap** (`NetworkLayout.recap`, `RecapEffect`), shows the input picture on top, an
+are Ultralytics yellow. The **recap** (`NetworkLayout.recap`, `RecapEffect`), shows the input picture on top, an
 arrow down into YOLO (the architecture, shrunk) and arrows splitting to the seven tasks' small pictures: the last task's
 picture first glides whole to the input's place (its `prelude`), then each output comes out of it, dimmed on the way and lit
-once there (`arrivedColors`). `ParticleSystem.place(_:at:colors:)` moves and colors
+once there (`arrivedColors`). Then YOLO is **shipped** (`Shipping.swift`, two steps with a substep each, on one
+`Shipping` state built after the recap, whose `modelParticles` name the model's particles). GitHub: back in the black
+box (the recap's pictures fly to step 1's box's edges around the model, its `prelude`, then the model shrinks into it
+and goes dark as `BlackBoxEffect` closes it, a quarter of the model staying lit inside, a small YOLO that each box and
+copy carries from then on (`Shipping.inside`, the architecture's points turned with the box); the GitHub mark's
+particles stay out of the box, fading out where they are), then › Repository: the box on the right, and on the left a
+card of the real repository under the GitHub mark (drawn from Octicons' SVG path, `CGPath.svg`, filled with particles,
+unseen on the way and lit there), the box level with the card and joined to it by a channel of particles flowing both
+ways (an hourglass on its side: gold on top going in, blue below coming out). PyPI: the box moves to the left under the
+mark (shrunk there), GitHub and PyPI centered together, and a copy flies along an arc into its slot on a shelf of
+package boxes; then › pip install: GitHub fades out, PyPI slides left with its labels so it and a laptop are centered
+(`installShift`), and the laptop and its user seen from behind (the laptop's lines behind them left out, so they read in
+front), a terminal on its screen typing `pip install ultralytics`, and the copy flying from PyPI to the laptop with the
+download's bar. Last, everything fades out but the command, which eases from the title's place to the middle of the
+stage, slightly larger (`ClosingEffect`). Each part keeps its particles from step to step (a box's particles stay that
+box's, at the same place on their edge, so it shrinks and moves as a box; a copy that turned as it flew is turned the
+same in the next step's layout, or its particles swap edges), boxes are turned to step 1's view (`Cube`) while the
+layout faces the viewer, unseen particles wait black inside the box, and `ShippingEffect` (`behind`) fills the boxes'
+faces black (a flying box's corners on the particles' `Spring`, since its particles trail the points they're placed at),
+draws the card, labels and terminal, and moves the code's flow and the copies with `ParticleSystem.place` every frame
+from the step's clock (a particle sent back to the start of a flow springs there in a straight line: keep it unseen
+until it's there). Transitions follow PowerPoint's morph: what the next step has glides there, what it doesn't fades out
+where it is; for particles a step moved itself, whose place no layout knows, the next step's effect keeps them where
+they are as it starts (`Shipping.fadeInPlace`). `ParticleSystem.place(_:at:colors:)` moves and colors
 some particles every frame without forming again, and black particles stay unseen as they move. **Steps that continue each other**
 share one state object created in the story file (`NeuralNetwork`: one `ParticleSystem` and its layouts), so the next
 step's effect forms its shape from where the particles are; `ParticleShape.following(_:parts:)` orders a shape so a

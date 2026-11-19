@@ -257,7 +257,7 @@ extension NetworkLayout {
     /// to its place), or into the model, shrunk; an eighth stays as the input.
     static func recap(_ tasks: TaskLayouts, architecture: NetworkLayout) -> NetworkLayout {
         let layout = NetworkLayout(
-            title: "Conclusion", subtitle: "one image in · one YOLO model · 7 tasks out",
+            title: "Recap", subtitle: "one image in · one YOLO model · 7 tasks out",
             neurons: [], synapses: [], neuronSize: 0.02, restingTilt: 0)
         layout.splits = true
         let picture = recapPicture
@@ -327,7 +327,8 @@ extension NetworkLayout {
             points[i] = recapModel.center + blocks.points[solid[k % solid.count]] * recapModel.scale
         }
         // On the way, dim (they all leave the input together, adding up) and the model's unseen; lit once there.
-        let inModel = Set(order[min(8 * recapCopy, n)...])
+        layout.modelParticles = Array(order[min(8 * recapCopy, n)...])
+        let inModel = Set(layout.modelParticles)
         let onTheWay = (0..<n).map { i -> SIMD3<Float>? in inModel.contains(i) ? .zero : colors[i].map { $0 * 0.3 } }
         layout.shape = ParticleShape(
             points: input, offsets: zip(points, input).map { $0 - $1 }, parts: [], colors: onTheWay)

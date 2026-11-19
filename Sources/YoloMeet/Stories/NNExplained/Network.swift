@@ -54,6 +54,8 @@ final class NeuralNetwork {
     let tasks: TaskLayouts
     /// The recap: the picture, YOLO, and the seven tasks' outputs.
     let recap: NetworkLayout
+    /// Then YOLO back in its black box, on GitHub, published to PyPI and installed on a laptop.
+    let shipping: Shipping
     /// The rotation the particles last showed, so the next step's view turns from it instead of jumping.
     var rotation: simd_quatf?
 
@@ -92,6 +94,8 @@ final class NeuralNetwork {
         tasks = await NetworkLayout.tasks(results, between: Self.breathe)
         await Self.breathe()
         recap = .recap(tasks, architecture: architecture)
+        await Self.breathe()
+        shipping = Shipping(after: recap, architecture: architecture)
     }
 
     /// A short pause, so the run loop turns (the stage draws a frame, the panel updates).
@@ -192,6 +196,9 @@ final class NetworkLayout {
     /// The pixel grid's center, side and pixels on a side, on a layout that shows one pixel's values
     /// (`onePixel(of:)`, `PixelValuesEffect`), in the shape's units.
     var pixelGrid: (center: SIMD3<Float>, side: Float, cells: Int)?
+    /// The particles that make the model on a layout showing it among other things (the recap), so the next one can
+    /// move it on its own.
+    var modelParticles: [Int] = []
     /// A "}" beside part of the layout, with a label at its tip (the recap's model): its x, top, bottom and depth.
     var brace: (x: Float, top: Float, bottom: Float, z: Float)?
     /// The layout this one is a variant of (same blocks, some particles moved), if any.

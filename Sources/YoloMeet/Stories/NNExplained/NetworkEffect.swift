@@ -529,20 +529,3 @@ private func segmentDistance(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloa
     let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / max(dx * dx + dy * dy, 1e-6)))
     return p.distance(to: CGPoint(x: a.x + t * dx, y: a.y + t * dy))
 }
-
-/// The convex outline around points, in order (Andrew's monotone chain).
-private func convexHull(_ points: [CGPoint]) -> [CGPoint] {
-    let sorted = points.sorted { ($0.x, $0.y) < ($1.x, $1.y) }
-    let cross = { (o: CGPoint, a: CGPoint, b: CGPoint) in (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x) }
-    var lower: [CGPoint] = []
-    var upper: [CGPoint] = []
-    for p in sorted {
-        while lower.count >= 2, cross(lower[lower.count - 2], lower[lower.count - 1], p) <= 0 { lower.removeLast() }
-        lower.append(p)
-    }
-    for p in sorted.reversed() {
-        while upper.count >= 2, cross(upper[upper.count - 2], upper[upper.count - 1], p) <= 0 { upper.removeLast() }
-        upper.append(p)
-    }
-    return lower.dropLast() + upper.dropLast()
-}

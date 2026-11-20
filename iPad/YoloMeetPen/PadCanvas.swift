@@ -14,14 +14,13 @@ struct PadView: UIViewRepresentable {
 /// switches between the pencil and the eraser, and a squeeze (Apple Pencil Pro) picks the next color. It shows the stage's picture, and over it the pad's strokes the
 /// picture doesn't have yet (`InkView`).
 ///
-/// Fingers draw too until a pencil has touched the pad; from then on they are ignored, so a resting hand leaves no ink.
-/// On the whiteboard, two fingers pinch to zoom it and drag to slide it; once a pencil has touched the pad, one finger
-/// slides it too.
+/// Only the pencil draws: a resting hand or a finger leaves no ink. On the whiteboard, fingers pinch to zoom it and drag
+/// to slide it; a tap on a sticker selects it (its toolbar shows over it, `PadScreen`), elsewhere unselects it, and
+/// one finger dragging a sticker that isn't locked moves it.
 final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerDelegate {
     private let model: PadModel
     private let picture = UIImageView()
     private let ink: InkView
-    private var pencilSeen = false
     /// The touch that draws: others that land meanwhile are ignored.
     private var drawing: UITouch?
     /// Taps on the pencil's barrel, for an Apple Pencil Pro.
@@ -29,6 +28,10 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     /// Fingers on the whiteboard: pinching zooms it, dragging slides it. The pencil never moves it.
     private lazy var pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched))
     private lazy var drag = UIPanGestureRecognizer(target: self, action: #selector(dragged))
+    private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+    /// The sticker one finger is dragging, if the drag started on one that isn't locked; else the drag slides the
+    /// whiteboard.
+    private var dragging: Int?
 
     init(model: PadModel) {
         self.model = model
@@ -42,12 +45,11 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
             addSubview(view)
         }
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered)))
-        for fingers in [pinch, drag] as [UIGestureRecognizer] {
+        for fingers in [pinch, drag, tap] as [UIGestureRecognizer] {
             fingers.allowedTouchTypes = [UITouch.TouchType.direct.rawValue as NSNumber]
             fingers.delegate = self
             addGestureRecognizer(fingers)
         }
-        drag.minimumNumberOfTouches = 2
         addInteraction(UIPencilInteraction(delegate: self))
         model.redraw = { [weak ink] in ink?.changed(around: $0) }
         model.show = { [weak picture] in picture?.image = $0 }
@@ -67,8 +69,7 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     // Touches.
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        if touches.contains(where: { $0.type == .pencil }) { (pencilSeen, drag.minimumNumberOfTouches) = (true, 1) }
-        guard drawing == nil, let touch = touches.first(where: { $0.type == .pencil || !pencilSeen }) else { return }
+        guard drawing == nil, let touch = touches.first(where: { $0.type == .pencil }) else { return }
         drawing = touch
         model.begin(at: inkPoint(touch.location(in: self)), force: force(touch))
     }
@@ -82,23 +83,26 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) { ended(touches) }
-    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        // A finger's line is cut short when its touch turns out to move the whiteboard: it goes.
-        ended(touches, keeps: ![pinch, drag].contains { $0.state == .began || $0.state == .changed })
-    }
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) { ended(touches) }
 
-    private func ended(_ touches: Set<UITouch>, keeps: Bool = true) {
+    private func ended(_ touches: Set<UITouch>) {
         guard let drawing, touches.contains(drawing) else { return }
         self.drawing = nil
-        if keeps { model.end() } else { model.cancel() }
+        model.end()
     }
 
     // Fingers on the whiteboard.
 
-    /// Fingers move the whiteboard only (also the delegate's question: the same method).
+    /// Fingers act on the whiteboard only (also the delegate's question: the same method).
     override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        recognizer === pinch || recognizer === drag
+        [pinch, drag, tap].contains { $0 === recognizer }
             ? model.shows == .whiteboard : super.gestureRecognizerShouldBegin(recognizer)
+    }
+
+    /// Selects the sticker under the finger, or none.
+    @objc private func tapped(_ recognizer: UITapGestureRecognizer) {
+        guard recognizer.state == .ended else { return }
+        model.select(model.sticker(at: inkPoint(recognizer.location(in: self)))?.id)
     }
 
     func gestureRecognizer(
@@ -116,11 +120,26 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
         recognizer.scale = 1
     }
 
-    /// Slides as far as the fingers moved since the last change: up on the pad is up on the stage.
+    /// Moves the sticker the drag started on as far as the finger moved since the last change, or else slides the
+    /// whiteboard: up on the pad is up on the stage.
     @objc private func dragged(_ recognizer: UIPanGestureRecognizer) {
-        guard recognizer.state == .began || recognizer.state == .changed, inkUnit > 0 else { return }
+        if recognizer.state == .began {
+            // Where the finger came down: the drag begins once it has moved a little.
+            let moved = recognizer.translation(in: self)
+            let start = recognizer.location(in: self)
+            let sticker =
+                recognizer.numberOfTouches == 1
+                ? model.sticker(at: inkPoint(CGPoint(x: start.x - moved.x, y: start.y - moved.y))) : nil
+            dragging = sticker?.isLocked == false ? sticker?.id : nil
+            if let dragging { model.select(dragging) }
+        }
+        guard recognizer.state == .began || recognizer.state == .changed, inkUnit > 0 else {
+            dragging = nil
+            return
+        }
         let moved = recognizer.translation(in: self)
-        model.moveBoard(by: CGVector(dx: moved.x / inkUnit, dy: -moved.y / inkUnit))
+        let offset = CGVector(dx: moved.x / inkUnit, dy: -moved.y / inkUnit)
+        if let dragging { model.moveSticker(dragging, by: offset) } else { model.moveBoard(by: offset) }
         recognizer.setTranslation(.zero, in: self)
     }
 

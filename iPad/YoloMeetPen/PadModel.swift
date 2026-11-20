@@ -36,6 +36,15 @@ final class PadModel {
     /// The stories yolo-meet can show, and the one open.
     private(set) var stories: [StoryInfo] = []
     private(set) var currentStory: String?
+    /// The stickers yolo-meet can place on the whiteboard (none from an older yolo-meet).
+    private(set) var stickers: [StickerInfo] = []
+    /// The stickers on the whiteboard, where they are on stage (ink points), as yolo-meet last said; one being dragged
+    /// is moved here at once.
+    private(set) var placed: [PlacedSticker] = []
+    /// The sticker selected with a tap: its toolbar shows over it.
+    private(set) var selected: Int?
+    /// A sticker was asked for (placed or duplicated): the next new one is selected.
+    @ObservationIgnored private var isAdding = false
     /// Whether the story on stage has a step before the one it is on, and one after (both, until yolo-meet says).
     private(set) var steps = (hasPrevious: true, hasNext: true)
     /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
@@ -72,6 +81,7 @@ final class PadModel {
             } else {
                 (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
                 (self.board, self.steps) = ((1, true), (true, true))
+                (self.placed, self.selected) = ([], nil)
                 self.end()
                 self.forgetPicture()
             }
@@ -103,6 +113,16 @@ final class PadModel {
         case .cameraHidden(let hidden): cameraHidden = hidden
         case .board(let zoom, let isHome): board = (zoom, isHome)
         case .steps(let hasPrevious, let hasNext): steps = (hasPrevious, hasNext)
+        case .stickers(let stickers): self.stickers = Array(stickers.prefix(48))
+        case .placed(let placed):
+            // A sticker placed or duplicated from here is selected when it comes, so it can be moved at once.
+            let new = placed.map(\.id).filter { id in !self.placed.contains { $0.id == id } }
+            self.placed = Array(placed.prefix(200))
+            if isAdding, let newest = new.max() {
+                (selected, isAdding) = (newest, false)
+            } else if let selected, !placed.contains(where: { $0.id == selected }) {
+                self.selected = nil
+            }
         case .stories(let stories, let current): (self.stories, currentStory) = (Array(stories.prefix(24)), current)
         case .shows(let shows, let mode):
             (self.shows, self.mode) = (shows, mode)
@@ -176,15 +196,6 @@ final class PadModel {
         client.send(.up)
     }
 
-    /// The touch that drew turned out to be fingers moving the whiteboard: the start of a line it left goes.
-    func cancel() {
-        let drew = isDrawing
-        end()
-        guard drew, strokes.popLast() != nil else { return }
-        redraw?(nil)
-        client.send(.undo)
-    }
-
     /// The pen is over the pad at `point` (`height` from 0 at the glass to 1), or left it (nil).
     func hover(at point: CGPoint?, height: Double = 0) {
         if settings.erases, !isErasing { eraser = point }
@@ -220,6 +231,37 @@ final class PadModel {
     }
     /// The whiteboard's view goes back to where it started.
     func resetBoard() { client.send(.resetBoard) }
+    /// The sticker `id` is placed in the middle of the whiteboard's view.
+    func place(sticker id: String) {
+        isAdding = true
+        client.send(.sticker(id: id))
+    }
+
+    /// The topmost sticker at `point` (ink points), if any.
+    func sticker(at point: CGPoint) -> PlacedSticker? {
+        placed.last { CGRect(x: $0.x, y: $0.y, width: $0.width, height: $0.height).contains(point) }
+    }
+
+    /// Selects the sticker `id` (its toolbar shows over it), or none.
+    func select(_ id: Int?) { selected = id }
+
+    /// Drags the sticker `id` by `offset` (ink points): its frame here follows at once, the stage's picture a moment
+    /// later.
+    func moveSticker(_ id: Int, by offset: CGVector) {
+        guard let index = placed.firstIndex(where: { $0.id == id }), !placed[index].isLocked, offset != .zero else {
+            return
+        }
+        placed[index].x += offset.dx
+        placed[index].y += offset.dy
+        client.send(.moveSticker(id: id, dx: rounded(offset.dx), dy: rounded(offset.dy)))
+    }
+
+    /// Changes the selected sticker from its toolbar.
+    func edit(_ edit: StickerEdit) {
+        guard let selected else { return }
+        if edit == .duplicate { isAdding = true }
+        client.send(.editSticker(id: selected, edit))
+    }
 
     // Settings: the pad changes them at once, and yolo-meet answers only when it keeps something else.
 

@@ -57,7 +57,9 @@ Swift package (`Package.swift`), main-actor isolation by default (`.defaultIsola
   - `Render/`: `StageView` (`StageRenderer`) draws each frame into one Metal drawable at 60 fps. Core Image draws the
     video, RealityKit (`RealityLayer`) draws 3D and `ParticleSystem` (`Particles.swift`, GPU) draws particles, then
     SpriteKit draws 2D. `Effect` / `StageFrame` (`Effect.swift`) is what every overlay implements. `HandGestures` and
-    `MouseGestures` produce the same gestures. `DisplayEffects` is Display mode's overlay per task. `Theme` holds each
+    `MouseGestures` produce the same gestures. `Drawing` is the ink (stage and whiteboard pages), and `Stickers/`
+    the whiteboard's stickers: `Stickers.all` is the registry, each kind a `StickerContent` drawn as an image.
+    `DisplayEffects` is Display mode's overlay per task. `Theme` holds each
     model family's brand look.
   - `Stories/`: presentations made of steps, the presenter stepping through them. `Story.all` is the registry. One
     folder per story, with shared building blocks in `Kit/`. Assets live in `Stories/Assets/<Story>/`: they aren't

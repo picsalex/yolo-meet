@@ -64,6 +64,8 @@ final class PenInput {
     @ObservationIgnored private var isApplying = false
     /// The whiteboard's view as the pad was last told it: its zoom (to the percent) and whether it is home.
     @ObservationIgnored private var toldBoard: HostMessage?
+    /// The whiteboard's stickers as the pad was last told them.
+    @ObservationIgnored private var toldStickers: [PlacedSticker]?
 
     init(
         drawing: Drawing, stories: [StoryInfo], story: String, onStep: @escaping (Bool) -> Void,
@@ -88,17 +90,24 @@ final class PenInput {
                 self.host.send(.cameraHidden(self.cameraHidden))
                 self.host.send(.steps(hasPrevious: self.steps.hasPrevious, hasNext: self.steps.hasNext))
                 self.host.send(.stories(self.stories, current: self.story))
+                self.host.send(.stickers(Stickers.all.map(\.info)))
                 self.host.send(.ink(ids: self.drawing.penStrokes))
-                self.toldBoard = nil
+                (self.toldBoard, self.toldStickers) = (nil, nil)
                 self.sendBoard()
+                self.sendStickers()
             }
         }
         drawing.changed = { [weak self] change in
             switch change {
             case .settings: if self?.isApplying == false { self?.sendSettings() }
             case .removed(let ids): self?.host.send(.removed(ids: ids))
-            case .page: self.map { $0.host.send(.ink(ids: $0.drawing.penStrokes)) }
-            case .board: self?.sendBoard()
+            case .page:
+                self.map { $0.host.send(.ink(ids: $0.drawing.penStrokes)) }
+                self?.sendStickers()
+            case .board:
+                self?.sendBoard()
+                self?.sendStickers()
+            case .stickers: self?.sendStickers()
             }
         }
         UserDefaults.standard.set(code, forKey: "penCode")  // the first one is made here
@@ -118,6 +127,14 @@ final class PenInput {
 
     /// Makes another pairing code: every iPad has to be given it.
     func renewCode() { code = PenCode.new() }
+
+    /// Tells the pad where the whiteboard's stickers are on stage, when that changed.
+    private func sendStickers() {
+        let placed = drawing.placedStickers
+        guard placed != toldStickers else { return }
+        toldStickers = placed
+        host.send(.placed(placed))
+    }
 
     /// Tells the pad the whiteboard's zoom, when it shows another percent or went home or left it.
     private func sendBoard() {
@@ -173,6 +190,11 @@ final class PenInput {
                 zoom: CGFloat(min(max(scale, 0.5), 2)), around: point(x, y),
                 by: CGVector(dx: kept(dx, 2000), dy: kept(dy, 2000)))
         case .resetBoard: drawing.resetBoard()
+        case .sticker(let id): drawing.place(sticker: id)
+        case .moveSticker(let id, let dx, let dy):
+            func kept(_ value: Double) -> CGFloat { CGFloat(min(max(value, -2000), 2000)) }
+            drawing.moveSticker(id, by: CGVector(dx: kept(dx), dy: kept(dy)))
+        case .editSticker(let id, let edit): drawing.edit(sticker: id, edit)
         case .set(let settings): apply(settings)
         }
     }

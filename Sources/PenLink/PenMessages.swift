@@ -37,6 +37,55 @@ public nonisolated struct StoryInfo: Codable, Sendable, Equatable, Hashable {
     public init(id: String, title: String) { (self.id, self.title) = (id, title) }
 }
 
+/// A sticker the pad can place on the whiteboard: its id in yolo-meet, its name, and an SF Symbol for it.
+public nonisolated struct StickerInfo: Codable, Sendable, Equatable, Hashable {
+    public let id: String
+    public let title: String
+    public let symbol: String
+
+    public init(id: String, title: String, symbol: String) { (self.id, self.title, self.symbol) = (id, title, symbol) }
+}
+
+/// Something a placed sticker's kind can do (e.g. give its values new random ones), as the pad offers it: its id for
+/// yolo-meet, its name, and an SF Symbol for it.
+public nonisolated struct StickerAction: Codable, Sendable, Equatable, Hashable {
+    public let id: String
+    public let title: String
+    public let symbol: String
+
+    public init(id: String, title: String, symbol: String) { (self.id, self.title, self.symbol) = (id, title, symbol) }
+}
+
+/// A sticker on the whiteboard, as the pad sees it: its frame on stage (ink points, origin bottom-left), whether it is
+/// locked (it can't be moved, erased or deleted), and what its kind can do.
+public nonisolated struct PlacedSticker: Codable, Sendable, Equatable, Hashable {
+    public let id: Int
+    public var x: Double
+    public var y: Double
+    public let width: Double
+    public let height: Double
+    public let isLocked: Bool
+    public let actions: [StickerAction]
+
+    public init(
+        id: Int, x: Double, y: Double, width: Double, height: Double, isLocked: Bool, actions: [StickerAction]
+    ) {
+        (self.id, self.x, self.y, self.width, self.height) = (id, x, y, width, height)
+        (self.isLocked, self.actions) = (isLocked, actions)
+    }
+}
+
+/// A change to a placed sticker, from the pad.
+public nonisolated enum StickerEdit: Codable, Sendable, Equatable {
+    case lock(Bool)
+    /// A copy of it is placed beside it.
+    case duplicate
+    /// It leaves the whiteboard, unless it is locked.
+    case delete
+    /// One of its kind's actions (`StickerAction.id`).
+    case action(String)
+}
+
 /// The ink's settings: the same in the host's panel and on the pad, whichever changes them.
 public nonisolated struct InkSettings: Codable, Sendable, Equatable {
     /// The widths a line can have, in ink points.
@@ -92,6 +141,13 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case moveBoard(scale: Double, x: Double, y: Double, dx: Double, dy: Double)
     /// The whiteboard's view should go back to where it started: not zoomed, not slid.
     case resetBoard
+    /// A sticker (`StickerInfo.id`) should be placed in the middle of the whiteboard's view. Ignored when the
+    /// whiteboard isn't on stage.
+    case sticker(id: String)
+    /// Fingers drag a placed sticker (`PlacedSticker.id`) by (`dx`, `dy`), in ink points on the pad. A locked one stays.
+    case moveSticker(id: Int, dx: Double, dy: Double)
+    /// A placed sticker is changed from its toolbar on the pad.
+    case editSticker(id: Int, StickerEdit)
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.
     case set(InkSettings)
 }
@@ -116,6 +172,11 @@ public nonisolated enum HostMessage: Codable, Sendable, Equatable {
     /// Whether the story on stage has a step before the one it is on, and one after: the deck's Previous and Next are
     /// off at its ends. Sent on connecting and whenever either changes.
     case steps(hasPrevious: Bool, hasNext: Bool)
+    /// The stickers the pad can place on the whiteboard: sent on connecting.
+    case stickers([StickerInfo])
+    /// The stickers on the whiteboard, where they are on stage: sent on connecting and whenever one or the
+    /// whiteboard's view changes (none while the whiteboard isn't on stage).
+    case placed([PlacedSticker])
     /// How far the whiteboard's view is zoomed in (1 as it started), and whether it is where it started: sent on
     /// connecting and whenever either changes.
     case board(zoom: Double, isHome: Bool)

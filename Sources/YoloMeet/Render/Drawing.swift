@@ -15,6 +15,10 @@ import SpriteKit
 ///
 /// The whiteboard can be zoomed and slid (`board`): its strokes keep their place on it, and the mouse and the pen draw
 /// where they are on stage. A new line is as wide on stage at any zoom, and the eraser reaches as far.
+///
+/// The whiteboard also holds stickers (`Stickers`), placed from the pen app, under its ink: undo, the eraser and Clear
+/// remove them as they do strokes, unless they are locked. The pen app's fingers move them and its toolbar locks,
+/// duplicates, deletes them or does their kind's actions.
 @Observable
 final class Drawing {
     /// Who draws: each has its own stroke in progress.
@@ -27,6 +31,8 @@ final class Drawing {
         case page
         /// The whiteboard's view moved.
         case board
+        /// A sticker was placed, moved, changed or removed.
+        case stickers
     }
     /// Where the ink is: over the stage's picture, or on the whiteboard.
     enum Page { case stage, whiteboard }
@@ -101,7 +107,7 @@ final class Drawing {
                 stroke.endedAt = stroke.endedAt.map { $0 + away }
                 paper.addChild(stroke.node)
             }
-            strokeCount = strokes.count
+            counted()
             changed?(.page)
         }
     }
@@ -117,7 +123,7 @@ final class Drawing {
     var settings: InkSettings {
         InkSettings(color: color, width: width, fades: fades, fadeAfter: fadeAfter, erases: erases)
     }
-    /// Strokes on stage, for the panel's Undo and Clear.
+    /// Strokes and stickers on stage, for the panel's Undo and Clear.
     private(set) var strokeCount = 0
     /// The whiteboard's view, which fingers on the pad and the trackpad move. It stays while the whiteboard is off.
     @ObservationIgnored private(set) var board = BoardView() {
@@ -130,6 +136,11 @@ final class Drawing {
     @ObservationIgnored let node = SKNode()
     /// The strokes, in the page's view (`view`); the nib and the erasers' rings are over it, where they are on stage.
     @ObservationIgnored private let paper = SKNode()
+    /// The whiteboard's stickers, in the order they were placed, and their layer, under the strokes.
+    @ObservationIgnored private var stickers: [Sticker] = []
+    @ObservationIgnored private let stickerLayer = SKNode()
+    /// Strokes and stickers made so far: each new one's `order`, for undo.
+    @ObservationIgnored private var made = 0
     /// The view gliding home: where it was, and when it started (on the next frame).
     @ObservationIgnored private var homing: (from: BoardView, start: TimeInterval?)?
     /// Pixels per ink point the strokes are drawn at, and when the view last moved: while it zooms, the strokes' images
@@ -162,6 +173,8 @@ final class Drawing {
         (nib.node.zPosition, nib.node.isHidden) = (1, true)
         nib.node.addChild(nib.dot)
         nib.node.addChild(nib.ring)
+        stickerLayer.zPosition = -1
+        paper.addChild(stickerLayer)
         node.addChild(paper)
         node.addChild(nib.node)
     }
@@ -176,9 +189,11 @@ final class Drawing {
             return erase(from: point, to: point)
         }
         let stroke = Stroke(color: ink, id: id)
+        (stroke.order, made) = (made, made + 1)
         paper.addChild(stroke.node)
         strokes.append(stroke)
-        (current[source], strokeCount) = (stroke, strokes.count)
+        current[source] = stroke
+        counted()
         stroke.add(view.onBoard(point), width: CGFloat(width) * press / view.zoom)
     }
 
@@ -205,6 +220,16 @@ final class Drawing {
         let (view, radius) = (view, settings.eraserRadius)
         let touched = strokes.filter {
             $0.isTouched(from: view.onBoard(start), to: view.onBoard(end), radius: radius / view.zoom)
+        }
+        if page == .whiteboard {
+            let reach = radius / view.zoom
+            let (start, end) = (view.onBoard(start), view.onBoard(end))
+            let erased = stickers.filter {
+                guard !$0.isLocked else { return false }
+                let area = $0.frame.insetBy(dx: -reach, dy: -reach)
+                return area.contains(start) || area.contains(end)
+            }
+            if !erased.isEmpty { remove(erased) }
         }
         guard !touched.isEmpty else { return }
         strokes.removeAll { stroke in touched.contains { $0 === stroke } }
@@ -239,14 +264,102 @@ final class Drawing {
         homing = (board, nil)
     }
 
+    /// Places the sticker `id` (`Stickers`) in the middle of the whiteboard's view, as large on stage at any zoom, a
+    /// little aside from one already there. Only while the whiteboard is on stage.
+    func place(sticker id: String) {
+        guard page == .whiteboard, let content = Stickers.make(id) else { return }
+        let view = view
+        add(content, at: view.onBoard(CGPoint(x: 640, y: 360)), size: 1 / view.zoom)
+    }
+
+    /// The whiteboard's stickers as the pad sees them: where each is on stage, in ink points. None while it is off.
+    var placedStickers: [PlacedSticker] {
+        guard page == .whiteboard else { return [] }
+        let view = view
+        func rounded(_ value: CGFloat) -> Double { Double((value * 10).rounded() / 10) }
+        return stickers.map { sticker in
+            let frame = sticker.frame
+            return PlacedSticker(
+                id: sticker.order, x: rounded(frame.minX * view.zoom + view.pan.x),
+                y: rounded(frame.minY * view.zoom + view.pan.y), width: rounded(frame.width * view.zoom),
+                height: rounded(frame.height * view.zoom), isLocked: sticker.isLocked,
+                actions: sticker.content.actions)
+        }
+    }
+
+    /// Drags the sticker `id` by `offset` on stage (ink points), unless it is locked.
+    func moveSticker(_ id: Int, by offset: CGVector) {
+        guard page == .whiteboard, let sticker = stickers.first(where: { $0.order == id }), !sticker.isLocked else {
+            return
+        }
+        let zoom = view.zoom
+        sticker.node.position.x += offset.dx / zoom
+        sticker.node.position.y += offset.dy / zoom
+        changed?(.stickers)
+    }
+
+    /// Changes the sticker `id` from its toolbar on the pad.
+    func edit(sticker id: Int, _ edit: StickerEdit) {
+        guard page == .whiteboard, let sticker = stickers.first(where: { $0.order == id }) else { return }
+        switch edit {
+        case .lock(let locked):
+            sticker.isLocked = locked
+            counted()
+        case .duplicate:
+            let step = 30 / view.zoom
+            add(
+                sticker.content.copy(),
+                at: CGPoint(x: sticker.node.position.x + step, y: sticker.node.position.y - step),
+                size: sticker.node.xScale)
+        case .delete:
+            guard !sticker.isLocked else { return }
+            remove([sticker])
+        case .action(let action):
+            guard sticker.content.actions.contains(where: { $0.id == action }) else { return }
+            sticker.content.perform(action)
+            sticker.changed = true
+        }
+        changed?(.stickers)
+    }
+
+    /// Adds a sticker of `content` centered on `center` on the board (`size`: board points per sticker point), a
+    /// little aside from one already there.
+    private func add(_ content: any StickerContent, at center: CGPoint, size: CGFloat) {
+        var center = center
+        let step = 30 * size
+        while stickers.contains(where: {
+            hypot($0.node.position.x - center.x, $0.node.position.y - center.y) < step / 2
+        }) {
+            center = CGPoint(x: center.x + step, y: center.y - step)
+        }
+        let sticker = Sticker(
+            content, at: center, size: size, order: made, ink: .hex(PenLink.ink("FFFFFF", onWhiteboard: true)))
+        made += 1
+        stickers.append(sticker)
+        sticker.node.alpha = 0
+        sticker.node.run(.fadeIn(withDuration: 0.2))
+        stickerLayer.addChild(sticker.node)
+        counted()
+        changed?(.stickers)
+    }
+
     // The panel's, the stage keys' and the pad's actions.
 
+    /// The newest stroke leaves, or on the whiteboard the newest unlocked sticker if it came after it.
     func undo() {
+        if page == .whiteboard, let sticker = stickers.last(where: { !$0.isLocked }),
+            sticker.order > strokes.last?.order ?? -1
+        {
+            return remove([sticker])
+        }
         guard let stroke = strokes.popLast() else { return }
         remove([stroke])
     }
 
+    /// Every stroke leaves, and on the whiteboard every sticker but the locked ones.
     func clear() {
+        let unlocked = stickers.filter { !$0.isLocked }
+        if page == .whiteboard, !unlocked.isEmpty { remove(unlocked) }
         let all = strokes
         strokes = []
         remove(all)
@@ -269,6 +382,10 @@ final class Drawing {
         paper.position = view.pan
         if sharpness.unit == 0 || frame.time - sharpness.moved > 0.2 {
             sharpness.unit = frame.stage.unit * view.zoom
+        }
+        stickerLayer.isHidden = page != .whiteboard
+        if page == .whiteboard {
+            for sticker in stickers { sticker.redraw(unit: sharpness.unit) }
         }
         for stroke in strokes {
             stroke.redraw(unit: sharpness.unit)
@@ -326,9 +443,22 @@ final class Drawing {
             stroke.isFading = true
             stroke.node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
         }
-        strokeCount = strokes.count
+        counted()
         let ids = removed.compactMap(\.id)
         if !ids.isEmpty { changed?(.removed(ids)) }
+    }
+
+    /// Stickers leave the whiteboard.
+    private func remove(_ removed: [Sticker]) {
+        stickers.removeAll { sticker in removed.contains { $0 === sticker } }
+        for sticker in removed { sticker.node.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()])) }
+        counted()
+        changed?(.stickers)
+    }
+
+    /// Counts what Undo and Clear can remove: the strokes on stage, and the unlocked stickers on the whiteboard.
+    private func counted() {
+        strokeCount = strokes.count + (page == .whiteboard ? stickers.filter { !$0.isLocked }.count : 0)
     }
 }
 
@@ -367,6 +497,8 @@ private final class Stroke {
     let id: Int?
     /// When the stroke was finished, for fading ink.
     var endedAt: TimeInterval?
+    /// When it was made among the strokes and stickers (`Drawing.made`), for undo.
+    var order = 0
     private let color: CGColor
     private var points: [Sample] = []
     /// The line's middle up to the midpoint between the last two points: it no longer changes.

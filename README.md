@@ -132,6 +132,13 @@ turned off, until it is cleared.
   app's pad. Ink keeps its place on the board, light grey dots move with it so you can see it move where nothing is
   drawn, and a new line is as wide on stage at any zoom. The view stays as you left it when the whiteboard goes off
   and comes back.
+- **Stickers** (the pen app's smiley button, on the whiteboard): pick one from the list and it's placed in the middle
+  of the whiteboard's view, as large on stage at any zoom, under the ink so you can annotate it. Undo, the eraser and
+  Clear remove stickers as they do strokes, unless they are locked. On the pad, a tap on a sticker selects it, as on
+  Miro: a frame around it and a toolbar over it with its own actions, the lock (a locked sticker can't be moved,
+  erased or deleted), and a menu with Duplicate and Delete. One finger drags a sticker that isn't locked. The first is
+  a small neural network (two inputs, four hidden neurons, one output) with a random weight on each arrow and a bias in
+  each neuron; each arrow is as thick as its weight is large, and **Randomize values** gives them new ones.
 
 ### iPad pen
 
@@ -149,7 +156,7 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
 - The bar under the pad has the panel's ink settings: pencil or eraser, the sparkling pencil for Fading ink (lit
   while strokes fade), the ink's color (tap it to show the others over it, then one to pick it), and under the
   sliders button the width and the fading time. They are the same settings: a change on either shows on the other. It also undoes and
-  clears.
+  clears (after asking).
 - On the bar's left, a deck of large keys, as on a Stream Deck: **Display**, **Story** and **Whiteboard** switch what
   the stage shows, the one on stage lit yellow. **Story** opens a page of the stories, like a Stream Deck folder: pick
   one to show it (where it was if it's the one open, else from its start), or **Back**. **Whiteboard** again goes back to
@@ -160,9 +167,10 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   it glides the view back to where it started. A key lights when yolo-meet has done what it asks.
 - Over the pad, centered between the screen's top and the pad, a line says which Mac it draws on (or what the link
   waits for), with the key for the pairing code.
-- Fingers draw too until a pencil has touched the pad; after that they are ignored, so a resting hand leaves no ink.
-- On the whiteboard, two fingers pinch to zoom it and drag to slide it; once a pencil has touched the pad, one finger
-  slides it too. The pencil only draws.
+- Only the pencil draws: fingers leave no ink, so a resting hand doesn't either.
+- On the whiteboard, the smiley button lists the stickers: tap one to place it in the middle of the whiteboard's view
+  (it comes selected). Tap a sticker to select it, with its toolbar over it; tap elsewhere to unselect it.
+- On the whiteboard, fingers pinch to zoom it and drag to slide it; one finger dragging a sticker moves it instead.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
 or straight between the devices when they share none (Wi-Fi turned on, on both). A USB cable charges the iPad but

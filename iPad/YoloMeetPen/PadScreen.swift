@@ -5,7 +5,8 @@ import SwiftUI
 /// on a Stream Deck: Display mode, a story (its key opens a page of the stories to pick from) or the whiteboard on
 /// stage, hiding the camera, the story's steps while it shows, and the whiteboard's zoom while it shows (tapped, its
 /// view goes back to where it started); on its right, the pencil or the eraser, ink that
-/// stays or fades, the ink's color (the others show over it when it is tapped) and settings, undo and clear. Until
+/// stays or fades, the ink's color (the others show over it when it is tapped), the whiteboard's stickers while it
+/// shows (a list over their button), the ink's settings, undo and clear. Until
 /// yolo-meet's pairing code has been typed, it asks for it.
 struct PadScreen: View {
     @Environment(PadModel.self) private var model
@@ -14,6 +15,10 @@ struct PadScreen: View {
     @State private var showsInk = false
     /// The colors to pick from show over the ink's.
     @State private var showsColors = false
+    /// The stickers to place show over their button.
+    @State private var showsStickers = false
+    /// Clear asks first: it can't be undone.
+    @State private var confirmsClear = false
     @State private var showsPairing = false
 
     var body: some View {
@@ -27,6 +32,7 @@ struct PadScreen: View {
                     link.frame(maxWidth: .infinity).frame(height: max(32, (space.size.height - height) / 2))
                     PadView(model: model)
                         .frame(width: width, height: height)
+                        .overlay { StickerSelection(model: model, size: CGSize(width: width, height: height)) }
                         .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(0.25), lineWidth: 1))
                     Spacer(minLength: 0)
                 }
@@ -195,12 +201,56 @@ struct PadScreen: View {
             .preferredColorScheme(.dark)
             .presentationCompactAdaptation(.popover)
         }
+        if model.shows == .whiteboard, !model.stickers.isEmpty {
+            Button("Stickers", systemImage: "face.smiling") { showsStickers = true }
+                .popover(isPresented: $showsStickers, arrowEdge: .bottom) { stickerList }
+                .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        }
         Button("Ink", systemImage: "slider.horizontal.3") {
             showsInk = true
         }
         .popover(isPresented: $showsInk) { InkPanel(model: model) }
         Button("Undo", systemImage: "arrow.uturn.backward") { model.undo() }
-        Button("Clear", systemImage: "trash") { model.clear() }
+        Button("Clear", systemImage: "trash") { confirmsClear = true }
+            .confirmationDialog(
+                model.shows == .whiteboard ? "Clear the whiteboard?" : "Clear the ink?", isPresented: $confirmsClear,
+                titleVisibility: .visible
+            ) {
+                Button("Clear", role: .destructive) { model.clear() }
+            } message: {
+                Text(
+                    model.shows == .whiteboard
+                        ? "All its ink and its unlocked stickers leave. This can't be undone."
+                        : "All the ink on stage leaves. This can't be undone.")
+            }
+    }
+
+    /// The stickers to place on the whiteboard, as keys: one tapped is placed in the middle of its view.
+    private var stickerList: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Stickers").font(.headline)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 10)], spacing: 10) {
+                ForEach(model.stickers, id: \.self) { sticker in
+                    Button {
+                        model.place(sticker: sticker.id)
+                        showsStickers = false
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: sticker.symbol).font(.title2)
+                            Text(sticker.title).font(.caption.weight(.semibold)).multilineTextAlignment(.center)
+                                .lineLimit(2)
+                        }
+                        .frame(width: 96, height: 80)
+                    }
+                    .buttonStyle(DeckPress(isLit: false))
+                    .accessibilityLabel(sticker.title)
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 340)
+        .preferredColorScheme(.dark)
+        .presentationCompactAdaptation(.popover)
     }
 
     /// A color to pick, as it draws on stage now (white is near-black on the whiteboard), ringed when it is the ink's
@@ -224,6 +274,85 @@ struct PadScreen: View {
         case .outdated: "yolo-meet on the Mac and this app are different versions: update both"
         case .connected(let name): "Drawing on \(model.hostName ?? name)"
         }
+    }
+}
+
+/// The selected sticker, as on Miro: a frame around it with handles at its corners (none while it is locked), and over
+/// it (under it when there's no room above) its toolbar: its kind's actions, the lock, and a menu with Duplicate and
+/// Delete. Only the toolbar takes touches: the pad under it still draws and drags.
+private struct StickerSelection: View {
+    let model: PadModel
+    /// The pad's size.
+    let size: CGSize
+
+    var body: some View {
+        if model.shows == .whiteboard, let sticker = model.placed.first(where: { $0.id == model.selected }) {
+            let scale = size.width / PenLink.size.width
+            let frame = CGRect(
+                x: sticker.x * scale, y: size.height - (sticker.y + sticker.height) * scale,
+                width: sticker.width * scale, height: sticker.height * scale)
+            ZStack {
+                Rectangle().stroke(Self.blue, lineWidth: 1.5)
+                    .frame(width: frame.width, height: frame.height)
+                    .position(x: frame.midX, y: frame.midY)
+                if !sticker.isLocked {
+                    ForEach(0..<4, id: \.self) { corner in
+                        Circle().fill(.white).stroke(.gray, lineWidth: 1.5).frame(width: 12, height: 12)
+                            .position(
+                                x: corner % 2 == 0 ? frame.minX : frame.maxX, y: corner < 2 ? frame.minY : frame.maxY)
+                    }
+                }
+            }
+            .allowsHitTesting(false)
+            .overlay {
+                toolbar(sticker)
+                    .fixedSize()
+                    .position(
+                        x: min(max(frame.midX, 170), size.width - 170),
+                        y: frame.minY > 70 ? frame.minY - 38 : frame.maxY + 38)
+            }
+            .frame(width: size.width, height: size.height)
+        }
+    }
+
+    /// Miro's selection blue.
+    private static let blue = Color(red: 0.26, green: 0.38, blue: 1)
+
+    private func toolbar(_ sticker: PlacedSticker) -> some View {
+        HStack(spacing: 0) {
+            ForEach(sticker.actions, id: \.self) { action in
+                Button {
+                    model.edit(.action(action.id))
+                } label: {
+                    Label(action.title, systemImage: action.symbol).padding(.horizontal, 16).frame(maxHeight: .infinity)
+                }
+                Divider()
+            }
+            Button {
+                model.edit(.lock(!sticker.isLocked))
+            } label: {
+                Image(systemName: sticker.isLocked ? "lock.fill" : "lock.open")
+                    .frame(width: 52).frame(maxHeight: .infinity)
+            }
+            .accessibilityLabel(sticker.isLocked ? "Unlock" : "Lock")
+            Divider()
+            Menu {
+                Button("Duplicate", systemImage: "plus.square.on.square") { model.edit(.duplicate) }
+                Button("Delete", systemImage: "trash", role: .destructive) { model.edit(.delete) }
+                    .disabled(sticker.isLocked)
+            } label: {
+                Image(systemName: "ellipsis").rotationEffect(.degrees(90))
+                    .frame(width: 52).frame(maxHeight: .infinity)
+            }
+            .accessibilityLabel("More")
+        }
+        .labelStyle(.titleAndIcon)
+        .buttonStyle(.plain)
+        .font(.body.weight(.medium))
+        .foregroundStyle(.black)
+        .frame(height: 52)
+        .background(Capsule().fill(.white).shadow(color: .black.opacity(0.25), radius: 10, y: 3))
+        .environment(\.colorScheme, .light)
     }
 }
 

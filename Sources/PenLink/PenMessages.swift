@@ -13,6 +13,8 @@ public nonisolated enum PenLink {
     public static let version: UInt8 = 1
     /// The pad's surface in ink points: the stage at unit 1, origin bottom-left.
     public static let size = CGSize(width: 1280, height: 720)
+    /// The narrowest and widest a sticker can be made with its handles, on stage in ink points.
+    public static let stickerWidths = 60.0...2560.0
 
     /// How wide the line is for a press of `force` (1 is an average press), as a factor of the ink's width.
     public static func press(force: Double) -> Double { min(max(0.35 + 0.65 * force, 0.35), 2.2) }
@@ -62,8 +64,8 @@ public nonisolated struct PlacedSticker: Codable, Sendable, Equatable, Hashable 
     public let id: Int
     public var x: Double
     public var y: Double
-    public let width: Double
-    public let height: Double
+    public var width: Double
+    public var height: Double
     public let isLocked: Bool
     public let actions: [StickerAction]
 
@@ -146,6 +148,9 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case sticker(id: String)
     /// Fingers drag a placed sticker (`PlacedSticker.id`) by (`dx`, `dy`), in ink points on the pad. A locked one stays.
     case moveSticker(id: Int, dx: Double, dy: Double)
+    /// A handle of a placed sticker is dragged: its frame on stage should become (`x`, `y`, `width`) in ink points,
+    /// its bottom-left corner and its width, the height keeping its shape. A locked one stays.
+    case resizeSticker(id: Int, x: Double, y: Double, width: Double)
     /// A placed sticker is changed from its toolbar on the pad.
     case editSticker(id: Int, StickerEdit)
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.

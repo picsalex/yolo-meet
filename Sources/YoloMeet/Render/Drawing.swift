@@ -289,6 +289,20 @@ final class Drawing {
         changed?(.stickers)
     }
 
+    /// Resizes the sticker `id` so that its frame on stage (ink points) starts at (`x`, `y`), its bottom-left corner,
+    /// and is `width` wide (`PenLink.stickerWidths`), its height keeping its shape; unless it is locked.
+    func resizeSticker(_ id: Int, x: CGFloat, y: CGFloat, width: CGFloat) {
+        guard page == .whiteboard, let sticker = stickers.first(where: { $0.order == id }), !sticker.isLocked else {
+            return
+        }
+        let view = view
+        let size = sticker.content.size
+        let height = width * size.height / size.width
+        sticker.node.setScale(width / view.zoom / size.width)
+        sticker.node.position = view.onBoard(CGPoint(x: x + width / 2, y: y + height / 2))
+        changed?(.stickers)
+    }
+
     /// Changes the sticker `id` from its toolbar on the pad.
     func edit(sticker id: Int, _ edit: StickerEdit) {
         guard page == .whiteboard, let sticker = stickers.first(where: { $0.order == id }) else { return }

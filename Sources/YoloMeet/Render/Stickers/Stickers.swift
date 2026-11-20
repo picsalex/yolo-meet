@@ -82,8 +82,9 @@ final class Sticker {
         context.scaleBy(x: scale, y: scale)
         content.draw(in: context, ink: ink, paper: paper)
         guard let image = context.makeImage() else { return }
+        // A new texture keeps the sprite's size. Setting `size` here would undo its scale: SpriteKit's size is the
+        // scaled one.
         node.texture = SKTexture(cgImage: image)
-        node.size = size
     }
 }
 

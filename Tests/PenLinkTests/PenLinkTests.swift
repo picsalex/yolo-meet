@@ -12,6 +12,7 @@ import Testing
             .show(.whiteboard), .show(.display), .story(id: "nn-explained"), .restartStory, .hideCamera(true),
             .moveBoard(scale: 1.05, x: 640, y: 360, dx: -3.5, dy: 2), .resetBoard,
             .sticker(id: "neural-network"), .moveSticker(id: 3, dx: 12.5, dy: -4),
+            .resizeSticker(id: 3, x: 100, y: 50.5, width: 320),
             .editSticker(id: 3, .lock(true)), .editSticker(id: 3, .duplicate), .editSticker(id: 3, .delete),
             .editSticker(id: 3, .action("randomize")),
             .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,

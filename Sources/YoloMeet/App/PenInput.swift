@@ -194,6 +194,12 @@ final class PenInput {
         case .moveSticker(let id, let dx, let dy):
             func kept(_ value: Double) -> CGFloat { CGFloat(min(max(value, -2000), 2000)) }
             drawing.moveSticker(id, by: CGVector(dx: kept(dx), dy: kept(dy)))
+        case .resizeSticker(let id, let x, let y, let width):
+            func kept(_ value: Double) -> CGFloat { CGFloat(min(max(value, -10000), 10000)) }
+            guard [x, y, width].allSatisfy(\.isFinite) else { return }
+            let widths = PenLink.stickerWidths
+            drawing.resizeSticker(
+                id, x: kept(x), y: kept(y), width: CGFloat(min(max(width, widths.lowerBound), widths.upperBound)))
         case .editSticker(let id, let edit): drawing.edit(sticker: id, edit)
         case .set(let settings): apply(settings)
         }

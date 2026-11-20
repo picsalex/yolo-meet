@@ -15,8 +15,8 @@ struct PadView: UIViewRepresentable {
 /// picture doesn't have yet (`InkView`).
 ///
 /// Only the pencil draws: a resting hand or a finger leaves no ink. On the whiteboard, fingers pinch to zoom it and drag
-/// to slide it; a tap on a sticker selects it (its toolbar shows over it, `PadScreen`), elsewhere unselects it, and
-/// one finger dragging a sticker that isn't locked moves it.
+/// to slide it; a tap on a sticker selects it (its toolbar shows over it, `PadScreen`), elsewhere unselects it, one
+/// finger dragging a sticker that isn't locked moves it, and one dragging a handle of the selected one resizes it.
 final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerDelegate {
     private let model: PadModel
     private let picture = UIImageView()
@@ -32,6 +32,11 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     /// The sticker one finger is dragging, if the drag started on one that isn't locked; else the drag slides the
     /// whiteboard.
     private var dragging: Int?
+    /// The handle one finger is dragging, on the selected sticker: the sticker, its corner that stays put (ink points),
+    /// which way the dragged corner lies from it (±1 each), and how far that corner was from the finger.
+    private var resizing: (sticker: PlacedSticker, anchor: CGPoint, sx: CGFloat, sy: CGFloat, grab: CGVector)?
+    /// How far from a handle's middle a finger still takes it, in view points.
+    private static let handleReach: CGFloat = 30
 
     init(model: PadModel) {
         self.model = model
@@ -134,21 +139,71 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
             // Where the finger came down: the drag begins once it has moved a little.
             let moved = recognizer.translation(in: self)
             let start = recognizer.location(in: self)
-            let sticker =
-                recognizer.numberOfTouches == 1
-                ? model.sticker(at: inkPoint(CGPoint(x: start.x - moved.x, y: start.y - moved.y))) : nil
+            let down = inkPoint(CGPoint(x: start.x - moved.x, y: start.y - moved.y))
+            resizing = recognizer.numberOfTouches == 1 ? handle(at: down) : nil
+            let sticker = recognizer.numberOfTouches == 1 && resizing == nil ? model.sticker(at: down) : nil
             dragging = sticker?.isLocked == false ? sticker?.id : nil
             if let dragging { model.select(dragging) }
         }
         guard recognizer.state == .began || recognizer.state == .changed, inkUnit > 0 else {
-            if let dragging { model.endDrag(dragging) }
-            dragging = nil
+            if let id = dragging ?? resizing?.sticker.id { model.endDrag(id) }
+            (dragging, resizing) = (nil, nil)
             return
+        }
+        if let resizing {
+            return resize(resizing, to: inkPoint(recognizer.location(in: self)))
         }
         let moved = recognizer.translation(in: self)
         let offset = CGVector(dx: moved.x / inkUnit, dy: -moved.y / inkUnit)
         if let dragging { model.moveSticker(dragging, by: offset) } else { model.moveBoard(by: offset) }
         recognizer.setTranslation(.zero, in: self)
+    }
+
+    /// The handle of the selected sticker at `point` (ink points), if it isn't locked: the nearest corner in reach.
+    private func handle(
+        at point: CGPoint
+    ) -> (sticker: PlacedSticker, anchor: CGPoint, sx: CGFloat, sy: CGFloat, grab: CGVector)? {
+        guard let sticker = model.placed.first(where: { $0.id == model.selected }), !sticker.isLocked else {
+            return nil
+        }
+        let frame = CGRect(x: sticker.x, y: sticker.y, width: sticker.width, height: sticker.height)
+        let corners = [(-1, -1), (1, -1), (-1, 1), (1, 1)].map { (sx: CGFloat($0), sy: CGFloat($1)) }
+        func corner(_ sx: CGFloat, _ sy: CGFloat) -> CGPoint {
+            CGPoint(x: sx < 0 ? frame.minX : frame.maxX, y: sy < 0 ? frame.minY : frame.maxY)
+        }
+        func distance(_ sx: CGFloat, _ sy: CGFloat) -> CGFloat {
+            let at = corner(sx, sy)
+            return hypot(at.x - point.x, at.y - point.y)
+        }
+        guard let nearest = corners.min(by: { distance($0.sx, $0.sy) < distance($1.sx, $1.sy) }),
+            distance(nearest.sx, nearest.sy) * inkUnit <= Self.handleReach
+        else { return nil }
+        let at = corner(nearest.sx, nearest.sy)
+        return (
+            sticker, corner(-nearest.sx, -nearest.sy), nearest.sx, nearest.sy,
+            CGVector(dx: at.x - point.x, dy: at.y - point.y)
+        )
+    }
+
+    /// Resizes the sticker of the handle being dragged so that its corner follows the finger at `point` (ink points),
+    /// the opposite corner staying put and its shape kept.
+    private func resize(
+        _ handle: (sticker: PlacedSticker, anchor: CGPoint, sx: CGFloat, sy: CGFloat, grab: CGVector),
+        to point: CGPoint
+    ) {
+        let (sticker, anchor) = (handle.sticker, handle.anchor)
+        guard sticker.width > 0, sticker.height > 0 else { return }
+        let aspect = sticker.height / sticker.width
+        let corner = CGPoint(x: point.x + handle.grab.dx, y: point.y + handle.grab.dy)
+        // As wide as the corner reaches across or up, whichever is further, within the widths yolo-meet allows.
+        let reach = max((corner.x - anchor.x) * handle.sx, (corner.y - anchor.y) * handle.sy / aspect)
+        let width = min(max(reach, PenLink.stickerWidths.lowerBound), PenLink.stickerWidths.upperBound)
+        let height = width * aspect
+        model.resizeSticker(
+            sticker.id,
+            to: CGRect(
+                x: handle.sx > 0 ? anchor.x : anchor.x - width, y: handle.sy > 0 ? anchor.y : anchor.y - height,
+                width: width, height: height))
     }
 
     // The pencil over the glass, and its barrel.

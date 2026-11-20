@@ -46,10 +46,10 @@ final class PadModel {
     /// When a sticker was asked for (placed or duplicated): the next new one is selected, if it comes soon (yolo-meet
     /// ignores the ask when the whiteboard has just gone).
     @ObservationIgnored private var addingSince: Date?
-    /// The sticker being dragged here, where the finger has put it (ink points on stage), and once the finger has
-    /// lifted, until when it waits: yolo-meet's answers lag the finger, so until one has caught up with it (or that
-    /// time has passed) the sticker stays here rather than jumping back to where yolo-meet had it.
-    @ObservationIgnored private var held: (id: Int, x: Double, y: Double, until: Date?)?
+    /// The sticker being dragged or resized here, where and as large as the finger has made it (ink points on stage),
+    /// and once the finger has lifted, until when it waits: yolo-meet's answers lag the finger, so until one has caught
+    /// up with it (or that time has passed) the sticker stays here rather than jumping back to what yolo-meet had.
+    @ObservationIgnored private var held: (sticker: PlacedSticker, until: Date?)?
     /// Whether the story on stage has a step before the one it is on, and one after (both, until yolo-meet says).
     private(set) var steps = (hasPrevious: true, hasNext: true)
     /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
@@ -260,30 +260,49 @@ final class PadModel {
         }
         placed[index].x += dx
         placed[index].y += dy
-        held = (id, placed[index].x, placed[index].y, nil)
+        held = (placed[index], nil)
         client.send(.moveSticker(id: id, dx: dx, dy: dy))
     }
 
-    /// The finger dragging the sticker `id` lifted: it stays where it was put until yolo-meet catches up.
+    /// A handle of the sticker `id` is dragged: its frame becomes `frame` (ink points, its height kept to its shape by
+    /// yolo-meet), here at once, the stage's picture a moment later.
+    func resizeSticker(_ id: Int, to frame: CGRect) {
+        guard let index = placed.firstIndex(where: { $0.id == id }), !placed[index].isLocked else { return }
+        let (x, y, width) = (rounded(frame.minX), rounded(frame.minY), rounded(frame.width))
+        let height = rounded(width * placed[index].height / max(placed[index].width, 1))
+        guard x != placed[index].x || y != placed[index].y || width != placed[index].width else { return }
+        (placed[index].x, placed[index].y, placed[index].width, placed[index].height) = (x, y, width, height)
+        held = (placed[index], nil)
+        client.send(.resizeSticker(id: id, x: x, y: y, width: width))
+    }
+
+    /// The finger dragging the sticker `id` or one of its handles lifted: it stays where it was put until yolo-meet
+    /// catches up.
     func endDrag(_ id: Int) {
-        if held?.id == id { held?.until = Date().addingTimeInterval(1) }
+        if held?.sticker.id == id { held?.until = Date().addingTimeInterval(1) }
     }
 
     /// yolo-meet's stickers, with the one being dragged where the finger put it (`held`) until yolo-meet has caught up
     /// with the finger, once it has lifted.
     private func holding(_ placed: [PlacedSticker]) -> [PlacedSticker] {
         guard let held else { return placed }
-        guard let index = placed.firstIndex(where: { $0.id == held.id }) else {
+        let kept = held.sticker
+        guard let index = placed.firstIndex(where: { $0.id == kept.id }) else {
             self.held = nil  // deleted meanwhile
             return placed
         }
-        let caughtUp = abs(placed[index].x - held.x) < 0.5 && abs(placed[index].y - held.y) < 0.5
+        let caughtUp = [
+            (placed[index].x, kept.x), (placed[index].y, kept.y), (placed[index].width, kept.width),
+            (placed[index].height, kept.height),
+        ].allSatisfy { abs($0 - $1) < 0.5 }
         if let until = held.until, caughtUp || Date() > until {
             self.held = nil
             return placed
         }
         var placed = placed
-        (placed[index].x, placed[index].y) = (held.x, held.y)
+        (placed[index].x, placed[index].y, placed[index].width, placed[index].height) = (
+            kept.x, kept.y, kept.width, kept.height
+        )
         return placed
     }
 

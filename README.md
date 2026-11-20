@@ -137,7 +137,8 @@ turned off, until it is cleared.
   remove stickers as they do strokes, unless they are locked; the eraser erases only the ink drawn on them. On the pad,
   a tap on a sticker selects it, as on Miro: a frame around it and a toolbar over it with Delete, the lock (a locked
   sticker can't be moved, deleted, undone or cleared), and a menu with its own actions and Duplicate. One finger drags
-  a sticker that isn't locked. The first is
+  a sticker that isn't locked, or one of the selected sticker's corner handles to resize it, keeping its shape. The
+  first is
   a small neural network (two inputs, four hidden neurons, one output) with a random weight on each arrow and a bias in
   each neuron; each arrow is as thick as its weight is large, and **Randomize values** gives them new ones.
 
@@ -171,7 +172,8 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
 - Only the pencil draws: fingers leave no ink, so a resting hand doesn't either.
 - On the whiteboard, the smiley button lists the stickers: tap one to place it in the middle of the whiteboard's view
   (it comes selected). Tap a sticker to select it, with its toolbar over it; tap elsewhere to unselect it.
-- On the whiteboard, fingers pinch to zoom it and drag to slide it; one finger dragging a sticker moves it instead.
+- On the whiteboard, fingers pinch to zoom it and drag to slide it; one finger dragging a sticker moves it instead,
+  and dragging a corner handle of the selected one resizes it.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
 or straight between the devices when they share none (Wi-Fi turned on, on both). A USB cable charges the iPad but

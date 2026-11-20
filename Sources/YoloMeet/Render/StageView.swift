@@ -316,36 +316,38 @@ final class StageRenderer: NSObject, MTKViewDelegate {
     }
 
     /// The whiteboard's dots, `dotSpacing` ink points apart on it: a grid that zooms and slides with its view, so the view
-    /// shows moving where nothing is drawn yet. None where they would be too close together to tell apart.
+    /// shows moving where nothing is drawn yet. Each dot stays `dotSize` across on stage at any zoom, as on Miro, sharp.
+    /// None where they would be too close together to tell apart.
     private func boardDots(alpha: CGFloat, in bounds: CGRect) -> CIImage? {
         let (view, unit) = (model.drawing.board, bounds.height / 720)
         let spacing = Self.dotSpacing * view.zoom * unit  // in pixels
-        guard spacing >= 8, let tile = Self.dotTile else { return nil }
+        guard spacing >= 8 else { return nil }
+        // One tile, `tile` pixels across, scaled to the spacing: its dot drawn as much smaller as it will be scaled
+        // up, with a pixel's soft edge after scaling.
+        let tile: CGFloat = 64
+        let (scale, middle) = (spacing / tile, CGPoint(x: tile / 2, y: tile / 2))
+        let radius = min(Self.dotSize * unit, spacing / 3) / 2 / scale
+        let dot = CIFilter.radialGradient()
+        (dot.center, dot.color0, dot.color1) = (middle, Self.dotColor, .clear)
+        (dot.radius0, dot.radius1) = (Float(max(radius - 0.5 / scale, 0)), Float(radius + 0.5 / scale))
         let tiles = CIFilter.affineTile()
-        tiles.inputImage = tile
+        // Over a clear tile: cropped alone, the gradient's extent shrinks to the dot, and so would the grid.
+        tiles.inputImage = dot.outputImage?.composited(
+            over: CIImage(color: .clear).cropped(to: CGRect(x: 0, y: 0, width: tile, height: tile)))
         tiles.transform = CGAffineTransform(
-            a: spacing / tile.extent.width, b: 0, c: 0, d: spacing / tile.extent.width, tx: view.pan.x * unit,
-            ty: view.pan.y * unit)
+            a: scale, b: 0, c: 0, d: scale, tx: view.pan.x * unit, ty: view.pan.y * unit)
         let faded = CIFilter.colorMatrix()
         faded.inputImage = tiles.outputImage?.cropped(to: bounds)
         faded.aVector = CIVector(x: 0, y: 0, z: 0, w: alpha)
         return faded.outputImage
     }
 
-    /// Ink points between the whiteboard's dots, when it isn't zoomed.
+    /// Ink points between the whiteboard's dots, when it isn't zoomed, and how wide each dot is on stage (ink points:
+    /// as it was at that spacing, at any zoom).
     private static let dotSpacing: CGFloat = 40
-    /// One dot, in the middle of the grid's tile: light grey.
-    private static let dotTile: CIImage? = {
-        let size = 64
-        guard
-            let context = CGContext(
-                data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-        else { return nil }
-        context.setFillColor(CGColor(gray: 0.78, alpha: 1))
-        context.fillEllipse(in: CGRect(x: 30, y: 30, width: 4, height: 4))
-        return context.makeImage().map { CIImage(cgImage: $0) }
-    }()
+    private static let dotSize: CGFloat = 2.5
+    /// Light grey.
+    private static let dotColor = CIColor(cgColor: CGColor(srgbRed: 0.78, green: 0.78, blue: 0.78, alpha: 1))
 
     /// When the step on stage started (its first frame), for `StageFrame.stepTime`.
     private var stepStart: TimeInterval?

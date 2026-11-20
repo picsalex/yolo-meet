@@ -43,8 +43,13 @@ final class PadModel {
     private(set) var placed: [PlacedSticker] = []
     /// The sticker selected with a tap: its toolbar shows over it.
     private(set) var selected: Int?
-    /// A sticker was asked for (placed or duplicated): the next new one is selected.
-    @ObservationIgnored private var isAdding = false
+    /// When a sticker was asked for (placed or duplicated): the next new one is selected, if it comes soon (yolo-meet
+    /// ignores the ask when the whiteboard has just gone).
+    @ObservationIgnored private var addingSince: Date?
+    /// The sticker being dragged here, where the finger has put it (ink points on stage), and once the finger has
+    /// lifted, until when it waits: yolo-meet's answers lag the finger, so until one has caught up with it (or that
+    /// time has passed) the sticker stays here rather than jumping back to where yolo-meet had it.
+    @ObservationIgnored private var held: (id: Int, x: Double, y: Double, until: Date?)?
     /// Whether the story on stage has a step before the one it is on, and one after (both, until yolo-meet says).
     private(set) var steps = (hasPrevious: true, hasNext: true)
     /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
@@ -81,7 +86,7 @@ final class PadModel {
             } else {
                 (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
                 (self.board, self.steps) = ((1, true), (true, true))
-                (self.placed, self.selected) = ([], nil)
+                (self.placed, self.selected, self.held, self.addingSince) = ([], nil, nil, nil)
                 self.end()
                 self.forgetPicture()
             }
@@ -117,9 +122,10 @@ final class PadModel {
         case .placed(let placed):
             // A sticker placed or duplicated from here is selected when it comes, so it can be moved at once.
             let new = placed.map(\.id).filter { id in !self.placed.contains { $0.id == id } }
-            self.placed = Array(placed.prefix(200))
-            if isAdding, let newest = new.max() {
-                (selected, isAdding) = (newest, false)
+            self.placed = holding(Array(placed.prefix(200)))
+            if let since = addingSince, Date().timeIntervalSince(since) > 2 { addingSince = nil }
+            if addingSince != nil, let newest = new.max() {
+                (selected, addingSince) = (newest, nil)
             } else if let selected, !placed.contains(where: { $0.id == selected }) {
                 self.selected = nil
             }
@@ -233,7 +239,7 @@ final class PadModel {
     func resetBoard() { client.send(.resetBoard) }
     /// The sticker `id` is placed in the middle of the whiteboard's view.
     func place(sticker id: String) {
-        isAdding = true
+        addingSince = Date()
         client.send(.sticker(id: id))
     }
 
@@ -246,20 +252,45 @@ final class PadModel {
     func select(_ id: Int?) { selected = id }
 
     /// Drags the sticker `id` by `offset` (ink points): its frame here follows at once, the stage's picture a moment
-    /// later.
+    /// later. It moves here by what is sent, so it ends where yolo-meet puts it.
     func moveSticker(_ id: Int, by offset: CGVector) {
-        guard let index = placed.firstIndex(where: { $0.id == id }), !placed[index].isLocked, offset != .zero else {
+        let (dx, dy) = (rounded(offset.dx), rounded(offset.dy))
+        guard let index = placed.firstIndex(where: { $0.id == id }), !placed[index].isLocked, dx != 0 || dy != 0 else {
             return
         }
-        placed[index].x += offset.dx
-        placed[index].y += offset.dy
-        client.send(.moveSticker(id: id, dx: rounded(offset.dx), dy: rounded(offset.dy)))
+        placed[index].x += dx
+        placed[index].y += dy
+        held = (id, placed[index].x, placed[index].y, nil)
+        client.send(.moveSticker(id: id, dx: dx, dy: dy))
+    }
+
+    /// The finger dragging the sticker `id` lifted: it stays where it was put until yolo-meet catches up.
+    func endDrag(_ id: Int) {
+        if held?.id == id { held?.until = Date().addingTimeInterval(1) }
+    }
+
+    /// yolo-meet's stickers, with the one being dragged where the finger put it (`held`) until yolo-meet has caught up
+    /// with the finger, once it has lifted.
+    private func holding(_ placed: [PlacedSticker]) -> [PlacedSticker] {
+        guard let held else { return placed }
+        guard let index = placed.firstIndex(where: { $0.id == held.id }) else {
+            self.held = nil  // deleted meanwhile
+            return placed
+        }
+        let caughtUp = abs(placed[index].x - held.x) < 0.5 && abs(placed[index].y - held.y) < 0.5
+        if let until = held.until, caughtUp || Date() > until {
+            self.held = nil
+            return placed
+        }
+        var placed = placed
+        (placed[index].x, placed[index].y) = (held.x, held.y)
+        return placed
     }
 
     /// Changes the selected sticker from its toolbar.
     func edit(_ edit: StickerEdit) {
         guard let selected else { return }
-        if edit == .duplicate { isAdding = true }
+        if edit == .duplicate { addingSince = Date() }
         client.send(.editSticker(id: selected, edit))
     }
 

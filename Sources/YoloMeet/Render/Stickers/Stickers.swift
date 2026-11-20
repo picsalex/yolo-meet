@@ -4,7 +4,8 @@ import SpriteKit
 
 /// Pictures to place on the whiteboard, picked from the pen app's sticker list (`Drawing.place(sticker:)`). Each kind
 /// draws itself as an image in the whiteboard's ink, so it stays sharp at any zoom. A kind can offer actions of its own
-/// (`StickerContent.actions`), shown in the sticker's toolbar on the pad; its content is drawn again after one.
+/// (`StickerContent.actions`), shown in the menu of the sticker's toolbar on the pad; its content is drawn again after
+/// one.
 enum Stickers {
     /// The kinds, in the list's order: what the pad shows, and how to make one.
     static let all: [(info: StickerInfo, make: () -> any StickerContent)] = [
@@ -45,7 +46,7 @@ final class Sticker {
     let content: any StickerContent
     /// When it was placed, among the board's strokes: undo takes the newest. It names it for the pad, too.
     let order: Int
-    /// It can't be moved, erased, deleted, undone or cleared until it is unlocked.
+    /// It can't be moved, deleted, undone or cleared until it is unlocked.
     var isLocked = false
     /// Its content was changed: it is drawn again on the next frame.
     var changed = true

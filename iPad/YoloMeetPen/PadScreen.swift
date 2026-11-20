@@ -278,8 +278,8 @@ struct PadScreen: View {
 }
 
 /// The selected sticker, as on Miro: a frame around it with handles at its corners (none while it is locked), and over
-/// it (under it when there's no room above) its toolbar: its kind's actions, the lock, and a menu with Duplicate and
-/// Delete. Only the toolbar takes touches: the pad under it still draws and drags.
+/// it (under it when there's no room above) its toolbar: Delete, the lock, and a menu with its kind's actions and
+/// Duplicate. Only the toolbar takes touches: the pad under it still draws and drags.
 private struct StickerSelection: View {
     let model: PadModel
     /// The pad's size.
@@ -320,14 +320,14 @@ private struct StickerSelection: View {
 
     private func toolbar(_ sticker: PlacedSticker) -> some View {
         HStack(spacing: 0) {
-            ForEach(sticker.actions, id: \.self) { action in
-                Button {
-                    model.edit(.action(action.id))
-                } label: {
-                    Label(action.title, systemImage: action.symbol).padding(.horizontal, 16).frame(maxHeight: .infinity)
-                }
-                Divider()
+            Button {
+                model.edit(.delete)
+            } label: {
+                Label("Delete", systemImage: "trash").padding(.horizontal, 16).frame(maxHeight: .infinity)
             }
+            .disabled(sticker.isLocked)
+            .opacity(sticker.isLocked ? 0.35 : 1)
+            Divider()
             Button {
                 model.edit(.lock(!sticker.isLocked))
             } label: {
@@ -337,9 +337,10 @@ private struct StickerSelection: View {
             .accessibilityLabel(sticker.isLocked ? "Unlock" : "Lock")
             Divider()
             Menu {
+                ForEach(sticker.actions, id: \.self) { action in
+                    Button(action.title, systemImage: action.symbol) { model.edit(.action(action.id)) }
+                }
                 Button("Duplicate", systemImage: "plus.square.on.square") { model.edit(.duplicate) }
-                Button("Delete", systemImage: "trash", role: .destructive) { model.edit(.delete) }
-                    .disabled(sticker.isLocked)
             } label: {
                 Image(systemName: "ellipsis").rotationEffect(.degrees(90))
                     .frame(width: 52).frame(maxHeight: .infinity)

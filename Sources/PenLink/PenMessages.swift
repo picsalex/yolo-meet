@@ -57,7 +57,7 @@ public nonisolated struct StickerAction: Codable, Sendable, Equatable, Hashable 
 }
 
 /// A sticker on the whiteboard, as the pad sees it: its frame on stage (ink points, origin bottom-left), whether it is
-/// locked (it can't be moved, erased or deleted), and what its kind can do.
+/// locked (it can't be moved or deleted), and what its kind can do.
 public nonisolated struct PlacedSticker: Codable, Sendable, Equatable, Hashable {
     public let id: Int
     public var x: Double

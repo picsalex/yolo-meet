@@ -71,6 +71,12 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard drawing == nil, let touch = touches.first(where: { $0.type == .pencil }) else { return }
         drawing = touch
+        // A hand resting on the glass while the pencil draws must not move the board or a sticker: fingers already
+        // pinching or dragging stop, and none start until the pencil lifts (`gestureRecognizerShouldBegin`).
+        for fingers in [pinch, drag, tap] as [UIGestureRecognizer] where fingers.state != .possible {
+            fingers.isEnabled = false  // cancels it
+            fingers.isEnabled = true
+        }
         model.begin(at: inkPoint(touch.location(in: self)), force: force(touch))
     }
 
@@ -93,10 +99,11 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
 
     // Fingers on the whiteboard.
 
-    /// Fingers act on the whiteboard only (also the delegate's question: the same method).
+    /// Fingers act on the whiteboard only, and not while the pencil draws (also the delegate's question: the same
+    /// method).
     override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
         [pinch, drag, tap].contains { $0 === recognizer }
-            ? model.shows == .whiteboard : super.gestureRecognizerShouldBegin(recognizer)
+            ? model.shows == .whiteboard && drawing == nil : super.gestureRecognizerShouldBegin(recognizer)
     }
 
     /// Selects the sticker under the finger, or none.
@@ -134,6 +141,7 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
             if let dragging { model.select(dragging) }
         }
         guard recognizer.state == .began || recognizer.state == .changed, inkUnit > 0 else {
+            if let dragging { model.endDrag(dragging) }
             dragging = nil
             return
         }

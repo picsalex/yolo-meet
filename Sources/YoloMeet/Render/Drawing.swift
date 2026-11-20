@@ -16,9 +16,9 @@ import SpriteKit
 /// The whiteboard can be zoomed and slid (`board`): its strokes keep their place on it, and the mouse and the pen draw
 /// where they are on stage. A new line is as wide on stage at any zoom, and the eraser reaches as far.
 ///
-/// The whiteboard also holds stickers (`Stickers`), placed from the pen app, under its ink: undo, the eraser and Clear
-/// remove them as they do strokes, unless they are locked. The pen app's fingers move them and its toolbar locks,
-/// duplicates, deletes them or does their kind's actions.
+/// The whiteboard also holds stickers (`Stickers`), placed from the pen app, under its ink: undo and Clear remove them
+/// as they do strokes, unless they are locked. The eraser leaves them: it erases the ink drawn on them. The pen app's
+/// fingers move them and its toolbar locks, duplicates, deletes them or does their kind's actions.
 @Observable
 final class Drawing {
     /// Who draws: each has its own stroke in progress.
@@ -215,21 +215,12 @@ final class Drawing {
     /// The color the next strokes are drawn in, on this page.
     private var ink: NSColor { .hex(PenLink.ink(color, onWhiteboard: page == .whiteboard)) }
 
-    /// The strokes the eraser touches on its way from `start` to `end` leave the stage.
+    /// The strokes the eraser touches on its way from `start` to `end` leave the stage. Stickers stay: erasing the ink
+    /// drawn on one must not take it too (Delete, undo and Clear remove them).
     private func erase(from start: CGPoint, to end: CGPoint) {
         let (view, radius) = (view, settings.eraserRadius)
         let touched = strokes.filter {
             $0.isTouched(from: view.onBoard(start), to: view.onBoard(end), radius: radius / view.zoom)
-        }
-        if page == .whiteboard {
-            let reach = radius / view.zoom
-            let (start, end) = (view.onBoard(start), view.onBoard(end))
-            let erased = stickers.filter {
-                guard !$0.isLocked else { return false }
-                let area = $0.frame.insetBy(dx: -reach, dy: -reach)
-                return area.contains(start) || area.contains(end)
-            }
-            if !erased.isEmpty { remove(erased) }
         }
         guard !touched.isEmpty else { return }
         strokes.removeAll { stroke in touched.contains { $0 === stroke } }

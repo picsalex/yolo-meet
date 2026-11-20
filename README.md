@@ -133,10 +133,11 @@ turned off, until it is cleared.
   drawn, and a new line is as wide on stage at any zoom. The view stays as you left it when the whiteboard goes off
   and comes back.
 - **Stickers** (the pen app's smiley button, on the whiteboard): pick one from the list and it's placed in the middle
-  of the whiteboard's view, as large on stage at any zoom, under the ink so you can annotate it. Undo, the eraser and
-  Clear remove stickers as they do strokes, unless they are locked. On the pad, a tap on a sticker selects it, as on
-  Miro: a frame around it and a toolbar over it with its own actions, the lock (a locked sticker can't be moved,
-  erased or deleted), and a menu with Duplicate and Delete. One finger drags a sticker that isn't locked. The first is
+  of the whiteboard's view, as large on stage at any zoom, under the ink so you can annotate it. Undo and Clear
+  remove stickers as they do strokes, unless they are locked; the eraser erases only the ink drawn on them. On the pad,
+  a tap on a sticker selects it, as on Miro: a frame around it and a toolbar over it with Delete, the lock (a locked
+  sticker can't be moved, deleted, undone or cleared), and a menu with its own actions and Duplicate. One finger drags
+  a sticker that isn't locked. The first is
   a small neural network (two inputs, four hidden neurons, one output) with a random weight on each arrow and a bias in
   each neuron; each arrow is as thick as its weight is large, and **Randomize values** gives them new ones.
 

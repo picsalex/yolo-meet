@@ -50,6 +50,8 @@ final class PadModel {
     /// and once the finger has lifted, until when it waits: yolo-meet's answers lag the finger, so until one has caught
     /// up with it (or that time has passed) the sticker stays here rather than jumping back to what yolo-meet had.
     @ObservationIgnored private var held: (sticker: PlacedSticker, until: Date?)?
+    /// The story's keys held down on the deck (the space bar's and Command's on the Mac): lit while held.
+    private(set) var heldKeys: Set<StoryKey> = []
     /// Whether the story on stage has a step before the one it is on, and one after (both, until yolo-meet says).
     private(set) var steps = (hasPrevious: true, hasNext: true)
     /// How far the whiteboard is zoomed in (1 as it started), and whether its view is where it started.
@@ -87,6 +89,7 @@ final class PadModel {
                 (self.hostName, self.shows, self.mode, self.cameraHidden) = (nil, .display, .display, false)
                 (self.board, self.steps) = ((1, true), (true, true))
                 (self.placed, self.selected, self.held, self.addingSince) = ([], nil, nil, nil)
+                self.heldKeys = []
                 self.end()
                 self.forgetPicture()
             }
@@ -133,6 +136,7 @@ final class PadModel {
         case .shows(let shows, let mode):
             (self.shows, self.mode) = (shows, mode)
             redraw?(nil)  // white ink is drawn another color on the whiteboard
+            if shows != .story { for key in heldKeys { hold(key, false) } }
         case .ink(let ids): keep { ids.contains($0.id) }
         case .removed(let ids): keep { !ids.contains($0.id) }
         case .picture(let jpeg, let through):
@@ -237,6 +241,24 @@ final class PadModel {
     }
     /// The whiteboard's view goes back to where it started.
     func resetBoard() { client.send(.resetBoard) }
+    /// A finger on the story, as the mouse on the Mac's stage (points in ink points).
+    func touch(_ touch: StoryTouch) {
+        guard shows == .story else { return }
+        switch touch {
+        case .down(let x, let y): client.send(.touch(.down(x: rounded(x), y: rounded(y))))
+        case .move(let x, let y): client.send(.touch(.move(x: rounded(x), y: rounded(y))))
+        case .zoom(let scale, let x, let y):
+            guard scale != 1 else { return }
+            client.send(.touch(.zoom(scale: rounded(scale, to: 10_000), x: rounded(x), y: rounded(y))))
+        case .up, .zoomEnded: client.send(.touch(touch))
+        }
+    }
+    /// A story key held down on the deck, or let go: the Mac's space bar or Command, for the fingers.
+    func hold(_ key: StoryKey, _ down: Bool) {
+        guard down != heldKeys.contains(key) else { return }
+        if down { heldKeys.insert(key) } else { heldKeys.remove(key) }
+        client.send(.hold(key, down))
+    }
     /// The sticker `id` is placed in the middle of the whiteboard's view.
     func place(sticker id: String) {
         addingSince = Date()

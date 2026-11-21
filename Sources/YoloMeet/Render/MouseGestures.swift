@@ -1,15 +1,19 @@
 import AppKit
 
 /// The hand gestures made with the mouse or trackpad on the stage, in stage points, so every scene can be driven
-/// without a camera: the cursor points (a `Pointer`, hand `Pointer.mouse`), pressing and moving drags, and a trackpad
-/// pinch or Command + scroll wheel zooms around the cursor. The stage view feeds it its events; the stage reads it once
-/// per frame (`update`), and while it makes a gesture that gesture wins over the hands'.
+/// without a camera: the cursor points (a `Pointer`, hand `Pointer.mouse`), pressing and moving drags, pressing while
+/// Command is held makes a fist that follows the cursor until released, and a trackpad pinch or Command + scroll wheel
+/// zooms around the cursor. The stage view feeds it its events; the stage reads it once per frame (`update`), and while
+/// it makes a gesture that gesture wins over the hands'. The pen app's fingers make the same gestures through another
+/// one (`PenInput.fingers`, hand `Pointer.pad`).
 final class MouseGestures {
     /// How long a scroll-wheel zoom lasts after its last wheel event (a wheel has no end of its own).
     static let wheelIdle: TimeInterval = 0.25
     /// Zoom per point of scroll: a trackpad's precise deltas, or a wheel's lines.
     static let wheelZoom = (precise: 0.005, lines: 0.1)
 
+    /// The pointer's hand: `Pointer.mouse` or `Pointer.pad`.
+    let hand: Int
     /// The cursor, while it's over the stage.
     private(set) var hover: CGPoint?
     private var current: (kind: HandGesture.Kind, announced: Bool, ending: Bool)?
@@ -18,7 +22,15 @@ final class MouseGestures {
     private var click: CGPoint?
 
     /// The cursor as a pointer for actionable items (`frame.pointers`), while it's over the stage.
-    var pointer: Pointer? { hover.map { Pointer(hand: Pointer.mouse, location: $0) } }
+    var pointer: Pointer? { hover.map { Pointer(hand: hand, location: $0) } }
+
+    init(hand: Int = Pointer.mouse) { self.hand = hand }
+
+    /// Whether a zoom is going on (not ending).
+    var isZooming: Bool {
+        guard case .zoom = current?.kind else { return false }
+        return current?.ending == false
+    }
 
     /// The gesture for this frame: `.began` once, `.changed` every frame, `.ended` once (the frame after `.began` at
     /// the earliest, for a click).
@@ -35,8 +47,11 @@ final class MouseGestures {
 
     func moved(to point: CGPoint?) {
         hover = point
-        if let point, case .drag(let start, _) = current?.kind, current?.ending == false {
-            current?.kind = .drag(start: start, location: point)
+        guard let point, current?.ending == false else { return }
+        switch current?.kind {
+        case .drag(let start, _): current?.kind = .drag(start: start, location: point)
+        case .fist: current?.kind = .fist(location: point)
+        default: break
         }
     }
 
@@ -44,6 +59,13 @@ final class MouseGestures {
         hover = point
         guard current == nil else { return }
         current = (.drag(start: point, location: point), false, false)
+    }
+
+    /// A press while Command is held (fist mode): a fist, until released.
+    func fisted(at point: CGPoint) {
+        hover = point
+        guard current == nil else { return }
+        current = (.fist(location: point), false, false)
     }
 
     /// A press while the space bar is held (action mode): a click for this frame's effects, not a drag.
@@ -59,7 +81,10 @@ final class MouseGestures {
     }
 
     func released() {
-        if case .drag = current?.kind { finish() }
+        switch current?.kind {
+        case .drag, .fist: finish()
+        default: break
+        }
     }
 
     /// A trackpad pinch: `magnification` since the last event (0 at rest).

@@ -107,9 +107,10 @@ Toggle it in the panel's Status section. It draws on the stage (so it is visible
 
 ## Mouse and trackpad
 
-Everything but the fist also works with the mouse or trackpad on the stage, e.g. to rehearse without a camera: press
-and move to drag, pinch the trackpad (or scroll with Command held) to zoom around the cursor, and in action mode the
-cursor points like a fingertip (hold Space, hover an item, release).
+The hand gestures also work with the mouse or trackpad on the stage, e.g. to rehearse without a camera: press
+and move to drag, pinch the trackpad (or scroll with Command held) to zoom around the cursor, press with Command held
+for a fist (it follows the cursor until you let go), and in action mode the cursor points like a fingertip (hold
+Space, hover an item, release). The pen app's fingers do the same on the story (see below).
 
 ## Draw
 
@@ -174,6 +175,10 @@ iPad. The iPad is a pad that stands for the stage and shows it: where the pencil
   (it comes selected). Tap a sticker to select it, with its toolbar over it; tap elsewhere to unselect it.
 - On the whiteboard, fingers pinch to zoom it and drag to slide it; one finger dragging a sticker moves it instead,
   and dragging a corner handle of the selected one resizes it.
+- On the story, fingers are the Mac's mouse: one finger drags, two pinch to zoom. The deck's **Point** and **Fist**
+  keys are the space bar and Command, held with a thumb while a finger acts: with Point held, a finger points and
+  clicks where it lifts (selects, e.g. a neuron or a synapse); with Fist held, it makes a fist until it lifts (e.g.
+  the black box's particles). They work whichever app is active on the Mac.
 
 The two find each other on their own (Bonjour) and neither needs the internet: over the Wi-Fi network they share,
 or straight between the devices when they share none (Wi-Fi turned on, on both). A USB cable charges the iPad but

@@ -129,6 +129,12 @@ struct PadScreen: View {
                     DeckKey("Next", symbol: "chevron.right") { model.step(forward: true) }
                         .disabled(!model.steps.hasNext)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    // Held with a thumb while a finger acts on the stage: the Mac's space bar and Command.
+                    HoldKey("Point", symbol: "hand.point.up.left.fill", key: .point, model: model)
+                        .padding(.leading, 8)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    HoldKey("Fist", symbol: "hands.and.sparkles.fill", key: .fist, model: model)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
             .transition(.opacity)
@@ -386,6 +392,49 @@ private struct DeckKey: View {
         .disabled(isMarked)
         .accessibilityLabel(title)
         .accessibilityAddTraits(isLit ? .isSelected : [])
+    }
+}
+
+/// A key of the deck held down for the story, as the Mac's space bar (Point: a finger on the stage points, and clicks
+/// where it lifts) or Command (Fist: a finger makes a fist): lit while held. It goes on acting while another finger
+/// is on the stage.
+private struct HoldKey: View {
+    let title: String
+    let symbol: String
+    let key: StoryKey
+    let model: PadModel
+
+    init(_ title: String, symbol: String, key: StoryKey, model: PadModel) {
+        (self.title, self.symbol, self.key, self.model) = (title, symbol, key, model)
+    }
+
+    var body: some View {
+        let held = model.heldKeys.contains(key)
+        VStack(spacing: 4) {
+            Image(systemName: symbol).font(.title3.weight(.semibold))
+            Text(title).font(.caption.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .padding(.horizontal, 4)
+        .frame(width: 92, height: 60)
+        .foregroundStyle(held ? Color.black : Color.white)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(held ? Color(uiColor: UIColor(hex: "E1FF25")) : Color(white: 0.2))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(.white.opacity(held ? 0.6 : 0.12), lineWidth: 1))
+        )
+        .scaleEffect(held ? 0.94 : 1)
+        .animation(.snappy(duration: 0.12), value: held)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in model.hold(key, true) }
+                .onEnded { _ in model.hold(key, false) }
+        )
+        .onDisappear { model.hold(key, false) }
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(held ? .isSelected : [])
     }
 }
 

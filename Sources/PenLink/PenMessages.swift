@@ -88,6 +88,26 @@ public nonisolated enum StickerEdit: Codable, Sendable, Equatable {
     case action(String)
 }
 
+/// Fingers on the pad while the story shows, as the mouse on the stage: points in ink points.
+public nonisolated enum StoryTouch: Codable, Sendable, Equatable {
+    /// One finger touched down: a drag starts, or with `StoryKey.point` held a pointer, or with `StoryKey.fist` a fist.
+    case down(x: Double, y: Double)
+    case move(x: Double, y: Double)
+    /// The finger lifted: the drag or fist ends; with `StoryKey.point` held, it clicks where it was.
+    case up
+    /// Two fingers pinch: the zoom grows by `scale` since the last one, around (`x`, `y`).
+    case zoom(scale: Double, x: Double, y: Double)
+    case zoomEnded
+}
+
+/// A key held on the pad for the story, as on the Mac's keyboard.
+public nonisolated enum StoryKey: String, Codable, Sendable, CaseIterable {
+    /// The space bar: action mode, a finger points and its tap clicks.
+    case point
+    /// Command: fist mode, a finger makes a fist.
+    case fist
+}
+
 /// The ink's settings: the same in the host's panel and on the pad, whichever changes them.
 public nonisolated struct InkSettings: Codable, Sendable, Equatable {
     /// The widths a line can have, in ink points.
@@ -153,6 +173,11 @@ public nonisolated enum PadMessage: Codable, Sendable, Equatable {
     case resizeSticker(id: Int, x: Double, y: Double, width: Double)
     /// A placed sticker is changed from its toolbar on the pad.
     case editSticker(id: Int, StickerEdit)
+    /// Fingers on the pad while the story shows: they drag, zoom, point and make fists, as the mouse does. Ignored
+    /// when the story isn't on stage.
+    case touch(StoryTouch)
+    /// A key for the story is held down on the pad (true) or let go.
+    case hold(StoryKey, Bool)
     /// The pad changed the ink's settings: the host keeps what its panel could set, and answers if that differs.
     case set(InkSettings)
 }

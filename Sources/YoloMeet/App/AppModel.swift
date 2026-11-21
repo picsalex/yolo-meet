@@ -35,7 +35,8 @@ final class AppModel {
     /// Ink drawn on the stage with the mouse, or with the iPad pen app's Apple Pencil; both observe their own settings.
     @ObservationIgnored let drawing = Drawing()
     @ObservationIgnored private(set) lazy var pen = PenInput(
-        drawing: drawing, stories: Story.all.map { StoryInfo(id: $0.id, title: $0.title) }, story: storyID,
+        drawing: drawing, keys: stageKeys, stories: Story.all.map { StoryInfo(id: $0.id, title: $0.title) },
+        story: storyID,
         onStep: { [weak self] forward in forward ? self?.next() : self?.previous() },
         onShow: { [weak self] show in
             guard let self else { return }

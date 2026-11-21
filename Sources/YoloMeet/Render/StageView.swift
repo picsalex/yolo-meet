@@ -21,7 +21,9 @@ struct StageView: NSViewRepresentable {
         view.delegate = context.coordinator
         view.mouse = context.coordinator.mouse
         view.drawing = model.drawing
-        view.acting = { [keys = model.stageKeys] in keys.isHeld("space") }
+        // The keyboard's keys only: the pad's Point and Fist are for its fingers.
+        view.acting = { [keys = model.stageKeys] in keys.isHeldHere("space") }
+        view.fisting = { [keys = model.stageKeys] in keys.isHeldHere("cmd") }
         return view
     }
 
@@ -37,6 +39,8 @@ private final class StageMTKView: MTKView {
     var drawing: Drawing?
     /// Whether the space bar is held (action mode): a press clicks instead of dragging.
     var acting: () -> Bool = { false }
+    /// Whether Command is held alone (fist mode): a press makes a fist instead of dragging.
+    var fisting: () -> Bool = { false }
     /// The drawing, while it takes the mouse.
     private var inking: Drawing? { drawing?.isOn == true ? drawing : nil }
     /// The drawing, while the whiteboard is on stage: the trackpad moves its view.
@@ -87,6 +91,8 @@ private final class StageMTKView: MTKView {
             inking.pressed(at: inkPoint(event))
         } else if acting() {
             mouse?.clicked(at: stagePoint(event))
+        } else if fisting() {
+            mouse?.fisted(at: stagePoint(event))
         } else {
             mouse?.pressed(at: stagePoint(event))
         }
@@ -258,14 +264,23 @@ final class StageRenderer: NSObject, MTKViewDelegate {
         if stageFrame.keys.pressed.contains("delete") { model.drawing.undo() }
         let handGesture = gestures.update(stageFrame)  // every frame, to keep following the hands
         let mouseGesture = mouse.update(time: now)
-        stageFrame.gesture = mouseGesture ?? handGesture  // the mouse wins while it acts
-        stageFrame.charge = mouseGesture == nil ? gestures.charging : nil
-        // While drawing is on the mouse draws: it doesn't point.
-        stageFrame.pointers = gestures.pointers + (model.drawing.isOn ? [] : mouse.pointer.map { [$0] } ?? [])
+        // The pen app's fingers, as a second mouse (in stage points: the pad sends ink points).
+        let fingers = model.pen.fingers
+        model.pen.stageUnit = stageFrame.stage.unit
+        let fingerGesture = fingers.update(time: now)
+        stageFrame.gesture = mouseGesture ?? fingerGesture ?? handGesture  // the mouse wins while it acts
+        stageFrame.charge = mouseGesture == nil && fingerGesture == nil ? gestures.charging : nil
+        // While drawing is on the mouse draws: it doesn't point. Nor does it while the space bar is the pad's alone
+        // (Point), resting where it was last used.
+        let mousePoints =
+            !model.drawing.isOn && !(model.stageKeys.isHeld("space") && !model.stageKeys.isHeldHere("space"))
+        stageFrame.pointers =
+            gestures.pointers + (mousePoints ? mouse.pointer.map { [$0] } ?? [] : [])
+            + (fingers.pointer.map { [$0] } ?? [])
         pointing.next()
         stageFrame.pointing = pointing
         stageFrame.nextStep = { [model] in Task { model.next() } }  // after this frame
-        stageFrame.click = mouse.takeClick()
+        stageFrame.click = mouse.takeClick() ?? fingers.takeClick()
         if model.mode == .story {
             stageFrame.branches = StageFrame.Branches(
                 visited: model.visited[model.place.step] ?? [],

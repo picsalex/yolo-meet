@@ -3,8 +3,8 @@ import SpriteKit
 
 /// An item a hand points at with its index fingertip and acts on with the space bar. Holding Space enters action mode:
 /// the item pointed at grows (`scale`) and so does the fingertip's joint in `handSkeleton()`; releasing Space while
-/// pointing at it acts. Or, `by: .click`, the mouse alone: the item under the cursor grows while Space is held, and a
-/// click on it acts. One per item; call `update` every frame.
+/// pointing at it acts. Or, `by: .click`, the mouse alone (or the pen app's finger): the item under the cursor grows
+/// while Space is held, and a click on it acts. One per item; call `update` every frame.
 final class Actionable {
     enum Trigger {
         /// Releasing the space bar while a fingertip or the cursor points at it.
@@ -29,8 +29,8 @@ final class Actionable {
     func update(_ frame: StageFrame, isOn: ((CGPoint) -> Bool)?) -> Bool {
         let (holding, releasing) = (frame.keys.held.contains("space"), frame.keys.released.contains("space"))
         if trigger == .click {
-            let cursor = frame.pointers.first { $0.hand == Pointer.mouse }?.location
-            pointed = holding ? cursor.flatMap { point in isOn.map { $0(point) } } ?? false : false
+            pointed =
+                holding && isOn.map { isOn in frame.pointers.contains { $0.isCursor && isOn($0.location) } } ?? false
             scale = scale.approaching(pointed ? grown : 1, frame.smoothing)
             let clicked = frame.click.flatMap { point in isOn.map { $0(point) } } ?? false
             return clicked && frame.pointing.claimAction()

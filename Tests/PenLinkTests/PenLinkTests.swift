@@ -14,7 +14,9 @@ import Testing
             .sticker(id: "neural-network"), .moveSticker(id: 3, dx: 12.5, dy: -4),
             .resizeSticker(id: 3, x: 100, y: 50.5, width: 320),
             .editSticker(id: 3, .lock(true)), .editSticker(id: 3, .duplicate), .editSticker(id: 3, .delete),
-            .editSticker(id: 3, .action("randomize")),
+            .editSticker(id: 3, .action("randomize")), .touch(.down(x: 10, y: 20)), .touch(.move(x: 11.5, y: 19)),
+            .touch(.up), .touch(.zoom(scale: 1.02, x: 640, y: 360)), .touch(.zoomEnded), .hold(.point, true),
+            .hold(.fist, false),
             .set(InkSettings(color: "00FFFF", width: 9, fades: true, fadeAfter: 12, erases: true)), .hoverEnded,
         ]
         let bytes = sent.reduce(Data()) { $0 + PenFrames.frame($1) }

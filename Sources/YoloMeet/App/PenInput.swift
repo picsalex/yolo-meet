@@ -8,7 +8,8 @@ import SystemConfiguration
 /// (`Drawing`). The pad shows the stage with its own ink over it, so it is told which of its strokes left the stage
 /// and is sent the stage's picture (`StagePicture`). The ink's settings are the panel's, and the pad can change them
 /// too. The pad also steps through the story, like the arrow keys, switches the stage between the story and the
-/// whiteboard, and hides the camera image, as H does (its deck). Its fingers zoom and slide the whiteboard.
+/// whiteboard, and hides the camera image, as H does (its deck). Its fingers zoom and slide the whiteboard; on the
+/// story they are a second mouse (`fingers`), and its deck holds the space bar and Command for them (`StageKeys`).
 @Observable
 final class PenInput {
     var isOn = UserDefaults.standard.bool(forKey: "penOn") {
@@ -32,10 +33,25 @@ final class PenInput {
     @ObservationIgnored private(set) var lastHeard: TimeInterval = 0
     @ObservationIgnored private let host = PenHost()
     @ObservationIgnored private let drawing: Drawing
+    @ObservationIgnored private let keys: StageKeys
+    /// The pad's fingers on the story, as a mouse on the stage: the stage reads them every frame, after the mouse.
+    @ObservationIgnored let fingers = MouseGestures(hand: Pointer.pad)
+    /// Stage points per ink point, as the stage last drew: the pad's fingers are in ink points.
+    @ObservationIgnored var stageUnit: CGFloat = 1
+    /// The finger on the story: what it does (chosen by the key held when it touched down), and where it is (stage
+    /// points).
+    @ObservationIgnored private var finger: (kind: Finger, at: CGPoint)?
+    private enum Finger { case drag, point, fist }
+    /// Whether two fingers are zooming the story.
+    @ObservationIgnored private var zooming = false
     /// What the stage shows, and the mode under the whiteboard (Display mode or the story): the pad is told when either
     /// changes.
     @ObservationIgnored var shows = (StageShow.display, mode: StageShow.display) {
-        didSet { if shows != oldValue { host.send(.shows(shows.0, mode: shows.mode)) } }
+        didSet {
+            guard shows != oldValue else { return }
+            host.send(.shows(shows.0, mode: shows.mode))
+            if shows.0 != .story { letGo() }
+        }
     }
     /// Whether the story has a step before the one on stage, and one after: the pad is told when either changes.
     @ObservationIgnored var steps = (hasPrevious: false, hasNext: true) {
@@ -68,11 +84,11 @@ final class PenInput {
     @ObservationIgnored private var toldStickers: [PlacedSticker]?
 
     init(
-        drawing: Drawing, stories: [StoryInfo], story: String, onStep: @escaping (Bool) -> Void,
+        drawing: Drawing, keys: StageKeys, stories: [StoryInfo], story: String, onStep: @escaping (Bool) -> Void,
         onShow: @escaping (StageShow) -> Void, onStory: @escaping (String) -> Void, onRestart: @escaping () -> Void,
         onHide: @escaping (Bool) -> Void
     ) {
-        (self.drawing, self.stories, self.story) = (drawing, stories, story)
+        (self.drawing, self.keys, self.stories, self.story) = (drawing, keys, stories, story)
         (self.onStep, self.onShow, self.onStory, self.onRestart, self.onHide) = (
             onStep, onShow, onStory, onRestart, onHide
         )
@@ -83,6 +99,7 @@ final class PenInput {
             (self.pad, self.lastHeard) = (nil, CACurrentMediaTime())
             self.drawing.released(.pen, time: CACurrentMediaTime())
             self.drawing.hover(at: nil)
+            self.letGo()
             if connected {
                 self.host.send(.hello(name: Self.macName))
                 self.sendSettings()
@@ -201,7 +218,68 @@ final class PenInput {
             drawing.resizeSticker(
                 id, x: kept(x), y: kept(y), width: CGFloat(min(max(width, widths.lowerBound), widths.upperBound)))
         case .editSticker(let id, let edit): drawing.edit(sticker: id, edit)
+        case .touch(let touch): touched(touch)
+        case .hold(let key, let down): keys.padHolds(key == .point ? "space" : "cmd", down)
         case .set(let settings): apply(settings)
         }
+    }
+
+    /// A finger on the story, as the mouse: it drags, or points and clicks where it lifts while the space bar is held
+    /// (on the pad or here), or makes a fist while Command is; two fingers zoom. It points only while it touches.
+    private func touched(_ touch: StoryTouch) {
+        guard shows.0 == .story else { return letGo() }
+        func at(_ x: Double, _ y: Double) -> CGPoint {
+            let unit = stageUnit
+            let x = min(max(x, -200), PenLink.size.width + 200)
+            let y = min(max(y, -200), PenLink.size.height + 200)
+            return CGPoint(x: x * unit, y: y * unit)
+        }
+        switch touch {
+        case .down(let x, let y):
+            guard finger == nil, !zooming else { return }
+            let point = at(x, y)
+            if keys.isHeld("space") {
+                finger = (.point, point)
+                fingers.moved(to: point)
+            } else if keys.isHeld("cmd") {
+                finger = (.fist, point)
+                fingers.fisted(at: point)
+            } else {
+                finger = (.drag, point)
+                fingers.pressed(at: point)
+            }
+        case .move(let x, let y):
+            guard finger != nil else { return }
+            finger?.at = at(x, y)
+            fingers.moved(to: at(x, y))
+        case .up:
+            guard let finger else { return }
+            if finger.kind == .point { fingers.clicked(at: finger.at) } else { fingers.released() }
+            fingers.moved(to: nil)  // no pointer left behind: it is there only while the finger is
+            self.finger = nil
+        case .zoom(let scale, let x, let y):
+            guard scale.isFinite else { return }
+            if let finger, finger.kind != .point { fingers.released() }  // a second finger: the drag ends
+            finger = nil
+            // Begun again until it takes: a drag that just ended holds the gesture until the stage's next frame.
+            if !fingers.isZooming { fingers.moved(to: at(x, y)) }  // it zooms around the cursor
+            fingers.magnified(
+                by: CGFloat(min(max(scale, 0.5), 2)) - 1, phase: fingers.isZooming ? .changed : .began, at: at(x, y))
+            zooming = true
+        case .zoomEnded:
+            guard zooming else { return }
+            zooming = false
+            fingers.magnified(by: 0, phase: .ended, at: .zero)
+            fingers.moved(to: nil)
+        }
+    }
+
+    /// The pad's fingers and keys let go: the link closed, or the story left the stage.
+    private func letGo() {
+        if finger != nil { fingers.released() }
+        if zooming { fingers.magnified(by: 0, phase: .ended, at: .zero) }
+        (finger, zooming) = (nil, false)
+        fingers.moved(to: nil)
+        for key in ["space", "cmd"] { keys.padHolds(key, false) }
     }
 }

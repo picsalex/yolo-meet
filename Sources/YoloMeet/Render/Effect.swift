@@ -51,7 +51,8 @@ struct StageFrame {
     var charge: HandCharge? = nil
     /// Keyboard keys for effects, while yolo-meet is the active app (`StageKeys`).
     var keys = Keys()
-    /// Index fingertips of the hands in view (`HandGestures.pointers`), then the mouse cursor over the stage.
+    /// Index fingertips of the hands in view (`HandGestures.pointers`), then the mouse cursor over the stage and the pen
+    /// app's finger.
     var pointers: [Pointer] = []
     /// Which hands point at an actionable item, for the hand skeletons to show it (`pointer(on:)`).
     var pointing = Pointing()
@@ -131,10 +132,15 @@ struct Pointer {
         [CGPoint.zero] + (0..<8).map { CGPoint(x: cos(Double($0) * .pi / 4), y: sin(Double($0) * .pi / 4)) }
     /// The `hand` of the mouse cursor's pointer (`MouseGestures`): no hand's track ID.
     static let mouse = -1
+    /// The `hand` of the pen app's finger (`PenInput.fingers`), as a second cursor.
+    static let pad = -2
 
     /// The hand's track ID, or `mouse`.
     let hand: Int
     let location: CGPoint
+
+    /// Whether it is a cursor (the mouse's or the pen app's finger), not a fingertip.
+    var isCursor: Bool { hand == Self.mouse || hand == Self.pad }
 }
 
 /// The hands pointing at an actionable item, shared by the effects of a frame: effects that hold items mark them

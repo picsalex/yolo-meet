@@ -16,7 +16,9 @@ struct PadView: UIViewRepresentable {
 ///
 /// Only the pencil draws: a resting hand or a finger leaves no ink. On the whiteboard, fingers pinch to zoom it and drag
 /// to slide it; a tap on a sticker selects it (its toolbar shows over it, `PadScreen`), elsewhere unselects it, one
-/// finger dragging a sticker that isn't locked moves it, and one dragging a handle of the selected one resizes it.
+/// finger dragging a sticker that isn't locked moves it, and one dragging a handle of the selected one resizes it. On
+/// the story, fingers are the Mac's mouse: one drags from the moment it touches (or points, or makes a fist, while the
+/// deck's Point or Fist key is held), two pinch to zoom.
 final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerDelegate {
     private let model: PadModel
     private let picture = UIImageView()
@@ -29,6 +31,12 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
     private lazy var pinch = UIPinchGestureRecognizer(target: self, action: #selector(pinched))
     private lazy var drag = UIPanGestureRecognizer(target: self, action: #selector(dragged))
     private lazy var tap = UITapGestureRecognizer(target: self, action: #selector(tapped))
+    /// One finger on the story: from the moment it touches until it lifts, wherever it goes.
+    private lazy var press: UILongPressGestureRecognizer = {
+        let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed))
+        (press.minimumPressDuration, press.allowableMovement) = (0, .greatestFiniteMagnitude)
+        return press
+    }()
     /// The sticker one finger is dragging, if the drag started on one that isn't locked; else the drag slides the
     /// whiteboard.
     private var dragging: Int?
@@ -50,7 +58,7 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
             addSubview(view)
         }
         addGestureRecognizer(UIHoverGestureRecognizer(target: self, action: #selector(hovered)))
-        for fingers in [pinch, drag, tap] as [UIGestureRecognizer] {
+        for fingers in [pinch, drag, tap, press] as [UIGestureRecognizer] {
             fingers.allowedTouchTypes = [UITouch.TouchType.direct.rawValue as NSNumber]
             fingers.delegate = self
             addGestureRecognizer(fingers)
@@ -78,7 +86,7 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
         drawing = touch
         // A hand resting on the glass while the pencil draws must not move the board or a sticker: fingers already
         // pinching or dragging stop, and none start until the pencil lifts (`gestureRecognizerShouldBegin`).
-        for fingers in [pinch, drag, tap] as [UIGestureRecognizer] where fingers.state != .possible {
+        for fingers in [pinch, drag, tap, press] as [UIGestureRecognizer] where fingers.state != .possible {
             fingers.isEnabled = false  // cancels it
             fingers.isEnabled = true
         }
@@ -104,11 +112,14 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
 
     // Fingers on the whiteboard.
 
-    /// Fingers act on the whiteboard only, and not while the pencil draws (also the delegate's question: the same
-    /// method).
+    /// Fingers act on the whiteboard and the story only, and not while the pencil draws (also the delegate's question:
+    /// the same method).
     override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
-        [pinch, drag, tap].contains { $0 === recognizer }
-            ? model.shows == .whiteboard && drawing == nil : super.gestureRecognizerShouldBegin(recognizer)
+        let (whiteboard, story) = (model.shows == .whiteboard, model.shows == .story)
+        if recognizer === pinch { return (whiteboard || story) && drawing == nil }
+        if recognizer === drag || recognizer === tap { return whiteboard && drawing == nil }
+        if recognizer === press { return story && drawing == nil }
+        return super.gestureRecognizerShouldBegin(recognizer)
     }
 
     /// Selects the sticker under the finger, or none.
@@ -121,15 +132,35 @@ final class PadCanvas: UIView, UIPencilInteractionDelegate, UIGestureRecognizerD
         _ recognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
     )
         -> Bool
-    { [recognizer, other].allSatisfy { $0 === pinch || $0 === drag } }
+    { [recognizer, other].allSatisfy { $0 === pinch || $0 === drag || $0 === press } }
 
-    /// Zooms around the fingers' middle, as far as they spread since the last change.
+    /// Zooms around the fingers' middle, as far as they spread since the last change: the whiteboard, or the story.
     @objc private func pinched(_ recognizer: UIPinchGestureRecognizer) {
-        guard recognizer.state == .began || recognizer.state == .changed, recognizer.numberOfTouches >= 2 else {
+        let story = model.shows == .story
+        guard recognizer.state == .began || recognizer.state == .changed else {
+            if story { model.touch(.zoomEnded) }
             return
         }
-        model.moveBoard(zoom: recognizer.scale, around: inkPoint(recognizer.location(in: self)))
+        guard recognizer.numberOfTouches >= 2 else { return }
+        let at = inkPoint(recognizer.location(in: self))
+        if story {
+            model.touch(.zoom(scale: recognizer.scale, x: at.x, y: at.y))
+        } else {
+            model.moveBoard(zoom: recognizer.scale, around: at)
+        }
         recognizer.scale = 1
+    }
+
+    /// One finger on the story: down, moved and up, as the mouse. While two pinch, the zoom has it.
+    @objc private func pressed(_ recognizer: UILongPressGestureRecognizer) {
+        let at = inkPoint(recognizer.location(in: self))
+        switch recognizer.state {
+        case .began: model.touch(.down(x: at.x, y: at.y))
+        case .changed:
+            guard recognizer.numberOfTouches == 1, pinch.state != .began, pinch.state != .changed else { return }
+            model.touch(.move(x: at.x, y: at.y))
+        default: model.touch(.up)
+        }
     }
 
     /// Moves the sticker the drag started on as far as the finger moved since the last change, or else slides the

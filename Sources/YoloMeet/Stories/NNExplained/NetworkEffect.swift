@@ -532,7 +532,8 @@ final class NetworkEffect: Effect {
     /// Space + click: the neuron under the click (or the nearest synapse) is selected, or unselected if it was; a
     /// click on neither unselects all. Selected parts' particles are gold, the others the system's color.
     private func select(at click: CGPoint, _ layout: NetworkLayout, _ frame: StageFrame) {
-        let reach = 8 * frame.stage.unit
+        // As far as pointing reaches: what grows or shows its weight under the cursor or finger is what a click takes.
+        let reach = Pointer.reach * frame.stage.unit
         let gap = { (i: Int) in self.onStage[i].point.distance(to: click) }
         let neuron = onStage.indices.filter { gap($0) < onStage[$0].radius + reach }.min { gap($0) < gap($1) }
         let synapse = layout.synapses.indices.min { distance(click, $0) < distance(click, $1) }

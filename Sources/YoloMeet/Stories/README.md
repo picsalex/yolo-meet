@@ -129,9 +129,12 @@ shows the gesture, the charge and each hand's measures (pinch, curl, thumb, spee
 `HandGestures`.
 
 The mouse and trackpad make the same gestures (`Render/MouseGestures.swift`), with nothing for effects to add: press
-and move on the stage to drag, pinch the trackpad or Command + scroll to zoom around the cursor (`hands` 2), and the
-cursor over the stage points in action mode (`Pointer.mouse`). No fist with the mouse. A mouse gesture starts at once
-and wins over the hands' while it acts.
+and move on the stage to drag, pinch the trackpad or Command + scroll to zoom around the cursor (`hands` 2), press
+with Command held for a fist that follows the cursor until released, and the cursor over the stage points in action
+mode (`Pointer.mouse`). A mouse gesture starts at once and wins over the hands' while it acts. The pen app's fingers
+are a second mouse on the story (`PenInput.fingers`, pointer `Pointer.pad`, after the mouse), with its deck's Point
+and Fist keys holding Space and Command (`StageKeys.padHolds`): a cursor is `Pointer.isCursor`, so read that rather
+than `Pointer.mouse`.
 
 ## Kit
 

@@ -10,6 +10,8 @@ final class StageKeys {
         15: "r", 13: "z", 0: "q", 1: "s", 2: "d", 29: "0", 82: "0", 49: "space", 4: "h", 35: "p", 8: "c", 51: "delete",
     ]
     private var held: Set<String> = []
+    /// Keys held on the pen app's pad ("space", "cmd"): held as if here, whichever app is active.
+    private var padHeld: Set<String> = []
     private var pressed: Set<String> = []
     private var released: Set<String> = []
     private var monitor: Any?
@@ -49,12 +51,24 @@ final class StageKeys {
         return nil  // handled: no beep
     }
 
-    /// Whether a key is down now (e.g. for a mouse click in action mode, between frames).
-    func isHeld(_ key: String) -> Bool { held.contains(key) }
+    /// Whether a key is down now, here or on the pad (e.g. for a mouse click in action mode, between frames).
+    func isHeld(_ key: String) -> Bool { held.contains(key) || padHeld.contains(key) }
+
+    /// Whether a key is down on this Mac's keyboard, whatever the pad holds: the mouse acts on these alone.
+    func isHeldHere(_ key: String) -> Bool { held.contains(key) }
+
+    /// The pen app's pad holds `key` down, or lets it go.
+    func padHolds(_ key: String, _ down: Bool) {
+        if down {
+            if padHeld.insert(key).inserted, !held.contains(key) { pressed.insert(key) }
+        } else if padHeld.remove(key) != nil, !held.contains(key) {
+            released.insert(key)
+        }
+    }
 
     /// The keys for this frame: held ones, and those pressed or released since the last call.
     func take() -> StageFrame.Keys {
         defer { (pressed, released) = ([], []) }
-        return StageFrame.Keys(held: held, pressed: pressed, released: released)
+        return StageFrame.Keys(held: held.union(padHeld), pressed: pressed, released: released)
     }
 }
